@@ -10,8 +10,6 @@ interface VisualTweak {
   safety_tier: string;
   current_value: string | null;
   optimized_value: string;
-  registry_path: string;
-  registry_name: string;
 }
 
 export default function VisualPanel() {
@@ -31,7 +29,7 @@ export default function VisualPanel() {
   const handleApply = async (tweak: VisualTweak) => {
     setApplying((s) => ({ ...s, [tweak.id]: true }));
     try {
-      await invoke("apply_tweak", { id: tweak.id });
+      await invoke("apply_tweak", { module: "visual", id: tweak.id });
       setApplied((s) => ({ ...s, [tweak.id]: true }));
     } catch (e) {
       console.error("Apply failed:", e);
@@ -43,7 +41,7 @@ export default function VisualPanel() {
   const handleUndo = async (tweak: VisualTweak) => {
     setApplying((s) => ({ ...s, [tweak.id]: true }));
     try {
-      await invoke("undo_tweak", { id: tweak.id });
+      await invoke("undo_tweak", { module: "visual", id: tweak.id });
       setApplied((s) => ({ ...s, [tweak.id]: false }));
     } catch (e) {
       console.error("Undo failed:", e);
@@ -83,9 +81,6 @@ export default function VisualPanel() {
                 <span className="tweak-name">{tweak.name}</span>
               </div>
               <div className="tweak-desc">{tweak.description}</div>
-              <div className="tweak-path">
-                {tweak.registry_path}\\{tweak.registry_name}
-              </div>
             </div>
             <div className="tweak-right">
               <div className="tweak-values">

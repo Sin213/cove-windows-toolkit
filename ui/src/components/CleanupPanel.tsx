@@ -6,11 +6,10 @@ import "./CleanupPanel.css";
 interface CleanupTarget {
   id: string;
   name: string;
-  description: string;
   path: string;
   size_bytes: number;
   file_count: number;
-  safe: boolean;
+  safety: string;
 }
 
 export default function CleanupPanel() {
@@ -25,10 +24,10 @@ export default function CleanupPanel() {
     invoke<CleanupTarget[]>("get_cleanup_targets")
       .then((data) => {
         setTargets(data);
-        // Select all safe targets by default
+        // Select all green (safe) targets by default
         const sel: Record<string, boolean> = {};
         data.forEach((t) => {
-          if (t.safe) sel[t.id] = true;
+          if (t.safety === "green") sel[t.id] = true;
         });
         setSelected(sel);
       })
@@ -60,9 +59,12 @@ export default function CleanupPanel() {
   const handleClean = async () => {
     setCleaning(true);
     try {
-      for (const t of selectedTargets) {
-        await invoke("run_cleanup", { id: t.id });
-        setCleaned((s) => ({ ...s, [t.id]: true }));
+      const ids = selectedTargets.map((t) => t.id);
+      const res = await invoke<{ success: boolean }>("run_cleanup", { ids });
+      if (res.success) {
+        for (const t of selectedTargets) {
+          setCleaned((s) => ({ ...s, [t.id]: true }));
+        }
       }
     } catch (e) {
       console.error("Cleanup failed:", e);
@@ -117,10 +119,10 @@ export default function CleanupPanel() {
             />
             <div className="cleanup-info">
               <div className="cleanup-name">{target.name}</div>
-              <div className="cleanup-desc">{target.description}</div>
               <div className="cleanup-path">{target.path}</div>
             </div>
             <div className="cleanup-meta">
+              <span className={`safety-badge safety-${target.safety}`}>{target.safety}</span>
               <div className="cleanup-size">{formatBytes(target.size_bytes)}</div>
               <div className="cleanup-files">
                 {target.file_count.toLocaleString()} files

@@ -3,12 +3,12 @@ import { invoke } from "../lib/tauri";
 import "./StartupPanel.css";
 
 interface StartupItem {
+  id: string;
   name: string;
-  publisher: string;
+  path: string;
   command: string;
-  location: string;
-  enabled: boolean;
   impact: string;
+  enabled: boolean;
 }
 
 export default function StartupPanel() {
@@ -25,21 +25,23 @@ export default function StartupPanel() {
   }, []);
 
   const handleToggle = async (item: StartupItem) => {
-    setToggling((s) => ({ ...s, [item.name]: true }));
+    setToggling((s) => ({ ...s, [item.id]: true }));
     try {
-      await invoke("toggle_startup", {
-        name: item.name,
+      const res = await invoke<{ success: boolean }>("toggle_startup", {
+        id: item.id,
         enabled: !item.enabled,
       });
-      setItems((prev) =>
-        prev.map((it) =>
-          it.name === item.name ? { ...it, enabled: !it.enabled } : it
-        )
-      );
+      if (res.success) {
+        setItems((prev) =>
+          prev.map((it) =>
+            it.id === item.id ? { ...it, enabled: !it.enabled } : it
+          )
+        );
+      }
     } catch (e) {
       console.error("Toggle failed:", e);
     } finally {
-      setToggling((s) => ({ ...s, [item.name]: false }));
+      setToggling((s) => ({ ...s, [item.id]: false }));
     }
   };
 
@@ -60,7 +62,7 @@ export default function StartupPanel() {
       <div className="startup-list">
         {items.map((item) => (
           <div
-            key={item.name}
+            key={item.id}
             className={`startup-item ${!item.enabled ? "item-disabled" : ""}`}
           >
             <div className="startup-left">
@@ -70,14 +72,13 @@ export default function StartupPanel() {
                   {item.impact}
                 </span>
               </div>
-              <div className="startup-publisher">{item.publisher}</div>
               <div className="startup-cmd">{item.command}</div>
             </div>
             <div className="startup-right">
               <button
                 className={`toggle-btn ${item.enabled ? "toggle-on" : "toggle-off"}`}
                 onClick={() => handleToggle(item)}
-                disabled={toggling[item.name]}
+                disabled={toggling[item.id]}
               >
                 <span className="toggle-knob" />
               </button>

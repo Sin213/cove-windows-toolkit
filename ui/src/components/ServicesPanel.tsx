@@ -2,27 +2,27 @@ import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
 import "./ServicesPanel.css";
 
-interface ServiceProfile {
+interface ServiceItem {
   id: string;
   name: string;
+  service: string;
   description: string;
-}
-
-interface ServiceItem {
-  name: string;
-  display_name: string;
-  description: string;
-  current_state: string;
-  current_start_type: string;
-  target_start_type: string;
-  profile: string;
-  safety: string;
+  tier: string;
+  current: string;
+  optimized: string;
+  impact: string;
+  warning?: string;
 }
 
 interface ServicesData {
-  profiles: ServiceProfile[];
-  services: ServiceItem[];
+  conservative: ServiceItem[];
+  advanced: ServiceItem[];
 }
+
+const PROFILE_TABS = [
+  { id: "conservative", name: "Conservative", description: "Disable only clearly unnecessary services" },
+  { id: "advanced", name: "Advanced", description: "Disable more services for maximum performance (review carefully)" },
+];
 
 export default function ServicesPanel() {
   const [data, setData] = useState<ServicesData | null>(null);
@@ -40,8 +40,10 @@ export default function ServicesPanel() {
 
   const handleApply = async (svc: ServiceItem) => {
     try {
-      await invoke("apply_service_change", { name: svc.name });
-      setApplied((s) => ({ ...s, [svc.name]: true }));
+      const res = await invoke<{ success: boolean }>("apply_service_change", { id: svc.id });
+      if (res.success) {
+        setApplied((s) => ({ ...s, [svc.id]: true }));
+      }
     } catch (e) {
       console.error("Service change failed:", e);
     }
@@ -51,15 +53,15 @@ export default function ServicesPanel() {
   if (error) return <div className="panel-error">Error: {error}</div>;
   if (!data) return null;
 
-  const filtered = data.services.filter((s) => {
-    if (activeProfile === "advanced") return true;
-    return s.profile === "conservative";
-  });
+  const filtered: ServiceItem[] =
+    activeProfile === "advanced"
+      ? [...data.conservative, ...data.advanced]
+      : data.conservative;
 
   return (
     <div className="services-panel">
       <div className="profile-tabs">
-        {data.profiles.map((p) => (
+        {PROFILE_TABS.map((p) => (
           <button
             key={p.id}
             className={`profile-tab ${activeProfile === p.id ? "active" : ""}`}
@@ -74,35 +76,31 @@ export default function ServicesPanel() {
       <div className="services-list">
         <div className="services-header-row">
           <span className="sh-name">Service</span>
-          <span className="sh-state">State</span>
           <span className="sh-current">Current</span>
           <span className="sh-target">Target</span>
           <span className="sh-action">Action</span>
         </div>
         {filtered.map((svc) => (
           <div
-            key={svc.name}
-            className={`service-row ${applied[svc.name] ? "row-applied" : ""}`}
+            key={svc.id}
+            className={`service-row ${applied[svc.id] ? "row-applied" : ""}`}
           >
             <div className="svc-info">
               <div className="svc-name-row">
-                <span className={`tier-badge tier-${svc.safety.toLowerCase()}`}>
-                  {svc.safety}
+                <span className={`tier-badge tier-${svc.tier.toLowerCase()}`}>
+                  {svc.tier}
                 </span>
-                <span className="svc-display-name">{svc.display_name}</span>
+                <span className="svc-display-name">{svc.name}</span>
               </div>
               <div className="svc-desc">{svc.description}</div>
+              {svc.warning && (
+                <div className="svc-warning">{svc.warning}</div>
+              )}
             </div>
-            <div className="svc-state">
-              <span
-                className={`state-dot ${svc.current_state === "Running" ? "dot-running" : "dot-stopped"}`}
-              />
-              {svc.current_state}
-            </div>
-            <div className="svc-start-type">{svc.current_start_type}</div>
-            <div className="svc-target">{svc.target_start_type}</div>
+            <div className="svc-start-type">{svc.current}</div>
+            <div className="svc-target">{svc.optimized}</div>
             <div className="svc-action">
-              {applied[svc.name] ? (
+              {applied[svc.id] ? (
                 <span className="applied-label">Done</span>
               ) : (
                 <button

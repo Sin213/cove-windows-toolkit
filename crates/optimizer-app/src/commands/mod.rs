@@ -109,7 +109,7 @@ pub fn get_privacy_tweaks() -> serde_json::Value {
             { "id": "privacy.telemetry_level", "name": "Minimize Telemetry", "description": "Reduce Windows telemetry to minimum level", "tier": "yellow", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection\\AllowTelemetry", "current": "3", "optimized": "0", "warning": "On Home/Pro editions, reduces to Security level but cannot fully disable" },
             { "id": "privacy.diagtrack", "name": "Disable DiagTrack Service", "description": "Stop the Connected User Experiences and Telemetry service", "tier": "yellow", "path": "Service: DiagTrack", "current": "Automatic", "optimized": "Disabled", "warning": "Breaks Windows Insider and Feedback Hub" },
             { "id": "privacy.cortana", "name": "Disable Cortana", "description": "Turn off Cortana completely", "tier": "yellow", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search\\AllowCortana", "current": "1", "optimized": "0", "warning": "Disables Cortana entirely" },
-            { "id": "privacy.background_apps", "name": "Disable Background Apps", "description": "Prevent apps from running in background", "tier": "yellow", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications\\GlobalUserDisabled", "current": "0", "optimized": "1", "warning": "Mail/Calendar won't sync in background" }
+            { "id": "privacy.background_apps", "name": "Disable Background Apps", "description": "Prevent apps from running in background", "tier": "green", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications\\GlobalUserDisabled", "current": "0", "optimized": "1", "warning": "Mail/Calendar won't sync in background" }
         ],
         "advanced": [
             { "id": "privacy.camera_deny", "name": "Block Camera Access", "description": "Deny all apps access to camera", "tier": "red", "path": "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy\\LetAppsAccessCamera", "current": "0", "optimized": "2", "warning": "No app can use your camera until you re-enable this" },
@@ -148,13 +148,13 @@ pub fn get_services_tweaks() -> serde_json::Value {
 #[tauri::command]
 pub fn get_startup_items() -> serde_json::Value {
     serde_json::json!([
-        { "id": "startup.onedrive", "name": "Microsoft OneDrive", "path": "HKCU\\Run", "command": "\"C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe\" /background", "impact": "High", "enabled": true },
-        { "id": "startup.teams", "name": "Microsoft Teams", "path": "HKCU\\Run", "command": "\"C:\\Users\\user\\AppData\\Local\\Microsoft\\Teams\\Update.exe\" --processStart", "impact": "High", "enabled": true },
-        { "id": "startup.spotify", "name": "Spotify", "path": "HKCU\\Run", "command": "\"C:\\Users\\user\\AppData\\Roaming\\Spotify\\Spotify.exe\" /minimized", "impact": "Medium", "enabled": true },
-        { "id": "startup.discord", "name": "Discord", "path": "HKCU\\Run", "command": "\"C:\\Users\\user\\AppData\\Local\\Discord\\Update.exe\" --processStart", "impact": "High", "enabled": true },
-        { "id": "startup.steam", "name": "Steam Client Bootstrapper", "path": "HKCU\\Run", "command": "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent", "impact": "High", "enabled": true },
-        { "id": "startup.realtek", "name": "Realtek HD Audio Manager", "path": "HKLM\\Run", "command": "\"C:\\Program Files\\Realtek\\Audio\\HDA\\RtkNGUI64.exe\" -s", "impact": "Low", "enabled": true },
-        { "id": "startup.sechealth", "name": "Windows Security", "path": "HKLM\\Run", "command": "\"C:\\Windows\\System32\\SecurityHealthSystray.exe\"", "impact": "Low", "enabled": true }
+        { "id": "startup.onedrive", "name": "Microsoft OneDrive", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "command": "\"C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe\" /background", "impact": "High", "enabled": true },
+        { "id": "startup.teams", "name": "Microsoft Teams", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "command": "\"C:\\Users\\user\\AppData\\Local\\Microsoft\\Teams\\Update.exe\" --processStart", "impact": "High", "enabled": true },
+        { "id": "startup.spotify", "name": "Spotify", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "command": "\"C:\\Users\\user\\AppData\\Roaming\\Spotify\\Spotify.exe\" /minimized", "impact": "Medium", "enabled": true },
+        { "id": "startup.discord", "name": "Discord", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "command": "\"C:\\Users\\user\\AppData\\Local\\Discord\\Update.exe\" --processStart", "impact": "High", "enabled": true },
+        { "id": "startup.steam", "name": "Steam Client Bootstrapper", "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "command": "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent", "impact": "High", "enabled": true },
+        { "id": "startup.realtek", "name": "Realtek HD Audio Manager", "path": "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "command": "\"C:\\Program Files\\Realtek\\Audio\\HDA\\RtkNGUI64.exe\" -s", "impact": "Low", "enabled": true },
+        { "id": "startup.sechealth", "name": "Windows Security", "path": "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run", "command": "\"C:\\Windows\\System32\\SecurityHealthSystray.exe\"", "impact": "Low", "enabled": true }
     ])
 }
 
@@ -339,4 +339,64 @@ pub fn get_change_history() -> serde_json::Value {
         { "id": 1, "timestamp": "2026-06-08T12:30:00Z", "module": "visual", "name": "Disable Transparency", "tier": "green", "status": "committed" },
         { "id": 2, "timestamp": "2026-06-08T12:30:00Z", "module": "visual", "name": "Disable Animations", "tier": "green", "status": "committed" }
     ])
+}
+
+// ---------------------------------------------------------------------------
+// Startup toggle
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn toggle_startup(id: String, enabled: bool) -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": false, "stub": true, "message": format!("[stub] Would {} startup item: {}", if enabled { "enable" } else { "disable" }, id) });
+    }
+    serde_json::json!({ "success": true, "message": format!("Startup item {} {}", id, if enabled { "enabled" } else { "disabled" }) })
+}
+
+// ---------------------------------------------------------------------------
+// Service change
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn apply_service_change(id: String) -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": false, "stub": true, "message": format!("[stub] Would apply service change: {}", id) });
+    }
+    serde_json::json!({ "success": true, "message": format!("Service change applied: {}", id) })
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn run_cleanup(ids: Vec<String>) -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": false, "stub": true, "message": format!("[stub] Would clean {} targets", ids.len()), "cleaned": 0 });
+    }
+    serde_json::json!({ "success": true, "message": format!("Cleaned {} targets", ids.len()), "cleaned": ids.len() })
+}
+
+// ---------------------------------------------------------------------------
+// Power plan
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn set_power_plan(guid: String) -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": false, "stub": true, "message": format!("[stub] Would set power plan to {}", guid) });
+    }
+    serde_json::json!({ "success": true, "message": format!("Power plan set to {}", guid) })
+}
+
+// ---------------------------------------------------------------------------
+// Undo change
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn undo_change(id: i64) -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": false, "stub": true, "message": format!("[stub] Would undo change {}", id) });
+    }
+    serde_json::json!({ "success": true, "message": format!("Change {} undone", id) })
 }

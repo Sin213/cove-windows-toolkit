@@ -101,7 +101,7 @@ impl Operation {
             Operation::RegDelete { .. } => SafetyTier::Yellow,
             Operation::ServiceStateChange { .. } => SafetyTier::Yellow,
             Operation::TaskToggle { .. } => SafetyTier::Green,
-            Operation::FileDelete { .. } => SafetyTier::Green,
+            Operation::FileDelete { .. } => SafetyTier::Yellow,
             Operation::PowerSchemeChange { .. } => SafetyTier::Yellow,
             Operation::RestorePointCreate { .. } => SafetyTier::Green,
         }

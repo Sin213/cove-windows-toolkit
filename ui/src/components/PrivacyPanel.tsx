@@ -7,12 +7,19 @@ interface PrivacyTweak {
   name: string;
   description: string;
   tier: string;
-  safety: string;
-  enabled: boolean;
-  warning: string | null;
+  path: string;
+  current: string;
+  optimized: string;
+  warning?: string | null;
 }
 
-const TIER_ORDER = ["basic", "standard", "advanced"];
+interface PrivacyData {
+  basic: PrivacyTweak[];
+  standard: PrivacyTweak[];
+  advanced: PrivacyTweak[];
+}
+
+const TIER_ORDER: (keyof PrivacyData)[] = ["basic", "standard", "advanced"];
 const TIER_LABELS: Record<string, string> = {
   basic: "Basic (Safe)",
   standard: "Standard (Minor Trade-offs)",
@@ -20,7 +27,7 @@ const TIER_LABELS: Record<string, string> = {
 };
 
 export default function PrivacyPanel() {
-  const [tweaks, setTweaks] = useState<PrivacyTweak[]>([]);
+  const [data, setData] = useState<PrivacyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
@@ -32,8 +39,8 @@ export default function PrivacyPanel() {
   const [confirming, setConfirming] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<PrivacyTweak[]>("get_privacy_tweaks")
-      .then(setTweaks)
+    invoke<PrivacyData>("get_privacy_tweaks")
+      .then(setData)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -42,13 +49,13 @@ export default function PrivacyPanel() {
     setExpanded((s) => ({ ...s, [tier]: !s[tier] }));
 
   const handleApply = async (tweak: PrivacyTweak) => {
-    if (tweak.safety === "Red" && confirming !== tweak.id) {
+    if (tweak.tier === "red" && confirming !== tweak.id) {
       setConfirming(tweak.id);
       return;
     }
     setConfirming(null);
     try {
-      await invoke("apply_tweak", { id: tweak.id });
+      await invoke("apply_tweak", { module: "privacy", id: tweak.id });
       setApplied((s) => ({ ...s, [tweak.id]: true }));
     } catch (e) {
       console.error("Apply failed:", e);
@@ -57,11 +64,12 @@ export default function PrivacyPanel() {
 
   if (loading) return <div className="panel-loading">Loading privacy tweaks...</div>;
   if (error) return <div className="panel-error">Error: {error}</div>;
+  if (!data) return null;
 
   const grouped = TIER_ORDER.map((tier) => ({
     tier,
     label: TIER_LABELS[tier],
-    items: tweaks.filter((t) => t.tier === tier),
+    items: data[tier],
   }));
 
   return (
@@ -88,9 +96,9 @@ export default function PrivacyPanel() {
                   <div className="privacy-item-left">
                     <div className="privacy-item-header">
                       <span
-                        className={`tier-badge tier-${tweak.safety.toLowerCase()}`}
+                        className={`tier-badge tier-${tweak.tier.toLowerCase()}`}
                       >
-                        {tweak.safety}
+                        {tweak.tier}
                       </span>
                       <span className="privacy-item-name">{tweak.name}</span>
                     </div>

@@ -7,11 +7,9 @@ interface ChangeEntry {
   id: number;
   timestamp: string;
   module: string;
-  description: string;
-  operation: string;
-  detail: string;
+  name: string;
+  tier: string;
   status: string;
-  undone: boolean;
 }
 
 export default function HistoryPanel() {
@@ -30,10 +28,12 @@ export default function HistoryPanel() {
   const handleUndo = async (entry: ChangeEntry) => {
     setUndoing((s) => ({ ...s, [entry.id]: true }));
     try {
-      await invoke("undo_change", { id: entry.id });
-      setEntries((prev) =>
-        prev.map((e) => (e.id === entry.id ? { ...e, undone: true } : e))
-      );
+      const res = await invoke<{ success: boolean }>("undo_change", { id: entry.id });
+      if (res.success) {
+        setEntries((prev) =>
+          prev.map((e) => (e.id === entry.id ? { ...e, status: "undone" } : e))
+        );
+      }
     } catch (e) {
       console.error("Undo failed:", e);
     } finally {
@@ -58,44 +58,47 @@ export default function HistoryPanel() {
   return (
     <div className="history-panel">
       <div className="history-list">
-        {entries.map((entry) => (
-          <div
-            key={entry.id}
-            className={`history-item ${entry.undone ? "item-undone" : ""} ${entry.status === "failed" ? "item-failed" : ""}`}
-          >
-            <div className="history-timeline">
-              <span
-                className={`timeline-dot ${entry.undone ? "dot-undone" : entry.status === "failed" ? "dot-failed" : "dot-committed"}`}
-              />
-              <span className="timeline-line" />
-            </div>
-            <div className="history-content">
-              <div className="history-header">
-                <span className="history-desc">{entry.description}</span>
-                <span className={`history-status status-${entry.status}`}>
-                  {entry.undone ? "undone" : entry.status}
-                </span>
+        {entries.map((entry) => {
+          const isUndone = entry.status === "undone";
+          const isFailed = entry.status === "failed";
+          return (
+            <div
+              key={entry.id}
+              className={`history-item ${isUndone ? "item-undone" : ""} ${isFailed ? "item-failed" : ""}`}
+            >
+              <div className="history-timeline">
+                <span
+                  className={`timeline-dot ${isUndone ? "dot-undone" : isFailed ? "dot-failed" : "dot-committed"}`}
+                />
+                <span className="timeline-line" />
               </div>
-              <div className="history-meta">
-                <span className="history-module">{entry.module}</span>
-                <span className="history-op">{entry.operation}</span>
-                <span className="history-time">{timeAgo(entry.timestamp)}</span>
+              <div className="history-content">
+                <div className="history-header">
+                  <span className="history-desc">{entry.name}</span>
+                  <span className={`history-status status-${entry.status}`}>
+                    {entry.status}
+                  </span>
+                </div>
+                <div className="history-meta">
+                  <span className="history-module">{entry.module}</span>
+                  <span className={`tier-badge tier-${entry.tier}`}>{entry.tier}</span>
+                  <span className="history-time">{timeAgo(entry.timestamp)}</span>
+                </div>
               </div>
-              <div className="history-detail">{entry.detail}</div>
+              <div className="history-actions">
+                {!isUndone && entry.status === "committed" && (
+                  <button
+                    className="undo-btn"
+                    onClick={() => handleUndo(entry)}
+                    disabled={undoing[entry.id]}
+                  >
+                    {undoing[entry.id] ? "..." : "Undo"}
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="history-actions">
-              {!entry.undone && entry.status === "committed" && (
-                <button
-                  className="undo-btn"
-                  onClick={() => handleUndo(entry)}
-                  disabled={undoing[entry.id]}
-                >
-                  {undoing[entry.id] ? "..." : "Undo"}
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

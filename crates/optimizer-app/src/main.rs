@@ -41,6 +41,16 @@ fn main() {
             commands::undo_tweak,
             // History
             commands::get_change_history,
+            // Startup toggle
+            commands::toggle_startup,
+            // Service change
+            commands::apply_service_change,
+            // Cleanup
+            commands::run_cleanup,
+            // Power plan set
+            commands::set_power_plan,
+            // Undo
+            commands::undo_change,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
