@@ -1,0 +1,36 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/optimizer-core",
+    "crates/optimizer-helper",
+    "crates/optimizer-app",
+    "crates/mod-visual",
+    "crates/mod-cleanup",
+    "crates/mod-privacy",
+    "crates/mod-services",
+    "crates/mod-startup",
+    "crates/mod-power",
+    "crates/mod-network",
+    "crates/mod-health",
+    "crates/mod-eventlog",
+    "crates/mod-bsod",
+    "crates/mod-drivers",
+    "crates/mod-netdiag",
+    "crates/mod-updates",
+    "crates/mod-report",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Cove"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+uuid = { version = "1", features = ["v4", "serde"] }

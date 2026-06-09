@@ -1,0 +1,153 @@
+.health-panel .health-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.health-ring-wrap {
+  position: relative;
+  width: 140px;
+  height: 140px;
+}
+
+.health-ring {
+  width: 100%;
+  height: 100%;
+}
+
+.health-score {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  font-size: 38px;
+  font-weight: 700;
+}
+
+.health-score-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, 60%);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.rescan-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 8px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rescan-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.findings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.finding-item {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  align-items: flex-start;
+}
+
+.severity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 5px;
+}
+
+.severity-ok {
+  background: var(--green);
+}
+
+.severity-info {
+  background: var(--accent);
+}
+
+.severity-warning {
+  background: var(--yellow);
+}
+
+.severity-critical {
+  background: var(--red);
+}
+
+.finding-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.finding-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.finding-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.severity-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sev-ok {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.sev-info {
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--accent);
+}
+
+.sev-warning {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+}
+
+.sev-critical {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.finding-detail {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 2px;
+}
+
+.finding-remediation {
+  font-size: 11px;
+  color: var(--yellow);
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--yellow-bg);
+  border-radius: 4px;
+}

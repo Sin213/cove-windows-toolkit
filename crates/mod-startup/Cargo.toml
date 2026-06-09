@@ -1,0 +1,9 @@
+[package]
+name = "mod-startup"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+optimizer-core = { path = "../optimizer-core" }
+serde.workspace = true
+serde_json.workspace = true

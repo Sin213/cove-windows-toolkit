@@ -1,0 +1,164 @@
+.updates-panel .update-status-row {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.status-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.status-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-value {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.reboot-notice {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--red);
+  padding: 4px 10px;
+  background: var(--red-bg);
+  border-radius: 4px;
+}
+
+.updates-section {
+  margin-bottom: 20px;
+}
+
+.updates-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.up-to-date {
+  padding: 20px;
+  text-align: center;
+  color: var(--green);
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--green-bg);
+  border-radius: 8px;
+}
+
+.updates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.update-item {
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.update-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.update-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.update-severity {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.update-severity.sev-critical {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.update-severity.sev-important {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+}
+
+.update-severity.sev-optional {
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--accent);
+}
+
+.update-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.update-kb {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.cbs-card {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.cbs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.cbs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cbs-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.cbs-value {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.cbs-healthy {
+  color: var(--green);
+}
+
+.cbs-unhealthy {
+  color: var(--red);
+}

@@ -1,0 +1,180 @@
+.power-panel .battery-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.battery-shell {
+  width: 60px;
+  height: 28px;
+  border: 2px solid var(--text-secondary);
+  border-radius: 4px;
+  padding: 2px;
+  position: relative;
+}
+
+.battery-shell::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  top: 6px;
+  width: 4px;
+  height: 12px;
+  background: var(--text-secondary);
+  border-radius: 0 2px 2px 0;
+}
+
+.battery-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+.battery-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.battery-pct {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.battery-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.power-section {
+  margin-bottom: 20px;
+}
+
+.power-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.plan-card {
+  padding: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-card:hover {
+  border-color: var(--text-muted);
+}
+
+.plan-card.active {
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.06);
+}
+
+.plan-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.plan-active-badge {
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+}
+
+.setting-row + .setting-row {
+  border-top: 1px solid var(--border);
+}
+
+.setting-label {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.setting-values {
+  display: flex;
+  gap: 16px;
+}
+
+.setting-val {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.setting-val-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+.hibernate-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.hibernate-label {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.hibernate-status {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.status-on {
+  color: var(--green);
+}
+
+.status-off {
+  color: var(--text-muted);
+}

@@ -1,0 +1,31 @@
+[package]
+name = "optimizer-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+optimizer-core = { path = "../optimizer-core" }
+mod-visual = { path = "../mod-visual" }
+mod-health = { path = "../mod-health" }
+mod-cleanup = { path = "../mod-cleanup" }
+mod-privacy = { path = "../mod-privacy" }
+mod-services = { path = "../mod-services" }
+mod-startup = { path = "../mod-startup" }
+mod-power = { path = "../mod-power" }
+mod-network = { path = "../mod-network" }
+mod-eventlog = { path = "../mod-eventlog" }
+mod-bsod = { path = "../mod-bsod" }
+mod-drivers = { path = "../mod-drivers" }
+mod-netdiag = { path = "../mod-netdiag" }
+mod-updates = { path = "../mod-updates" }
+mod-report = { path = "../mod-report" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+hostname = "0.4"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

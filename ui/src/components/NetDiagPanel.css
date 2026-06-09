@@ -1,0 +1,184 @@
+.netdiag-panel .adapter-card {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.adapter-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.adapter-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.adapter-type {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 1px 6px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.adapter-connected {
+  font-size: 11px;
+  color: var(--green);
+  font-weight: 600;
+  margin-left: auto;
+}
+
+.adapter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.adapter-field,
+.wifi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.field-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.field-value {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.field-value.mono {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 12px;
+}
+
+.wifi-card {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.wifi-card h3,
+.tests-section h3,
+.other-adapters h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.wifi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.tests-section {
+  margin-bottom: 16px;
+}
+
+.tests-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.test-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.test-indicator {
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.indicator-pass {
+  color: var(--green);
+}
+
+.indicator-warn {
+  color: var(--yellow);
+}
+
+.indicator-fail {
+  color: var(--red);
+}
+
+.test-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.test-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  display: block;
+}
+
+.test-detail {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.test-latency {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  flex-shrink: 0;
+}
+
+.other-adapters {
+  margin-top: 8px;
+}
+
+.adapter-row-small {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.adapter-name-small {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.adapter-type-small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.adapter-status-small {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}

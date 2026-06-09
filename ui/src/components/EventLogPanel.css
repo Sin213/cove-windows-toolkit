@@ -1,0 +1,171 @@
+.eventlog-panel .log-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.log-tab {
+  padding: 8px 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.log-tab:hover {
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.log-tab.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.06);
+}
+
+.log-summary-bar {
+  display: flex;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.log-stat {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.log-stat.total {
+  color: var(--text-secondary);
+}
+
+.log-stat.critical {
+  color: var(--red);
+}
+
+.log-stat.error {
+  color: var(--orange);
+}
+
+.log-stat.warning {
+  color: var(--yellow);
+}
+
+.events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.event-item {
+  display: flex;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.event-level-bar {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+.level-critical {
+  background: var(--red);
+}
+
+.level-error {
+  background: var(--orange);
+}
+
+.level-warning {
+  background: var(--yellow);
+}
+
+.level-information,
+.level-info {
+  background: var(--accent);
+}
+
+.event-content {
+  flex: 1;
+  padding: 10px 14px;
+  min-width: 0;
+}
+
+.event-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.event-source {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.event-level {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.level-text-critical {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.level-text-error {
+  background: var(--orange-bg);
+  color: var(--orange);
+}
+
+.level-text-warning {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+}
+
+.level-text-information,
+.level-text-info {
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--accent);
+}
+
+.event-id {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.event-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--yellow);
+  padding: 0 4px;
+  background: var(--yellow-bg);
+  border-radius: 3px;
+}
+
+.event-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.event-message {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
