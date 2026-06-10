@@ -23,7 +23,7 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1c1e26; }}
 </head>
 <body>
 <h1>{title}</h1>
-<div class="meta">Generated on {{TIMESTAMP}} by Cove Windows Optimizer</div>
+<div class="meta">Generated on {{TIMESTAMP}} by Cove Windows Toolkit</div>
 "#);
 
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -40,7 +40,7 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1c1e26; }}
         ));
     }
 
-    html.push_str("<div class=\"footer\">Cove Windows Optimizer &mdash; Confidential</div>\n</body></html>");
+    html.push_str("<div class=\"footer\">Cove Windows Toolkit &mdash; Confidential</div>\n</body></html>");
     html
 }
 

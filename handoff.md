@@ -2,7 +2,7 @@
 
 ## Context
 
-Cove Windows Optimizer - Tauri v2 (Rust backend + React frontend).
+Cove Windows Toolkit - Tauri v2 (Rust backend + React frontend).
 Workspace with 21 module crates under `crates/`. Most modules are stubs returning hardcoded JSON from `crates/optimizer-app/src/commands/mod.rs`. The undo system in `optimizer-core` (operation.rs, undo.rs) has real infrastructure with SQLite-backed logging.
 
 The UI uses a `View` type in `App.tsx` to route between panels. Sidebar + Dashboard provide navigation. The `invoke()` wrapper in `ui/src/lib/tauri.ts` falls back to mock data when not running in Tauri.

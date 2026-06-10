@@ -71,8 +71,12 @@ jobs:
           $conf.version = $env:VERSION
           $conf | ConvertTo-Json -Depth 10 | Set-Content crates/optimizer-app/tauri.conf.json
 
+      - name: Build frontend
+        run: pnpm --prefix ui build
+
       - name: Build Tauri app
         shell: pwsh
+        working-directory: crates/optimizer-app
         run: cargo tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
@@ -81,18 +85,18 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          $bundlePath = "crates/optimizer-app/target/release/bundle"
+          $bundlePath = "target/release/bundle"
 
           # NSIS installer
-          $nsis = Get-ChildItem -Path "$bundlePath/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          $nsis = Get-ChildItem -Path "$bundlePath/nsis" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($nsis) {
-            Copy-Item $nsis.FullName "release/Cove-Windows-Optimizer-$env:VERSION-Setup.exe"
+            Copy-Item $nsis.FullName "release/Cove-Windows-Toolkit-$env:VERSION-Setup.exe"
           }
 
-          # MSI portable - just the raw exe
-          $exe = "crates/optimizer-app/target/release/optimizer-app.exe"
+          # Portable exe
+          $exe = "target/release/optimizer-app.exe"
           if (Test-Path $exe) {
-            Copy-Item $exe "release/Cove-Windows-Optimizer-$env:VERSION-Portable.exe"
+            Copy-Item $exe "release/Cove-Windows-Toolkit-$env:VERSION-Portable.exe"
           }
 
           Get-ChildItem release/
@@ -137,14 +141,14 @@ jobs:
           files: release/*
           fail_on_unmatched_files: true
           body: |
-            ## Cove Windows Optimizer v${{ env.VERSION }}
+            ## Cove Windows Toolkit v${{ env.VERSION }}
 
             ### Downloads
 
             | File | Type |
             |------|------|
-            | `Cove-Windows-Optimizer-${{ env.VERSION }}-Setup.exe` | Windows Installer |
-            | `Cove-Windows-Optimizer-${{ env.VERSION }}-Portable.exe` | Portable (no install) |
+            | `Cove-Windows-Toolkit-${{ env.VERSION }}-Setup.exe` | Windows Installer |
+            | `Cove-Windows-Toolkit-${{ env.VERSION }}-Portable.exe` | Portable (no install) |
 
             Verify downloads with `checksums-sha256.txt`:
             ```

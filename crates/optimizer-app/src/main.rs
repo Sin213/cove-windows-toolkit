@@ -20,7 +20,7 @@ fn init_logging() {
         .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
         .init();
 
-    tracing::info!("Cove Windows Optimizer starting -log directory: {}", log_dir.display());
+    tracing::info!("Cove Windows Toolkit starting -log directory: {}", log_dir.display());
 }
 
 fn main() {

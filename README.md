@@ -1,4 +1,4 @@
-# Cove Windows Optimizer
+# Cove Windows Toolkit
 
 A desktop toolkit built for tech support teams to diagnose and optimize Windows machines. Built with Tauri v2 (Rust backend + React frontend).
 
@@ -78,7 +78,7 @@ Output:
 ## Project Structure
 
 ```
-cove-windows-optimizer/
+cove-windows-toolkit/
   crates/
     optimizer-core/     # Shared types (SafetyTier, Severity, Finding)
     optimizer-app/      # Tauri app, commands, main.rs
@@ -124,8 +124,8 @@ git push origin v0.1.0
 Or run manually from the Actions tab with a version number.
 
 Each release includes:
-- `Cove-Windows-Optimizer-{version}-Setup.exe` - NSIS installer
-- `Cove-Windows-Optimizer-{version}-Portable.exe` - Single-file portable
+- `Cove-Windows-Toolkit-{version}-Setup.exe` - NSIS installer
+- `Cove-Windows-Toolkit-{version}-Portable.exe` - Single-file portable
 - `checksums-sha256.txt` - SHA256 verification
 
 ## Tech Stack

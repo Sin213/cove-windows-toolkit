@@ -98,7 +98,7 @@ pub fn list_restore_points() -> Vec<RestorePoint> {
         },
         RestorePoint {
             sequence_number: 41,
-            description: "Installed Cove Windows Optimizer".to_string(),
+            description: "Installed Cove Windows Toolkit".to_string(),
             restore_point_type: "Application Install".to_string(),
             creation_time: "2026-06-07T14:15:00-05:00".to_string(),
         },

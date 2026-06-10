@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri-conf-schema/main/schema.json",
-  "productName": "Cove Windows Optimizer",
+  "productName": "Cove Windows Toolkit",
   "version": "0.1.0",
   "identifier": "com.cove.optimizer",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Cove Windows Optimizer",
+        "title": "Cove Windows Toolkit",
         "width": 1100,
         "height": 750,
         "resizable": true,

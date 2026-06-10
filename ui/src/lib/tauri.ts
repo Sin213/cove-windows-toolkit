@@ -754,7 +754,7 @@ const MOCKS: Record<string, unknown> = {
     },
     {
       sequence_number: 41,
-      description: "Installed Cove Windows Optimizer",
+      description: "Installed Cove Windows Toolkit",
       restore_point_type: "Application Install",
       creation_time: "2026-06-07T14:15:00-05:00",
     },

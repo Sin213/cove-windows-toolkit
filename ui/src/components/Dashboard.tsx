@@ -347,7 +347,7 @@ export default function Dashboard({ onNavigate }: Props) {
     <div className="dashboard">
       <div className="dashboard-header">
         <div className="header-text">
-          <h1>Cove Windows Optimizer</h1>
+          <h1>Cove Windows Toolkit</h1>
           <p className="subtitle">
             Tech support toolkit - optimize and diagnose safely
           </p>
