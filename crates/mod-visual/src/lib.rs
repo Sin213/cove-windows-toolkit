@@ -53,11 +53,42 @@ pub fn get_tweaks() -> Vec<VisualTweak> {
 }
 
 #[cfg(target_os = "windows")]
-fn read_registry_value(_path: &str, _name: &str) -> Option<String> {
-    None // TODO: implement with winreg
+fn read_registry_value(path: &str, name: &str) -> Option<String> {
+    use std::process::Command;
+    let full_path = format!("HKCU\\{}", path);
+    let ps = format!(
+        "try {{ $v = (Get-ItemProperty -Path 'Registry::{}' -Name '{}' -ErrorAction Stop).'{}'; Write-Output $v }} catch {{ Write-Output 'NOTFOUND' }}",
+        full_path, name, name
+    );
+    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+        let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        if val != "NOTFOUND" && !val.is_empty() { return Some(val); }
+    }
+    None
 }
 
 #[cfg(not(target_os = "windows"))]
 fn read_registry_value(_path: &str, _name: &str) -> Option<String> {
-    Some("1".to_string()) // Mock: pretend everything is at default (enabled)
+    Some("1".to_string())
+}
+
+#[cfg(target_os = "windows")]
+pub fn apply_tweak(path: &str, name: &str, value: &str) -> Result<String, String> {
+    use std::process::Command;
+    let ps = format!(
+        "try {{ Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force; Write-Output 'OK' }}",
+        path, name, value, path, path, name, value
+    );
+    let o = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output()
+        .map_err(|e| e.to_string())?;
+    if String::from_utf8_lossy(&o.stdout).trim() == "OK" {
+        Ok(format!("Applied: {} = {}", name, value))
+    } else {
+        Err(String::from_utf8_lossy(&o.stderr).trim().to_string())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn apply_tweak(_path: &str, _name: &str, _value: &str) -> Result<String, String> {
+    Ok("[stub] Applied".into())
 }

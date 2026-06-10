@@ -7,3 +7,4 @@ edition.workspace = true
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true
 serde_json.workspace = true
+chrono.workspace = true
