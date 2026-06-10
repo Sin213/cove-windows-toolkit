@@ -162,3 +162,78 @@
 .cbs-unhealthy {
   color: var(--red);
 }
+
+/* WU Actions */
+.wu-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.wu-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.wu-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.wu-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.wu-btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.wu-btn-warning {
+  background: var(--yellow);
+  color: #000;
+}
+
+.wu-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0 8px;
+  line-height: 1.4;
+}
+
+.wu-feedback {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.wu-feedback-success {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.wu-feedback-error {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.wu-output {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.4;
+}

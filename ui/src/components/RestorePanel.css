@@ -1,0 +1,279 @@
+.restore-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Status banner */
+.restore-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.status-enabled {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+
+.status-disabled {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+}
+
+.status-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.status-text {
+  flex: 1;
+}
+
+.enable-btn {
+  background: var(--yellow);
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.enable-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.enable-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Create section */
+.restore-create-section,
+.restore-launch-section,
+.restore-points-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.restore-create-section h3,
+.restore-launch-section h3,
+.restore-points-section h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.section-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
+
+.create-row {
+  display: flex;
+  gap: 10px;
+}
+
+.restore-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.restore-input:focus {
+  border-color: var(--accent);
+}
+
+.restore-input:disabled {
+  opacity: 0.5;
+}
+
+.create-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.create-btn:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.create-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Feedback message */
+.feedback {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.feedback-success {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.feedback-error {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+/* Launch restore */
+.launch-btn {
+  background: var(--bg-primary);
+  border: 1px solid var(--yellow);
+  color: var(--yellow);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.launch-btn:hover:not(:disabled) {
+  background: var(--yellow-bg);
+}
+
+.launch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Points list */
+.points-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.points-header h3 {
+  margin: 0 !important;
+}
+
+.refresh-btn {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.refresh-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.no-points {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 16px 0;
+  text-align: center;
+}
+
+.points-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.point-item {
+  display: flex;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  align-items: flex-start;
+}
+
+.point-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.point-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.point-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.point-desc {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.point-type {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.point-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.point-date {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.point-seq {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.6;
+}

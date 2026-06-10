@@ -53,8 +53,7 @@ pub fn get_tweaks() -> Vec<VisualTweak> {
 }
 
 #[cfg(target_os = "windows")]
-fn read_registry_value(path: &str, name: &str) -> Option<String> {
-    // Windows implementation will use winreg crate
+fn read_registry_value(_path: &str, _name: &str) -> Option<String> {
     None // TODO: implement with winreg
 }
 

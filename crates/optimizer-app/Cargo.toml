@@ -19,6 +19,12 @@ mod-drivers = { path = "../mod-drivers" }
 mod-netdiag = { path = "../mod-netdiag" }
 mod-updates = { path = "../mod-updates" }
 mod-report = { path = "../mod-report" }
+mod-restore = { path = "../mod-restore" }
+mod-sfc = { path = "../mod-sfc" }
+mod-sysinfo = { path = "../mod-sysinfo" }
+mod-temps = { path = "../mod-temps" }
+mod-uninstall = { path = "../mod-uninstall" }
+mod-bloatware = { path = "../mod-bloatware" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

@@ -18,6 +18,12 @@ members = [
     "crates/mod-netdiag",
     "crates/mod-updates",
     "crates/mod-report",
+    "crates/mod-restore",
+    "crates/mod-sfc",
+    "crates/mod-sysinfo",
+    "crates/mod-temps",
+    "crates/mod-uninstall",
+    "crates/mod-bloatware",
 ]
 
 [workspace.package]

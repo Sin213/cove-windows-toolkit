@@ -143,6 +143,44 @@
   color: var(--text-secondary);
 }
 
+.timeout-select {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+  min-width: 120px;
+}
+
+.timeout-select:hover {
+  border-color: var(--accent);
+}
+
+.timeout-select:focus {
+  border-color: var(--accent);
+}
+
+.power-feedback {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.power-feedback.feedback-success {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.power-feedback.feedback-error {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
 .setting-val-label {
   font-size: 10px;
   font-weight: 600;

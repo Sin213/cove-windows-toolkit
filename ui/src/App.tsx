@@ -12,13 +12,17 @@ export type View =
   | "startup"
   | "cleanup"
   | "power"
-  | "network"
   | "health"
   | "eventlog"
   | "bsod"
   | "drivers"
   | "netdiag"
   | "updates"
+  | "uninstall"
+  | "sysinfo"
+  | "temps"
+  | "sfc"
+  | "restore"
   | "history";
 
 function App() {

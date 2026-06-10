@@ -1808,6 +1808,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-bloatware"
+version = "0.1.0"
+dependencies = [
+ "optimizer-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mod-bsod"
 version = "0.1.0"
 dependencies = [
@@ -1898,6 +1907,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-restore"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "optimizer-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mod-services"
 version = "0.1.0"
 dependencies = [
@@ -1907,7 +1926,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-sfc"
+version = "0.1.0"
+dependencies = [
+ "optimizer-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mod-startup"
+version = "0.1.0"
+dependencies = [
+ "optimizer-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mod-sysinfo"
+version = "0.1.0"
+dependencies = [
+ "optimizer-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mod-temps"
+version = "0.1.0"
+dependencies = [
+ "optimizer-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mod-uninstall"
 version = "0.1.0"
 dependencies = [
  "optimizer-core",
@@ -2227,6 +2282,7 @@ name = "optimizer-app"
 version = "0.1.0"
 dependencies = [
  "hostname",
+ "mod-bloatware",
  "mod-bsod",
  "mod-cleanup",
  "mod-drivers",
@@ -2237,8 +2293,13 @@ dependencies = [
  "mod-power",
  "mod-privacy",
  "mod-report",
+ "mod-restore",
  "mod-services",
+ "mod-sfc",
  "mod-startup",
+ "mod-sysinfo",
+ "mod-temps",
+ "mod-uninstall",
  "mod-updates",
  "mod-visual",
  "optimizer-core",

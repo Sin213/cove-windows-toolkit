@@ -13,6 +13,11 @@ import BsodPanel from "./BsodPanel";
 import DriversPanel from "./DriversPanel";
 import NetDiagPanel from "./NetDiagPanel";
 import UpdatesPanel from "./UpdatesPanel";
+import UninstallPanel from "./UninstallPanel";
+import SysInfoPanel from "./SysInfoPanel";
+import TempsPanel from "./TempsPanel";
+import SfcPanel from "./SfcPanel";
+import RestorePanel from "./RestorePanel";
 import HistoryPanel from "./HistoryPanel";
 
 interface Props {
@@ -77,6 +82,31 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     description:
       "Pending updates, CBS log errors, component store health.",
   },
+  uninstall: {
+    title: "Deep Uninstaller",
+    description:
+      "Completely remove programs and all leftover files, registry keys, services, and scheduled tasks.",
+  },
+  sysinfo: {
+    title: "System Information",
+    description:
+      "Detailed hardware and software specs -CPU, RAM, motherboard, GPU, storage, audio, and network.",
+  },
+  temps: {
+    title: "Temperatures",
+    description:
+      "Monitor CPU, GPU, and disk temperatures in real time.",
+  },
+  sfc: {
+    title: "DISM / SFC Repair",
+    description:
+      "Scan and repair Windows system file corruption using DISM and SFC.",
+  },
+  restore: {
+    title: "System Restore",
+    description:
+      "Create restore points before optimizing and roll back Windows if anything goes wrong.",
+  },
   history: {
     title: "Change History",
     description: "View and undo all changes made by the optimizer.",
@@ -96,6 +126,11 @@ const PANELS: Record<string, React.ComponentType> = {
   drivers: DriversPanel,
   netdiag: NetDiagPanel,
   updates: UpdatesPanel,
+  uninstall: UninstallPanel,
+  sysinfo: SysInfoPanel,
+  temps: TempsPanel,
+  sfc: SfcPanel,
+  restore: RestorePanel,
   history: HistoryPanel,
 };
 

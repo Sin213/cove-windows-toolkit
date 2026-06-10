@@ -847,13 +847,141 @@ const MOCKS: Record<string, unknown> = {
     },
   ],
 
+  // ── System Restore ────────────────────────────────────────────────────
+  get_restore_status: {
+    enabled: true,
+    message: "System Protection is enabled.",
+  },
+  get_restore_points: [
+    {
+      sequence_number: 42,
+      description: "Windows Update",
+      restore_point_type: "Windows Update",
+      creation_time: "2026-06-08T10:30:00-05:00",
+    },
+    {
+      sequence_number: 41,
+      description: "Installed Cove Windows Optimizer",
+      restore_point_type: "Application Install",
+      creation_time: "2026-06-07T14:15:00-05:00",
+    },
+    {
+      sequence_number: 40,
+      description: "System Checkpoint",
+      restore_point_type: "System Checkpoint",
+      creation_time: "2026-06-05T03:00:00-05:00",
+    },
+  ],
+  create_restore_point: { success: true, message: "Restore point created successfully." },
+  enable_system_protection: { success: true, message: "System Protection enabled on the system drive." },
+  launch_system_restore: { success: true, message: "System Restore wizard launched." },
+
+  // ── Uninstaller ──────────────────────────────────────────────────────
+  get_installed_programs: [
+    { name: "SignalRGB", publisher: "WhirlwindFX", version: "2.2.40", install_date: "2026-05-15", size_bytes: 524288000, uninstall_string: "\"C:\\Program Files\\SignalRGB\\unins000.exe\"", quiet_uninstall_string: "\"C:\\Program Files\\SignalRGB\\unins000.exe\" /VERYSILENT", install_location: "C:\\Program Files\\SignalRGB", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SignalRGB_is1", is_system: false },
+    { name: "Google Chrome", publisher: "Google LLC", version: "125.0.6422.142", install_date: "2026-06-01", size_bytes: 268435456, uninstall_string: "", quiet_uninstall_string: "", install_location: "C:\\Program Files\\Google\\Chrome", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Google Chrome", is_system: false },
+    { name: "Discord", publisher: "Discord Inc.", version: "1.0.9035", install_date: "2026-05-20", size_bytes: 314572800, uninstall_string: "\"C:\\Users\\User\\AppData\\Local\\Discord\\Update.exe\" --uninstall", quiet_uninstall_string: "", install_location: "", registry_key: "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Discord", is_system: false },
+    { name: "Steam", publisher: "Valve Corporation", version: "2.10.91.91", install_date: "2026-04-10", size_bytes: 734003200, uninstall_string: "\"C:\\Program Files (x86)\\Steam\\uninstall.exe\"", quiet_uninstall_string: "", install_location: "C:\\Program Files (x86)\\Steam", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam", is_system: false },
+    { name: "7-Zip 24.08 (x64)", publisher: "Igor Pavlov", version: "24.08", install_date: "2026-03-20", size_bytes: 5242880, uninstall_string: "\"C:\\Program Files\\7-Zip\\Uninstall.exe\"", quiet_uninstall_string: "", install_location: "C:\\Program Files\\7-Zip", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\7-Zip", is_system: false },
+    { name: "Microsoft Visual C++ 2015-2022 Redistributable (x64)", publisher: "Microsoft Corporation", version: "14.38.33135", install_date: "2026-01-15", size_bytes: 25165824, uninstall_string: "", quiet_uninstall_string: "", install_location: "", registry_key: "", is_system: true },
+  ],
+  uninstall_program: { success: true, message: "Uninstall completed.", output: "" },
+  scan_leftovers: {
+    leftovers: [
+      { path: "C:\\ProgramData\\SignalRGB", category: "Folder", size_bytes: 15728640 },
+      { path: "C:\\Users\\User\\AppData\\Local\\SignalRGB", category: "Folder", size_bytes: 8388608 },
+      { path: "C:\\Users\\User\\AppData\\Roaming\\SignalRGB", category: "Folder", size_bytes: 2097152 },
+      { path: "HKCU\\Software\\SignalRGB", category: "Registry", size_bytes: 0 },
+      { path: "HKLM\\SOFTWARE\\WhirlwindFX", category: "Registry", size_bytes: 0 },
+      { path: "Task: \\SignalRGB\\UpdateCheck", category: "Scheduled Task", size_bytes: 0 },
+    ],
+    total_size_bytes: 26214400,
+  },
+  remove_leftovers: {
+    results: [
+      { path: "C:\\ProgramData\\SignalRGB", success: true, message: "Removed" },
+      { path: "C:\\Users\\User\\AppData\\Local\\SignalRGB", success: true, message: "Removed" },
+      { path: "C:\\Users\\User\\AppData\\Roaming\\SignalRGB", success: true, message: "Removed" },
+      { path: "HKCU\\Software\\SignalRGB", success: true, message: "Removed" },
+      { path: "HKLM\\SOFTWARE\\WhirlwindFX", success: true, message: "Removed" },
+      { path: "Task: \\SignalRGB\\UpdateCheck", success: true, message: "Removed" },
+    ],
+  },
+
+  // ── Full System Info ──────────────────────────────────────────────────
+  get_full_sysinfo: {
+    os: { name: "Windows 11 Pro", version: "23H2", build: "22631.2506", arch: "64-bit", install_date: "2024-01-15", last_boot: "2026-06-09T08:30:00" },
+    cpu: { name: "Intel Core i7-12700K", cores: 12, threads: 20, base_clock_mhz: 3600, max_clock_mhz: 5000, architecture: "x64", temperature_c: 52 },
+    ram: { total_bytes: 34359738368, available_bytes: 18000000000, speed_mhz: 3200, slots_used: 2, slots_total: 4, ram_type: "DDR4", modules: [
+      { capacity_bytes: 17179869184, speed_mhz: 3200, manufacturer: "Corsair", part_number: "CMK32GX4M2E3200C16", slot: "DIMM 1" },
+      { capacity_bytes: 17179869184, speed_mhz: 3200, manufacturer: "Corsair", part_number: "CMK32GX4M2E3200C16", slot: "DIMM 3" },
+    ]},
+    motherboard: { manufacturer: "ASUS", product: "ROG STRIX Z690-A", serial: "XXXXXXXXXXXX", bios_vendor: "American Megatrends Inc.", bios_version: "2103", bios_date: "2025-08-15" },
+    graphics: [{ name: "NVIDIA GeForce RTX 3070", driver_version: "537.70", vram_bytes: 8589934592, status: "OK" }],
+    monitors: [{ name: "Generic PnP Monitor", resolution: "2560x1440@165Hz" }],
+    storage: [{ model: "Samsung SSD 980 PRO 1TB", interface_type: "NVMe", media_type: "SSD", size_bytes: 1000204886016, status: "OK", partitions: [
+      { letter: "C:", label: "Windows", size_bytes: 500000000000, free_bytes: 185000000000, filesystem: "NTFS" },
+      { letter: "D:", label: "Data", size_bytes: 499000000000, free_bytes: 320000000000, filesystem: "NTFS" },
+    ]}],
+    audio: [{ name: "Realtek High Definition Audio", status: "OK" }],
+    network: [
+      { name: "Intel Wi-Fi 6 AX200", adapter_type: "Wi-Fi", mac: "A4:BB:6D:0C:3E:91", speed: "866 Mbps", ip: "192.168.1.105", status: "Connected" },
+      { name: "Intel I225-V", adapter_type: "Ethernet", mac: "9C:2F:9D:B1:44:E2", speed: "2.5 Gbps", ip: "", status: "Disconnected" },
+    ],
+  },
+
+  // ── Temperatures ─────────────────────────────────────────────────────
+  get_temperatures: {
+    readings: [
+      { sensor: "CPU Package", category: "CPU", temperature_c: 52, max_c: 100, critical_c: 105 },
+      { sensor: "CPU Core #0", category: "CPU", temperature_c: 48, max_c: 100, critical_c: 105 },
+      { sensor: "CPU Core #1", category: "CPU", temperature_c: 51, max_c: 100, critical_c: 105 },
+      { sensor: "CPU Core #2", category: "CPU", temperature_c: 49, max_c: 100, critical_c: 105 },
+      { sensor: "CPU Core #3", category: "CPU", temperature_c: 53, max_c: 100, critical_c: 105 },
+      { sensor: "GPU Core", category: "GPU", temperature_c: 45, max_c: 93, critical_c: 100 },
+      { sensor: "GPU Hot Spot", category: "GPU", temperature_c: 58, max_c: 93, critical_c: 100 },
+      { sensor: "Samsung SSD 980 PRO", category: "Disk", temperature_c: 38, max_c: 70, critical_c: 75 },
+      { sensor: "WD Blue SN570", category: "Disk", temperature_c: 35, max_c: 70, critical_c: 75 },
+    ],
+    warnings: [],
+  },
+
+  // ── DISM / SFC ───────────────────────────────────────────────────────
+  check_admin_status: {
+    is_admin: true,
+    message: "Running with administrator privileges.",
+  },
+  run_dism_scan: {
+    tool: "DISM",
+    success: true,
+    exit_code: 0,
+    output: "Deployment Image Servicing and Management tool\nVersion: 10.0.22621.1\n\nImage Version: 10.0.22631.2506\n\n[==========================100.0%==========================]\nThe restore operation completed successfully.\nNo component store corruption detected.\nThe operation completed successfully.\n",
+    summary: "Component store is healthy. No repairs needed.",
+  },
+  run_sfc_scan: {
+    tool: "SFC",
+    success: true,
+    exit_code: 0,
+    output: "Beginning system scan. This process will take some time.\n\nBeginning verification phase of system scan.\nVerification 100% complete.\n\nWindows Resource Protection did not find any integrity violations.\n",
+    summary: "No integrity violations found.",
+  },
+
+  // ── Windows Update actions ───────────────────────────────────────────
+  reset_windows_update: { success: true, message: "Windows Update components reset successfully. A restart is recommended.", output: "Stopped wuauserv\nStopped bits\nStopped cryptSvc\nStopped msiserver\nRenamed SoftwareDistribution\nRenamed catroot2\nRe-registered WU DLLs\nReset Winsock\nStarted wuauserv\nStarted bits\nStarted cryptSvc\nStarted msiserver" },
+  trigger_update_check: { success: true, message: "Windows Update check triggered. The Settings app should open." },
+
+  // ── Network tools ────────────────────────────────────────────────────
+  set_dns: { success: true, message: "DNS updated successfully." },
+  run_network_command: { success: true, message: "Command completed.", output: "Successfully flushed the DNS Resolver Cache." },
+
   // ── Apply / Undo commands (return success) ───────────────────────────
   apply_tweak: { success: true, message: "Applied" },
   undo_tweak: { success: true, message: "Reverted" },
   apply_batch: { success: true, applied: 6 },
   toggle_startup: { success: true, message: "Toggled" },
   run_cleanup: { success: true, message: "Cleaned", cleaned: 0 },
-  set_power_plan: { success: true, message: "Plan set" },
+  set_power_plan: { success: true, message: "Power plan changed." },
+  set_power_timeout: { success: true, message: "Timeout updated." },
   apply_service_change: { success: true, message: "Applied" },
   undo_change: { success: true, message: "Undone" },
 };

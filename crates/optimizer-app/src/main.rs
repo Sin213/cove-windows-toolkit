@@ -30,10 +30,14 @@ fn main() {
             commands::get_bsod_dumps,
             // Drivers
             commands::get_driver_audit,
-            // Network diagnostics
+            // Network diagnostics & tools
             commands::get_network_diagnostics,
+            commands::set_dns,
+            commands::run_network_command,
             // Windows Update
             commands::get_update_status,
+            commands::reset_windows_update,
+            commands::trigger_update_check,
             // Report
             commands::generate_report,
             // Generic apply/undo
@@ -47,8 +51,31 @@ fn main() {
             commands::apply_service_change,
             // Cleanup
             commands::run_cleanup,
-            // Power plan set
+            // Power plan
             commands::set_power_plan,
+            commands::set_power_timeout,
+            // System Restore
+            commands::get_restore_status,
+            commands::get_restore_points,
+            commands::create_restore_point,
+            commands::enable_system_protection,
+            commands::launch_system_restore,
+            // Bloatware
+            commands::get_bloatware,
+            commands::remove_bloatware,
+            // Uninstaller
+            commands::get_installed_programs,
+            commands::uninstall_program,
+            commands::scan_leftovers,
+            commands::remove_leftovers,
+            // System info (full)
+            commands::get_full_sysinfo,
+            // Temperatures
+            commands::get_temperatures,
+            // DISM / SFC
+            commands::check_admin_status,
+            commands::run_dism_scan,
+            commands::run_sfc_scan,
             // Undo
             commands::undo_change,
         ])

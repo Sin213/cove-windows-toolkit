@@ -21,13 +21,17 @@ const NAV_ITEMS: NavItem[] = [
   { id: "startup", label: "Startup", icon: "▶", section: "optimize" },
   { id: "cleanup", label: "Disk Cleanup", icon: "⊘", section: "optimize" },
   { id: "power", label: "Power Plan", icon: "⚡", section: "optimize" },
-  { id: "network", label: "Network", icon: "⇄", section: "optimize" },
   { id: "health", label: "System Health", icon: "♥", section: "diagnose" },
   { id: "eventlog", label: "Event Logs", icon: "☰", section: "diagnose" },
   { id: "bsod", label: "BSOD Analyzer", icon: "⬛", section: "diagnose" },
   { id: "drivers", label: "Drivers", icon: "⊞", section: "diagnose" },
   { id: "netdiag", label: "Net Diagnostics", icon: "⇆", section: "diagnose" },
   { id: "updates", label: "Windows Update", icon: "↻", section: "diagnose" },
+  { id: "uninstall", label: "Uninstaller", icon: "✖", section: "system" },
+  { id: "sysinfo", label: "System Info", icon: "ℹ", section: "system" },
+  { id: "temps", label: "Temperatures", icon: "🌡", section: "system" },
+  { id: "sfc", label: "DISM / SFC", icon: "⛏", section: "system" },
+  { id: "restore", label: "System Restore", icon: "🛡", section: "system" },
   { id: "history", label: "Change History", icon: "↺", section: "system" },
 ];
 

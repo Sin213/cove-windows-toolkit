@@ -182,3 +182,193 @@
   color: var(--text-muted);
   margin-left: auto;
 }
+
+/* Network tools section */
+.net-tools-section {
+  margin-bottom: 16px;
+}
+
+.net-tools-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+/* DNS grid */
+.dns-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.dns-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+  position: relative;
+}
+
+.dns-card:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+.dns-card.active {
+  border-color: var(--accent);
+  background: rgba(88, 166, 255, 0.06);
+}
+
+.dns-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dns-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dns-ips {
+  font-size: 11px;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  color: var(--text-secondary);
+}
+
+.dns-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dns-active-badge {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Network command buttons */
+.net-cmd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.net-cmd-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.net-cmd-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.net-cmd-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.cmd-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+
+.cmd-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.cmd-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.cmd-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Feedback */
+.net-feedback {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.net-feedback.feedback-success {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+.net-feedback.feedback-error {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.net-cmd-output {
+  margin: 0;
+  padding: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: "Cascadia Code", "Consolas", monospace;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.4;
+}
+
+/* Tests header with rerun button */
+.tests-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.tests-header h3 {
+  margin-bottom: 0;
+}
+
+.rerun-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.rerun-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

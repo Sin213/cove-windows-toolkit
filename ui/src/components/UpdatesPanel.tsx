@@ -26,10 +26,19 @@ interface UpdateStatus {
   component_store: ComponentStore;
 }
 
+interface ActionResult {
+  success: boolean;
+  message: string;
+  output?: string;
+}
+
 export default function UpdatesPanel() {
   const [data, setData] = useState<UpdateStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [resetOutput, setResetOutput] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<UpdateStatus>("get_update_status")
@@ -37,6 +46,28 @@ export default function UpdatesPanel() {
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
+
+  const handleCheckUpdates = () => {
+    setFeedback(null);
+    invoke<ActionResult>("trigger_update_check")
+      .then((r) => setFeedback({ type: r.success ? "success" : "error", message: r.message }))
+      .catch((e) => setFeedback({ type: "error", message: String(e) }));
+  };
+
+  const handleReset = async () => {
+    setResetting(true);
+    setFeedback(null);
+    setResetOutput(null);
+    try {
+      const r = await invoke<ActionResult>("reset_windows_update");
+      setFeedback({ type: r.success ? "success" : "error", message: r.message });
+      if (r.output) setResetOutput(r.output);
+    } catch (e) {
+      setFeedback({ type: "error", message: String(e) });
+    } finally {
+      setResetting(false);
+    }
+  };
 
   if (loading) return <div className="panel-loading">Checking updates...</div>;
   if (error) return <div className="panel-error">Error: {error}</div>;
@@ -90,6 +121,31 @@ export default function UpdatesPanel() {
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div className="updates-section">
+        <h3>Actions</h3>
+        <div className="wu-actions">
+          <button className="wu-btn wu-btn-primary" onClick={handleCheckUpdates}>
+            Check for Updates
+          </button>
+          <button className="wu-btn wu-btn-warning" onClick={handleReset} disabled={resetting}>
+            {resetting ? "Resetting..." : "Reset Windows Update"}
+          </button>
+        </div>
+        <p className="wu-hint">
+          Reset stops WU services, clears the update cache (SoftwareDistribution &amp; catroot2),
+          re-registers DLLs, and restarts services. A reboot is recommended after.
+        </p>
+        {feedback && (
+          <div className={`wu-feedback wu-feedback-${feedback.type}`}>
+            {feedback.message}
+          </div>
+        )}
+        {resetOutput && (
+          <pre className="wu-output">{resetOutput}</pre>
         )}
       </div>
 

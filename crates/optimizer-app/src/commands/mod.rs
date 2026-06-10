@@ -279,6 +279,82 @@ pub fn get_network_diagnostics() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// Network tools
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn set_dns(preset: String) -> serde_json::Value {
+    let (primary, secondary) = match preset.as_str() {
+        "cloudflare" => ("1.1.1.1", "1.0.0.1"),
+        "google" => ("8.8.8.8", "8.8.4.4"),
+        "quad9" => ("9.9.9.9", "149.112.112.112"),
+        "opendns" => ("208.67.222.222", "208.67.220.220"),
+        "auto" => ("", ""),
+        _ => return serde_json::json!({ "success": false, "message": format!("Unknown DNS preset: {}", preset) }),
+    };
+
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": true, "stub": true, "message": format!("[stub] Would set DNS to {} ({}, {})", preset, primary, secondary) });
+    }
+
+    let script = if preset == "auto" {
+        r#"Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses }; Write-Output 'ok'"#.to_string()
+    } else {
+        format!(
+            r#"Get-NetAdapter | Where-Object {{$_.Status -eq 'Up'}} | ForEach-Object {{ Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('{}','{}') }}; Write-Output 'ok'"#,
+            primary, secondary
+        )
+    };
+
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", &script])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let label = if preset == "auto" { "Automatic (DHCP)".to_string() } else { format!("{} ({}, {})", preset, primary, secondary) };
+            serde_json::json!({ "success": true, "message": format!("DNS set to {}", label) })
+        }
+        Ok(o) => serde_json::json!({ "success": false, "message": String::from_utf8_lossy(&o.stderr).trim().to_string() }),
+        Err(e) => serde_json::json!({ "success": false, "message": format!("Failed: {}", e) }),
+    }
+}
+
+#[tauri::command]
+pub fn run_network_command(command: String) -> serde_json::Value {
+    let (cmd, args, label): (&str, Vec<&str>, &str) = match command.as_str() {
+        "flush_dns" => ("ipconfig", vec!["/flushdns"], "Flush DNS Cache"),
+        "release_ip" => ("ipconfig", vec!["/release"], "Release IP"),
+        "renew_ip" => ("ipconfig", vec!["/renew"], "Renew IP"),
+        "reset_winsock" => ("netsh", vec!["winsock", "reset"], "Reset Winsock"),
+        "reset_tcp" => ("netsh", vec!["int", "ip", "reset"], "Reset TCP/IP Stack"),
+        _ => return serde_json::json!({ "success": false, "message": format!("Unknown command: {}", command) }),
+    };
+
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": true, "stub": true, "message": format!("[stub] Would run: {} {}", cmd, args.join(" ")), "output": format!("{} completed (stub).", label) });
+    }
+
+    let output = std::process::Command::new(cmd).args(&args).output();
+
+    match output {
+        Ok(o) => {
+            let stdout = String::from_utf8_lossy(&o.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+            let text = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
+            let needs_reboot = command == "reset_winsock" || command == "reset_tcp";
+            let msg = if needs_reboot {
+                format!("{} completed. A restart is required for changes to take effect.", label)
+            } else {
+                format!("{} completed.", label)
+            };
+            serde_json::json!({ "success": o.status.success(), "message": msg, "output": text.trim() })
+        }
+        Err(e) => serde_json::json!({ "success": false, "message": format!("Failed to run {}: {}", label, e) }),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Windows Update status
 // ---------------------------------------------------------------------------
 
@@ -295,6 +371,79 @@ pub fn get_update_status() -> serde_json::Value {
         "component_store_health": "Healthy",
         "days_since_last_update": 7
     })
+}
+
+#[tauri::command]
+pub fn reset_windows_update() -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": true, "stub": true, "message": "[stub] Would reset Windows Update components.", "output": "Stop services → Clear cache → Re-register DLLs → Start services" });
+    }
+
+    let script = r#"
+$log = @()
+$services = @('wuauserv','bits','cryptSvc','msiserver')
+
+# Stop services
+foreach ($s in $services) {
+    Stop-Service -Name $s -Force -ErrorAction SilentlyContinue
+    $log += "Stopped $s"
+}
+
+# Rename cache folders
+$sd = "$env:SystemRoot\SoftwareDistribution"
+$cr = "$env:SystemRoot\System32\catroot2"
+if (Test-Path $sd) { Rename-Item $sd "$sd.bak.$(Get-Date -Format yyyyMMddHHmmss)" -Force -ErrorAction SilentlyContinue; $log += "Renamed SoftwareDistribution" }
+if (Test-Path $cr) { Rename-Item $cr "$cr.bak.$(Get-Date -Format yyyyMMddHHmmss)" -Force -ErrorAction SilentlyContinue; $log += "Renamed catroot2" }
+
+# Re-register DLLs
+$dlls = @('atl.dll','urlmon.dll','mshtml.dll','shdocvw.dll','browseui.dll','jscript.dll','vbscript.dll','scrrun.dll','msxml.dll','msxml3.dll','msxml6.dll','actxprxy.dll','softpub.dll','wintrust.dll','dssenh.dll','rsaenh.dll','gpkcsp.dll','sccbase.dll','slbcsp.dll','cryptdlg.dll','oleaut32.dll','ole32.dll','shell32.dll','initpki.dll','wuapi.dll','wuaueng.dll','wuaueng1.dll','wucltui.dll','wups.dll','wups2.dll','wuweb.dll','qmgr.dll','qmgrprxy.dll','wucltux.dll','muweb.dll','wuwebv.dll')
+foreach ($dll in $dlls) { regsvr32.exe /s $dll 2>$null }
+$log += "Re-registered WU DLLs"
+
+# Reset Winsock
+netsh winsock reset 2>$null | Out-Null
+$log += "Reset Winsock"
+
+# Restart services
+foreach ($s in $services) {
+    Start-Service -Name $s -ErrorAction SilentlyContinue
+    $log += "Started $s"
+}
+
+$log -join "`n"
+"#;
+
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command", script])
+        .output();
+
+    match output {
+        Ok(o) => {
+            let text = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            serde_json::json!({
+                "success": o.status.success(),
+                "message": if o.status.success() { "Windows Update components reset successfully. A restart is recommended." } else { "Reset completed with some errors." },
+                "output": text
+            })
+        }
+        Err(e) => serde_json::json!({ "success": false, "message": format!("Failed: {}", e), "output": "" }),
+    }
+}
+
+#[tauri::command]
+pub fn trigger_update_check() -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": true, "stub": true, "message": "[stub] Would open Windows Update settings." });
+    }
+
+    let result = std::process::Command::new("cmd")
+        .args(["/C", "start ms-settings:windowsupdate-action"])
+        .spawn();
+
+    match result {
+        Ok(_) => serde_json::json!({ "success": true, "message": "Windows Update check triggered. The Settings app should open." }),
+        Err(e) => serde_json::json!({ "success": false, "message": format!("Failed: {}", e) }),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -387,6 +536,194 @@ pub fn set_power_plan(guid: String) -> serde_json::Value {
         return serde_json::json!({ "success": false, "stub": true, "message": format!("[stub] Would set power plan to {}", guid) });
     }
     serde_json::json!({ "success": true, "message": format!("Power plan set to {}", guid) })
+}
+
+#[tauri::command]
+pub fn set_power_timeout(setting: String, minutes: u32) -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": true, "stub": true, "message": format!("[stub] Would set {} to {} min", setting, minutes) });
+    }
+
+    let sub_guid = match setting.as_str() {
+        "display" => "7516b95f-f776-4464-8c53-06167f40cc99 3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e",
+        "sleep" => "238c9fa8-0aad-41ed-83f4-97be242c8f20 29f6c1db-86da-48c5-9fdb-f2b67b1f44da",
+        "disk" => "0012ee47-9041-4b5d-9b77-535fba8b1442 6738e2c4-e8a5-4a42-b16a-e040e769756e",
+        _ => return serde_json::json!({ "success": false, "message": format!("Unknown setting: {}", setting) }),
+    };
+
+    let cmd = format!("powercfg /change {} {}", match setting.as_str() {
+        "display" => "monitor-timeout-ac",
+        "sleep" => "standby-timeout-ac",
+        "disk" => "disk-timeout-ac",
+        _ => unreachable!(),
+    }, minutes);
+
+    let output = std::process::Command::new("cmd")
+        .args(["/C", &cmd])
+        .output();
+
+    // Also set DC (battery) timeout
+    let dc_cmd = format!("powercfg /change {} {}", match setting.as_str() {
+        "display" => "monitor-timeout-dc",
+        "sleep" => "standby-timeout-dc",
+        "disk" => "disk-timeout-dc",
+        _ => unreachable!(),
+    }, minutes);
+    let _ = std::process::Command::new("cmd").args(["/C", &dc_cmd]).output();
+    let _ = sub_guid; // used for reference
+
+    match output {
+        Ok(o) if o.status.success() => serde_json::json!({ "success": true, "message": format!("{} timeout set to {} minutes", setting, minutes) }),
+        Ok(o) => serde_json::json!({ "success": false, "message": String::from_utf8_lossy(&o.stderr).to_string() }),
+        Err(e) => serde_json::json!({ "success": false, "message": format!("Failed: {}", e) }),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// System Restore
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_restore_status() -> serde_json::Value {
+    let status = mod_restore::get_restore_status();
+    serde_json::json!({
+        "enabled": status.enabled,
+        "message": status.message,
+    })
+}
+
+#[tauri::command]
+pub fn get_restore_points() -> serde_json::Value {
+    let points = mod_restore::list_restore_points();
+    serde_json::json!(points)
+}
+
+#[tauri::command]
+pub fn create_restore_point(description: String) -> serde_json::Value {
+    match mod_restore::create_restore_point(&description) {
+        Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+        Err(msg) => serde_json::json!({ "success": false, "message": msg }),
+    }
+}
+
+#[tauri::command]
+pub fn enable_system_protection() -> serde_json::Value {
+    match mod_restore::enable_system_protection() {
+        Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+        Err(msg) => serde_json::json!({ "success": false, "message": msg }),
+    }
+}
+
+#[tauri::command]
+pub fn launch_system_restore() -> serde_json::Value {
+    match mod_restore::launch_system_restore() {
+        Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+        Err(msg) => serde_json::json!({ "success": false, "message": msg }),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bloatware remover
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_bloatware() -> serde_json::Value {
+    let apps = mod_bloatware::scan_installed();
+    serde_json::to_value(apps).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn remove_bloatware(packages: Vec<String>) -> serde_json::Value {
+    let results = mod_bloatware::remove_apps(&packages);
+    serde_json::to_value(results).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// Uninstaller
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_installed_programs() -> serde_json::Value {
+    let programs = mod_uninstall::list_programs();
+    serde_json::to_value(programs).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn uninstall_program(uninstall_string: String, quiet_uninstall_string: String) -> serde_json::Value {
+    let result = mod_uninstall::run_uninstall(&uninstall_string, &quiet_uninstall_string);
+    serde_json::to_value(result).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn scan_leftovers(name: String, publisher: String, install_location: String, registry_key: String) -> serde_json::Value {
+    let result = mod_uninstall::scan_leftovers(&name, &publisher, &install_location, &registry_key);
+    serde_json::to_value(result).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn remove_leftovers(paths: Vec<String>) -> serde_json::Value {
+    let results = mod_uninstall::remove_leftovers(&paths);
+    let items: Vec<serde_json::Value> = results.into_iter().map(|(path, ok, msg)| {
+        serde_json::json!({ "path": path, "success": ok, "message": msg })
+    }).collect();
+    serde_json::json!({ "results": items })
+}
+
+// ---------------------------------------------------------------------------
+// Full system info (Speccy-style)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_full_sysinfo() -> serde_json::Value {
+    let info = mod_sysinfo::collect();
+    serde_json::to_value(info).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// Temperature monitoring
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_temperatures() -> serde_json::Value {
+    let report = mod_temps::collect_temps();
+    serde_json::to_value(report).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// DISM / SFC scans
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn check_admin_status() -> serde_json::Value {
+    let status = mod_sfc::check_admin();
+    serde_json::json!({
+        "is_admin": status.is_admin,
+        "message": status.message,
+    })
+}
+
+#[tauri::command]
+pub fn run_dism_scan() -> serde_json::Value {
+    let result = mod_sfc::run_dism();
+    serde_json::json!({
+        "tool": result.tool,
+        "success": result.success,
+        "exit_code": result.exit_code,
+        "output": result.output,
+        "summary": result.summary,
+    })
+}
+
+#[tauri::command]
+pub fn run_sfc_scan() -> serde_json::Value {
+    let result = mod_sfc::run_sfc();
+    serde_json::json!({
+        "tool": result.tool,
+        "success": result.success,
+        "exit_code": result.exit_code,
+        "output": result.output,
+        "summary": result.summary,
+    })
 }
 
 // ---------------------------------------------------------------------------
