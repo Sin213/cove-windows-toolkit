@@ -862,6 +862,42 @@ pub fn get_machine_diff() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// Runtimes checker
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_installed_runtimes() -> serde_json::Value {
+    let report = mod_runtimes::collect_runtimes();
+    serde_json::to_value(report).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
+// Security scan
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_security_status() -> serde_json::Value {
+    let defender = mod_security::get_defender_status();
+    serde_json::json!({
+        "defender": defender,
+        "heuristic_findings": [],
+        "scan_available": true,
+    })
+}
+
+#[tauri::command]
+pub fn run_defender_scan(scan_type: String) -> serde_json::Value {
+    let result = mod_security::run_scan(&scan_type);
+    serde_json::to_value(result).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn run_heuristic_scan() -> serde_json::Value {
+    let result = mod_security::run_heuristics();
+    serde_json::to_value(result).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // Performance tweaks
 // ---------------------------------------------------------------------------
 

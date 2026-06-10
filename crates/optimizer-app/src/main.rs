@@ -115,6 +115,12 @@ fn main() {
             // Snapshot / Diff
             commands::take_snapshot,
             commands::get_machine_diff,
+            // Runtimes
+            commands::get_installed_runtimes,
+            // Security
+            commands::get_security_status,
+            commands::run_defender_scan,
+            commands::run_heuristic_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

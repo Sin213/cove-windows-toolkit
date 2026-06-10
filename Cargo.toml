@@ -25,6 +25,8 @@ members = [
     "crates/mod-uninstall",
     "crates/mod-bloatware",
     "crates/mod-performance",
+    "crates/mod-runtimes",
+    "crates/mod-security",
 ]
 
 [workspace.package]

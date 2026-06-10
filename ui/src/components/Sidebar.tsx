@@ -30,6 +30,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: "drivers", label: "Drivers", icon: "⊞", section: "diagnose" },
   { id: "netdiag", label: "Net Diagnostics", icon: "⇆", section: "diagnose" },
   { id: "updates", label: "Windows Update", icon: "↻", section: "diagnose" },
+  { id: "security", label: "Security Scan", icon: "🔒", section: "diagnose" },
+  { id: "runtimes", label: "Runtimes", icon: "⊞", section: "diagnose" },
   { id: "uninstall", label: "Uninstaller", icon: "✖", section: "system" },
   { id: "sysinfo", label: "System Info", icon: "ℹ", section: "system" },
   { id: "temps", label: "Temperatures", icon: "🌡", section: "system" },

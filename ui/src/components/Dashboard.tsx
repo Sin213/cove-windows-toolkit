@@ -167,6 +167,20 @@ const DIAGNOSTIC_CARDS: CategoryCard[] = [
     badgeColor: "yellow",
     section: "diagnose",
   },
+  {
+    id: "security",
+    title: "Security Scan",
+    description: "Defender status, heuristic scan for suspicious activity",
+    icon: "🔒",
+    section: "diagnose",
+  },
+  {
+    id: "runtimes",
+    title: "Runtimes",
+    description: ".NET, Visual C++, DirectX, Java - installed versions",
+    icon: "⊞",
+    section: "diagnose",
+  },
 ];
 
 function ScoreRing({ score }: { score: number | null }) {

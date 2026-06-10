@@ -1068,6 +1068,47 @@ const MOCKS: Record<string, unknown> = {
   set_dns: { success: true, message: "DNS updated successfully." },
   run_network_command: { success: true, message: "Command completed.", output: "Successfully flushed the DNS Resolver Cache." },
 
+  // ── Runtimes ─────────────────────────────────────────────────────────
+  get_installed_runtimes: {
+    dotnet: [
+      { name: ".NET Framework 4.8", version: "4.8", path: "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319", installed: true },
+      { name: ".NET 8.0.3 (runtime)", version: "8.0.3", runtime_type: "runtime", path: "C:\\Program Files\\dotnet", installed: true },
+      { name: ".NET Framework 3.5", version: "3.5", path: null, installed: false },
+    ],
+    vcredist: [
+      { name: "Visual C++ 2015-2022 (x64)", version: "14.38.33135", arch: "x64", installed: true },
+      { name: "Visual C++ 2015-2022 (x86)", version: "14.38.33135", arch: "x86", installed: true },
+      { name: "Visual C++ 2013 (x64)", version: "12.0.40664", arch: "x64", installed: true },
+    ],
+    directx: { version: "12.0", feature_level: "12_1" },
+    java: [],
+  },
+
+  // ── Security ────────────────────────────────────────────────────────
+  get_security_status: {
+    defender: {
+      real_time_enabled: true,
+      definitions_age_days: 1,
+      last_scan: "2026-06-08T14:30:00Z",
+      last_scan_type: "Quick",
+    },
+    heuristic_findings: [],
+    scan_available: true,
+  },
+  run_defender_scan: {
+    success: true,
+    threats_found: 0,
+    message: "No threats detected.",
+  },
+  run_heuristic_scan: {
+    findings: [
+      { severity: "Warning", title: "Unsigned process with network activity", detail: "notepad++.exe (PID 4521) - unsigned, 2 active connections", category: "process" },
+      { severity: "Warning", title: "Hosts file modified (3 extra entries)", detail: "127.0.0.1 ads.example.com; 127.0.0.1 tracker.example.com; 127.0.0.1 malware.example.com", category: "integrity" },
+      { severity: "Info", title: "22 browser extensions installed", detail: "Chrome: 15, Edge: 7", category: "browser" },
+    ],
+    scan_time_ms: 3200,
+  },
+
   // ── Run All Diagnostics ─────────────────────────────────────────────
   run_all_diagnostics: {
     overall_severity: "Warning",

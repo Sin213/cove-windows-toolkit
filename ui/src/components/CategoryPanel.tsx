@@ -21,6 +21,8 @@ import SfcPanel from "./SfcPanel";
 import RestorePanel from "./RestorePanel";
 import HistoryPanel from "./HistoryPanel";
 import DiffPanel from "./DiffPanel";
+import SecurityPanel from "./SecurityPanel";
+import RuntimesPanel from "./RuntimesPanel";
 
 interface Props {
   view: View;
@@ -114,6 +116,14 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     description:
       "Create restore points before optimizing and roll back Windows if anything goes wrong.",
   },
+  security: {
+    title: "Security Scan",
+    description: "Windows Defender status and heuristic scan for suspicious activity, persistence, and integrity issues.",
+  },
+  runtimes: {
+    title: "Installed Runtimes",
+    description: ".NET, Visual C++ Redistributables, DirectX, and Java installations.",
+  },
   diff: {
     title: "What Changed",
     description: "Compare the current machine state to the last visit's snapshot.",
@@ -143,6 +153,8 @@ const PANELS: Record<string, React.ComponentType> = {
   temps: TempsPanel,
   sfc: SfcPanel,
   restore: RestorePanel,
+  security: SecurityPanel,
+  runtimes: RuntimesPanel,
   diff: DiffPanel,
   history: HistoryPanel,
 };

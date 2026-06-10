@@ -25,7 +25,9 @@ export type View =
   | "restore"
   | "history"
   | "performance"
-  | "diff";
+  | "diff"
+  | "security"
+  | "runtimes";
 
 function App() {
   const [view, setView] = useState<View>("dashboard");

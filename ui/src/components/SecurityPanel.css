@@ -1,0 +1,222 @@
+.security-panel {
+  max-width: 700px;
+}
+
+/* Defender status bar */
+.defender-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+
+.defender-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 120px;
+}
+
+.defender-stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.defender-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.defender-stat-value.status-good {
+  color: var(--green);
+}
+
+.defender-stat-value.status-warn {
+  color: var(--yellow);
+}
+
+.defender-stat-value.status-bad {
+  color: var(--red);
+}
+
+.defender-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.scan-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.scan-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-card-hover);
+}
+
+.scan-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.scan-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.scan-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.scan-result-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.scan-result-banner.clean {
+  background: var(--green-bg);
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+
+.scan-result-banner.threats {
+  background: var(--red-bg);
+  color: var(--red);
+  border: 1px solid var(--red);
+}
+
+/* Heuristic findings */
+.heuristic-section {
+  margin-top: 8px;
+}
+
+.heuristic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.heuristic-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.findings-group {
+  margin-bottom: 16px;
+}
+
+.findings-group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.findings-group-title.sev-critical {
+  color: var(--red);
+}
+
+.findings-group-title.sev-warning {
+  color: var(--yellow);
+}
+
+.findings-group-title.sev-info {
+  color: var(--text-muted);
+}
+
+.finding-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
+.finding-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.finding-icon.sev-critical {
+  color: var(--red);
+}
+
+.finding-icon.sev-warning {
+  color: var(--yellow);
+}
+
+.finding-icon.sev-info {
+  color: var(--text-muted);
+}
+
+.finding-content {
+  flex: 1;
+}
+
+.finding-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.finding-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.finding-category {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.no-findings {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.scan-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
