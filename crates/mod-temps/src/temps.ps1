@@ -19,7 +19,7 @@ if ($ohmSensors.Count -gt 0) {
     foreach ($s in $ohmSensors) {
         $cat = 'Other'
         if ($s.Parent -match 'cpu|processor|amd|intel' -or $s.Name -match 'CPU|Core|CCD|Tctl|Tdie|Package') { $cat = 'CPU' }
-        elseif ($s.Parent -match 'gpu|video|nvidia|amd|radeon' -or $s.Name -match 'GPU|Hot Spot|Junction') { $cat = 'GPU' }
+        elseif ($s.Parent -match 'gpu|video|nvidia|amd|radeon' -or $s.Name -match 'GPU|Hot Spot|Junction|Edge') { $cat = 'GPU' }
         elseif ($s.Parent -match 'hdd|ssd|nvme|disk|storage' -or $s.Name -match 'Drive|Assembly') { $cat = 'Disk' }
 
         $maxC = $null; $critC = $null
@@ -38,53 +38,13 @@ if ($ohmSensors.Count -gt 0) {
         }
     }
 } else {
-    # ── CPU: Try thermal zone performance counters (works without LHM) ─
-    try {
-        $zones = Get-CimInstance Win32_PerfFormattedData_Counters_ThermalZoneInformation -ErrorAction Stop
-        foreach ($z in $zones) {
-            if ($z.Temperature -and $z.Temperature -gt 0 -and $z.Temperature -lt 150) {
-                $tempC = [math]::Round($z.Temperature - 273.15, 1)
-                if ($tempC -gt 0 -and $tempC -lt 120) {
-                    $readings += @{
-                        sensor = if ($z.Name) { $z.Name -replace '\\\\.*$','' -replace '_',' ' } else { 'Thermal Zone' }
-                        category = 'CPU'
-                        temperature_c = $tempC
-                        max_c = 95.0
-                        critical_c = 105.0
-                    }
-                }
-            }
-        }
-    } catch {}
-
-    # ── CPU: ACPI fallback (admin required) ─────────────────────────────
-    if (($readings | Where-Object { $_.category -eq 'CPU' }).Count -eq 0) {
-        try {
-            $zones = Get-CimInstance MSAcpi_ThermalZoneTemperature -Namespace root\wmi -ErrorAction Stop
-            foreach ($z in $zones) {
-                if ($z.CurrentTemperature -and $z.CurrentTemperature -gt 0) {
-                    $tempC = [math]::Round(($z.CurrentTemperature - 2732) / 10.0, 1)
-                    if ($tempC -gt 0 -and $tempC -lt 150) {
-                        $readings += @{
-                            sensor = 'CPU Package'
-                            category = 'CPU'
-                            temperature_c = $tempC
-                            max_c = 95.0
-                            critical_c = 105.0
-                        }
-                    }
-                }
-            }
-        } catch {}
-    }
-
-    # ── GPU: nvidia-smi for NVIDIA ──────────────────────────────────────
+    # ── CPU: nvidia-smi for NVIDIA GPUs ─────────────────────────────────
     try {
         $nvSmi = & "nvidia-smi" --query-gpu=temperature.gpu,name --format=csv,noheader,nounits 2>$null
         if ($LASTEXITCODE -eq 0 -and $nvSmi) {
             foreach ($line in $nvSmi -split "`n") {
                 $parts = $line.Trim() -split ',\s*'
-                if ($parts.Count -ge 2) {
+                if ($parts.Count -ge 2 -and $parts[0] -match '^\d+') {
                     $readings += @{
                         sensor = $parts[1].Trim()
                         category = 'GPU'
@@ -97,32 +57,7 @@ if ($ohmSensors.Count -gt 0) {
         }
     } catch {}
 
-    # ── GPU: AMD via Win32_VideoController + registry ───────────────────
-    $hasGpu = ($readings | Where-Object { $_.category -eq 'GPU' }).Count -gt 0
-    if (-not $hasGpu) {
-        try {
-            $gpu = Get-CimInstance Win32_VideoController -ErrorAction Stop | Where-Object { $_.Status -eq 'OK' -and $_.CurrentHorizontalResolution -gt 0 } | Select-Object -First 1
-            if ($gpu.Name -match 'AMD|Radeon') {
-                # Try rocm-smi
-                $rocm = & "C:\Windows\System32\AMD\rocm-smi.exe" --showtemp --json 2>$null
-                if ($LASTEXITCODE -eq 0 -and $rocm) {
-                    $json = $rocm | ConvertFrom-Json
-                    $temp = $json.card0.'Temperature (Sensor edge) (C)'
-                    if ($temp) {
-                        $readings += @{
-                            sensor = $gpu.Name
-                            category = 'GPU'
-                            temperature_c = [math]::Round([double]$temp, 1)
-                            max_c = 93.0
-                            critical_c = 100.0
-                        }
-                    }
-                }
-            }
-        } catch {}
-    }
-
-    # ── Disk: via StorageReliabilityCounter ──────────────────────────────
+    # ── Disk temps via StorageReliabilityCounter ────────────────────────
     try {
         Get-PhysicalDisk -ErrorAction Stop | ForEach-Object {
             $disk = $_
@@ -141,9 +76,38 @@ if ($ohmSensors.Count -gt 0) {
         }
     } catch {}
 
-    if ($readings.Count -eq 0) {
-        $warnings += 'No temperature sensors detected. Install Libre Hardware Monitor for full sensor access.'
+    # ── CPU temp via ACPI (works on some systems) ──────────────────────
+    try {
+        $zones = Get-CimInstance MSAcpi_ThermalZoneTemperature -Namespace root\wmi -ErrorAction Stop
+        foreach ($z in $zones) {
+            if ($z.CurrentTemperature -and $z.CurrentTemperature -gt 0) {
+                $tempC = [math]::Round(($z.CurrentTemperature - 2732) / 10.0, 1)
+                if ($tempC -gt 0 -and $tempC -lt 150) {
+                    $readings += @{
+                        sensor = 'CPU (ACPI)'
+                        category = 'CPU'
+                        temperature_c = $tempC
+                        max_c = 95.0
+                        critical_c = 105.0
+                    }
+                }
+            }
+        }
+    } catch {}
+
+    $hasCpu = ($readings | Where-Object { $_.category -eq 'CPU' }).Count -gt 0
+    $hasGpu = ($readings | Where-Object { $_.category -eq 'GPU' }).Count -gt 0
+
+    if (-not $hasCpu) {
+        $warnings += 'CPU temperature not available. AMD Ryzen desktop CPUs require Libre Hardware Monitor for sensor access.'
     }
+    if (-not $hasGpu) {
+        $warnings += 'GPU temperature not available. Install Libre Hardware Monitor or use manufacturer tools.'
+    }
+}
+
+if ($readings.Count -eq 0) {
+    $warnings += 'No temperature sensors detected. Install Libre Hardware Monitor (free) for full CPU, GPU, and disk temps.'
 }
 
 $result = @{

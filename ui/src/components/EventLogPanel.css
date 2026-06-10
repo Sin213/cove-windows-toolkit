@@ -39,10 +39,21 @@
 .log-stat {
   font-size: 12px;
   font-weight: 500;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
 }
 
-.log-stat.total {
-  color: var(--text-secondary);
+.log-stat:hover {
+  background: var(--bg-card-hover);
+}
+
+.log-stat.active-filter {
+  border-color: currentColor;
+  background: var(--bg-card);
 }
 
 .log-stat.critical {
@@ -55,6 +66,18 @@
 
 .log-stat.warning {
   color: var(--yellow);
+}
+
+.log-stat.clear-filter {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.no-events {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .events-list {

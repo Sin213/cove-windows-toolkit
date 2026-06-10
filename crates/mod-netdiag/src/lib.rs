@@ -42,7 +42,6 @@ pub fn run_diagnostics() -> NetDiagReport {
     let adapter = get_primary_adapter();
     let tests = run_connectivity_tests();
     let wifi = get_wifi_info();
-
     NetDiagReport { adapter, tests, wifi }
 }
 
@@ -50,10 +49,6 @@ pub fn run_diagnostics() -> NetDiagReport {
 pub fn run_diagnostics() -> NetDiagReport {
     NetDiagReport { adapter: None, tests: Vec::new(), wifi: None }
 }
-
-// ---------------------------------------------------------------------------
-// Speed test
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
 pub struct SpeedTestResult {
@@ -66,8 +61,6 @@ pub struct SpeedTestResult {
 
 #[cfg(target_os = "windows")]
 pub fn run_speed_test() -> SpeedTestResult {
-    
-
     let ps = r#"
 $url = 'http://speedtest.tele2.net/10MB.zip'
 $tmp = "$env:TEMP\cove_speedtest.tmp"
@@ -83,10 +76,9 @@ try {
     Write-Output "OK|$mbps|$size|$ms|$url"
 } catch {
     Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-    Write-Output "FAIL|0|0|0|$url|$($_.Exception.Message)"
+    Write-Output "FAIL|0|0|0|$url"
 }
 "#;
-
     if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let p: Vec<&str> = line.split('|').collect();
@@ -100,25 +92,17 @@ try {
             };
         }
     }
-
-    SpeedTestResult {
-        download_mbps: 0.0, bytes_downloaded: 0, duration_ms: 0,
-        test_url: "http://speedtest.tele2.net/10MB.zip".into(),
-        status: "fail".into(),
-    }
+    SpeedTestResult { download_mbps: 0.0, bytes_downloaded: 0, duration_ms: 0, test_url: String::new(), status: "fail".into() }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn run_speed_test() -> SpeedTestResult {
-    SpeedTestResult {
-        download_mbps: 0.0, bytes_downloaded: 0, duration_ms: 0,
-        test_url: String::new(), status: "stub".into(),
-    }
+    SpeedTestResult { download_mbps: 0.0, bytes_downloaded: 0, duration_ms: 0, test_url: String::new(), status: "stub".into() }
 }
 
 #[cfg(target_os = "windows")]
 fn get_primary_adapter() -> Option<AdapterInfo> {
-    
+    use std::process::Command;
     let ps = r#"
 $a = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
 if (-not $a) { exit 0 }
@@ -126,12 +110,9 @@ $cfg = Get-NetIPConfiguration -InterfaceIndex $a.ifIndex -ErrorAction SilentlyCo
 $dns = ($cfg.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | ForEach-Object { $_.ServerAddresses }) -join ','
 $ip = if ($cfg.IPv4Address) { $cfg.IPv4Address.IPAddress } else { '' }
 $gw = if ($cfg.IPv4DefaultGateway) { $cfg.IPv4DefaultGateway.NextHop } else { '' }
-$speed = "$([math]::Round($a.LinkSpeed.Replace(' Gbps','000').Replace(' Mbps','').Replace(' Kbps','') / 1, 0)) Mbps"
-try { $speed = "$($a.LinkSpeed)" } catch {}
-Write-Output "$($a.Name)|$($a.InterfaceDescription)|$speed|$ip|$gw|$dns|$($a.Status)"
+Write-Output "$($a.Name)|$($a.InterfaceDescription)|$($a.LinkSpeed)|$ip|$gw|$dns|$($a.Status)"
 "#;
-
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let p: Vec<&str> = line.split('|').collect();
         if p.len() >= 7 {
@@ -153,74 +134,69 @@ Write-Output "$($a.Name)|$($a.InterfaceDescription)|$speed|$ip|$gw|$dns|$($a.Sta
 
 #[cfg(target_os = "windows")]
 fn run_connectivity_tests() -> Vec<TestResult> {
-
-    let mut tests = Vec::new();
-
-    // Gateway ping
-    let ps_gw = r#"
+    let ps = r#"
+# Gateway ping
 $gw = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1).IPv4DefaultGateway.NextHop
 if ($gw) {
-    $r = Test-Connection -ComputerName $gw -Count 1 -ErrorAction SilentlyContinue
-    if ($r) { Write-Output "ok|$([math]::Round($r.Latency, 1))|$gw reachable" }
-    else { Write-Output "fail|0|$gw unreachable" }
-} else { Write-Output "fail|0|No default gateway" }
-"#;
-    tests.push(run_single_test("Gateway Ping", ps_gw));
+    try {
+        $ping = ping.exe -n 1 -w 2000 $gw 2>$null
+        $ms = 0
+        $pingStr = $ping -join ' '
+        if ($pingStr -match 'time[=<](\d+)') { $ms = $Matches[1] }
+        if ($pingStr -match 'TTL=') {
+            Write-Output "TEST|Gateway Ping|ok|$ms|$gw reachable"
+        } else {
+            Write-Output "TEST|Gateway Ping|fail|0|$gw unreachable"
+        }
+    } catch { Write-Output "TEST|Gateway Ping|fail|0|$gw unreachable" }
+} else { Write-Output "TEST|Gateway Ping|fail|0|No default gateway" }
 
-    // DNS resolution
-    let ps_dns = r#"
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
+# DNS resolution
 try {
-    $r = Resolve-DnsName google.com -Type A -ErrorAction Stop | Select-Object -First 1
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $resolved = [System.Net.Dns]::GetHostAddresses('google.com') | Select-Object -First 1
     $sw.Stop()
-    Write-Output "ok|$($sw.ElapsedMilliseconds)|Resolved google.com to $($r.IPAddress)"
+    Write-Output "TEST|DNS Resolution|ok|$($sw.ElapsedMilliseconds)|Resolved google.com to $($resolved.IPAddressToString)"
 } catch {
-    $sw.Stop()
-    Write-Output "fail|$($sw.ElapsedMilliseconds)|DNS resolution failed"
+    Write-Output "TEST|DNS Resolution|fail|0|DNS resolution failed"
+}
+
+# Internet connectivity
+try {
+    $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
+    $web = Invoke-WebRequest -Uri 'http://www.msftconnecttest.com/connecttest.txt' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+    $sw2.Stop()
+    if ($web.StatusCode -eq 200) {
+        Write-Output "TEST|Internet Connectivity|ok|$($sw2.ElapsedMilliseconds)|Connected"
+    } else {
+        Write-Output "TEST|Internet Connectivity|fail|$($sw2.ElapsedMilliseconds)|HTTP $($web.StatusCode)"
+    }
+} catch {
+    Write-Output "TEST|Internet Connectivity|fail|0|Internet unreachable"
 }
 "#;
-    tests.push(run_single_test("DNS Resolution", ps_dns));
 
-    // Internet connectivity
-    let ps_inet = r#"
-$sw = [System.Diagnostics.Stopwatch]::StartNew()
-try {
-    $r = Test-Connection -ComputerName microsoft.com -Count 1 -ErrorAction Stop
-    $sw.Stop()
-    Write-Output "ok|$($r.Latency)|microsoft.com reachable"
-} catch {
-    $sw.Stop()
-    Write-Output "fail|$($sw.ElapsedMilliseconds)|Internet unreachable"
-}
-"#;
-    tests.push(run_single_test("Internet Connectivity", ps_inet));
-
+    let mut tests = Vec::new();
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+        let stdout = String::from_utf8_lossy(&o.stdout);
+        for line in stdout.lines() {
+            if !line.starts_with("TEST|") { continue; }
+            let p: Vec<&str> = line.splitn(5, '|').collect();
+            if p.len() >= 5 {
+                tests.push(TestResult {
+                    name: p[1].trim().to_string(),
+                    status: p[2].trim().to_string(),
+                    latency_ms: p[3].trim().parse().ok(),
+                    detail: p[4].trim().to_string(),
+                });
+            }
+        }
+    }
     tests
 }
 
 #[cfg(target_os = "windows")]
-fn run_single_test(name: &str, ps_script: &str) -> TestResult {
-    
-
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps_script]).output() {
-        let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
-        let p: Vec<&str> = line.splitn(3, '|').collect();
-        if p.len() >= 3 {
-            return TestResult {
-                name: name.to_string(),
-                status: p[0].trim().to_string(),
-                latency_ms: p[1].trim().parse().ok(),
-                detail: p[2].trim().to_string(),
-            };
-        }
-    }
-    TestResult { name: name.to_string(), status: "fail".into(), latency_ms: None, detail: "Test failed to execute".into() }
-}
-
-#[cfg(target_os = "windows")]
 fn get_wifi_info() -> Option<WifiInfo> {
-    
-
     let o = optimizer_core::silent_cmd("netsh").args(["wlan", "show", "interfaces"]).output().ok()?;
     let stdout = String::from_utf8_lossy(&o.stdout);
     if !stdout.contains("SSID") { return None; }
@@ -243,6 +219,5 @@ fn get_wifi_info() -> Option<WifiInfo> {
     if ssid.is_empty() { return None; }
     let freq = if channel > 14 { "5 GHz" } else { "2.4 GHz" };
     let dbm = (signal as i32) / 2 - 100;
-
     Some(WifiInfo { ssid, channel, frequency: freq.into(), signal_dbm: dbm, signal_quality: signal })
 }

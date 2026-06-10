@@ -1,29 +1,22 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
-import { timeAgo, formatBytes } from "../lib/format";
+import { timeAgo } from "../lib/format";
 import "./UpdatesPanel.css";
 
 interface PendingUpdate {
   title: string;
-  kb: string | null;
   severity: string;
-  size_bytes: number;
-  classification: string;
-}
-
-interface ComponentStore {
-  health: string;
-  size_bytes: number;
-  last_cleanup: string;
-  pending_cleanup_bytes: number;
+  size_mb: number;
+  category: string;
 }
 
 interface UpdateStatus {
   last_check: string;
   last_install: string;
-  reboot_required: boolean;
+  service_status: string;
   pending_updates: PendingUpdate[];
-  component_store: ComponentStore;
+  component_store_health: string;
+  days_since_last_update: number;
 }
 
 interface ActionResult {
@@ -78,16 +71,17 @@ export default function UpdatesPanel() {
       {/* Status row */}
       <div className="update-status-row">
         <div className="status-field">
-          <span className="status-label">Last Check</span>
-          <span className="status-value">{timeAgo(data.last_check)}</span>
-        </div>
-        <div className="status-field">
           <span className="status-label">Last Install</span>
           <span className="status-value">{timeAgo(data.last_install)}</span>
         </div>
-        {data.reboot_required && (
-          <div className="reboot-notice">Reboot Required</div>
-        )}
+        <div className="status-field">
+          <span className="status-label">Service</span>
+          <span className="status-value">{data.service_status}</span>
+        </div>
+        <div className="status-field">
+          <span className="status-label">Days Since Update</span>
+          <span className="status-value">{data.days_since_last_update}</span>
+        </div>
       </div>
 
       {/* Pending updates */}
@@ -111,11 +105,8 @@ export default function UpdatesPanel() {
                     </span>
                   </div>
                   <div className="update-meta">
-                    {u.kb && <span className="update-kb">{u.kb}</span>}
-                    <span className="update-class">{u.classification}</span>
-                    <span className="update-size">
-                      {formatBytes(u.size_bytes)}
-                    </span>
+                    <span className="update-class">{u.category}</span>
+                    <span className="update-size">{u.size_mb} MB</span>
                   </div>
                 </div>
               </div>
@@ -157,27 +148,9 @@ export default function UpdatesPanel() {
             <div className="cbs-field">
               <span className="cbs-label">Health</span>
               <span
-                className={`cbs-value ${data.component_store.health === "Healthy" ? "cbs-healthy" : "cbs-unhealthy"}`}
+                className={`cbs-value ${data.component_store_health === "Healthy" ? "cbs-healthy" : "cbs-unhealthy"}`}
               >
-                {data.component_store.health}
-              </span>
-            </div>
-            <div className="cbs-field">
-              <span className="cbs-label">Size</span>
-              <span className="cbs-value">
-                {formatBytes(data.component_store.size_bytes)}
-              </span>
-            </div>
-            <div className="cbs-field">
-              <span className="cbs-label">Last Cleanup</span>
-              <span className="cbs-value">
-                {timeAgo(data.component_store.last_cleanup)}
-              </span>
-            </div>
-            <div className="cbs-field">
-              <span className="cbs-label">Reclaimable</span>
-              <span className="cbs-value">
-                {formatBytes(data.component_store.pending_cleanup_bytes)}
+                {data.component_store_health}
               </span>
             </div>
           </div>

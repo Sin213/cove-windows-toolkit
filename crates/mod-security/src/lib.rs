@@ -84,28 +84,28 @@ fn stub_defender() -> DefenderStatus {
 
 #[cfg(target_os = "windows")]
 pub fn run_scan(scan_type: &str) -> ScanResult {
-    
-
     let scan_flag = match scan_type {
-        "quick" => "-ScanType 1",
-        "full" => "-ScanType 2",
-        _ => "-ScanType 1",
+        "quick" => "QuickScan",
+        "full" => "FullScan",
+        _ => "QuickScan",
     };
 
-    let mp_path = r"C:\Program Files\Windows Defender\MpCmdRun.exe";
-    let args_str = format!("-Scan {}", scan_flag);
-    let args: Vec<&str> = args_str.split_whitespace().collect();
+    let ps = format!(
+        "try {{ Start-MpScan -ScanType {} -ErrorAction Stop; Write-Output 'OK' }} catch {{ Write-Output \"FAIL|$($_.Exception.Message)\" }}",
+        scan_flag
+    );
 
-    match optimizer_core::silent_cmd(mp_path).args(&args).output() {
+    match optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         Ok(o) => {
-            let code = o.status.code().unwrap_or(-1);
-            match code {
-                0 => ScanResult { success: true, threats_found: 0, message: "No threats detected.".into() },
-                2 => ScanResult { success: true, threats_found: 1, message: "Threats were found and handled.".into() },
-                _ => ScanResult { success: false, threats_found: 0, message: format!("Scan exited with code {}", code) },
+            let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
+            if result == "OK" {
+                ScanResult { success: true, threats_found: 0, message: format!("{} scan started. Check Windows Security for results.", scan_flag) }
+            } else {
+                let msg = result.strip_prefix("FAIL|").unwrap_or(&result);
+                ScanResult { success: false, threats_found: 0, message: msg.to_string() }
             }
         }
-        Err(e) => ScanResult { success: false, threats_found: 0, message: format!("Failed to run scan: {}", e) },
+        Err(e) => ScanResult { success: false, threats_found: 0, message: format!("Failed to start scan: {}", e) },
     }
 }
 

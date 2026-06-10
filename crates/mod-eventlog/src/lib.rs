@@ -41,19 +41,17 @@ pub fn get_summary() -> EventLogReport {
 
 #[cfg(target_os = "windows")]
 fn query_log(log_name: &str) -> LogSummary {
-    
-
     let ps = format!(
         r#"
-try {{ $c = (Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=1}} -ErrorAction Stop | Measure-Object).Count }} catch {{ $c = 0 }}
-try {{ $e = (Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=2}} -ErrorAction Stop | Measure-Object).Count }} catch {{ $e = 0 }}
-try {{ $w = (Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=3}} -ErrorAction Stop | Measure-Object).Count }} catch {{ $w = 0 }}
+try {{ $c = @(Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=1}} -ErrorAction Stop).Count }} catch {{ $c = 0 }}
+try {{ $e = @(Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=2}} -ErrorAction Stop).Count }} catch {{ $e = 0 }}
+try {{ $w = @(Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=3}} -ErrorAction Stop).Count }} catch {{ $w = 0 }}
 Write-Output "COUNTS|$c|$e|$w"
 
 try {{
-    Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=1,2,3}} -MaxEvents 20 -ErrorAction Stop | ForEach-Object {{
+    Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=1,2,3}} -MaxEvents 50 -ErrorAction Stop | ForEach-Object {{
         $lvl = switch ($_.Level) {{ 1 {{'Critical'}} 2 {{'Error'}} 3 {{'Warning'}} default {{'Info'}} }}
-        $msg = ($_.Message -replace '[\r\n]+',' ').Substring(0, [Math]::Min($_.Message.Length, 200))
+        $msg = if ($_.Message) {{ ($_.Message -replace '[\r\n]+',' ').Substring(0, [Math]::Min($_.Message.Length, 200)) }} else {{ 'No message' }}
         Write-Output "EVT|$($_.Id)|$($_.ProviderName)|$lvl|$($_.TimeCreated.ToString('o'))|$msg"
     }}
 }} catch {{}}"#,

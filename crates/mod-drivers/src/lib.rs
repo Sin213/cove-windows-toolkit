@@ -21,8 +21,6 @@ pub struct DriverReport {
 
 #[cfg(target_os = "windows")]
 pub fn audit_drivers() -> DriverReport {
-    
-
     let ps = r#"
 Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue |
     Where-Object { $_.DeviceName -and $_.DriverVersion } |
@@ -49,8 +47,6 @@ Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue |
 
             let status = if !signed {
                 "unsigned".to_string()
-            } else if is_old_date(&date) {
-                "outdated".to_string()
             } else {
                 "ok".to_string()
             };
@@ -61,32 +57,21 @@ Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue |
 
     let total = all_drivers.len();
     let unsigned = all_drivers.iter().filter(|d| d.status == "unsigned").count();
-    let outdated = all_drivers.iter().filter(|d| d.status == "outdated").count();
 
-    let mut problematic: Vec<DriverEntry> = all_drivers.iter()
-        .filter(|d| d.status != "ok")
+    let problematic: Vec<DriverEntry> = all_drivers.iter()
+        .filter(|d| d.status == "unsigned")
         .cloned()
         .collect();
-    problematic.sort_by(|a, b| a.status.cmp(&b.status));
 
     let healthy: Vec<DriverEntry> = all_drivers.into_iter()
         .filter(|d| d.status == "ok")
         .take(10)
         .collect();
 
-    DriverReport { total, unsigned, outdated, problematic, healthy }
+    DriverReport { total, unsigned, outdated: 0, problematic, healthy }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn audit_drivers() -> DriverReport {
     DriverReport { total: 0, unsigned: 0, outdated: 0, problematic: Vec::new(), healthy: Vec::new() }
-}
-
-fn is_old_date(date: &str) -> bool {
-    if date == "unknown" { return false; }
-    let parts: Vec<u32> = date.split('-').filter_map(|s| s.parse().ok()).collect();
-    if !parts.is_empty() {
-        return parts[0] < 2024;
-    }
-    false
 }
