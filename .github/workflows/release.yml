@@ -77,7 +77,7 @@ jobs:
       - name: Build Tauri app
         shell: pwsh
         working-directory: crates/optimizer-app
-        run: cargo tauri build
+        run: cargo tauri build --config '{"build":{"beforeBuildCommand":""}}'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ""
 
