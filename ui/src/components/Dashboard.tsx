@@ -24,6 +24,15 @@ interface CategoryCard {
 
 const OPTIMIZER_CARDS: CategoryCard[] = [
   {
+    id: "performance",
+    title: "Performance Tweaks",
+    description: "NTFS, prefetch, CPU scheduling, boot, and gaming optimizations",
+    icon: "⚡",
+    badge: "8 tweaks",
+    badgeColor: "green",
+    section: "optimize",
+  },
+  {
     id: "visual",
     title: "Visual Effects",
     description: "Disable transparency, animations, and cosmetic effects",

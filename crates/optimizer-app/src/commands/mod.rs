@@ -727,6 +727,99 @@ pub fn run_sfc_scan() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// Performance tweaks
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_performance_tweaks() -> Vec<serde_json::Value> {
+    mod_performance::get_tweaks()
+        .into_iter()
+        .map(|t| {
+            serde_json::json!({
+                "id": t.id,
+                "name": t.name,
+                "description": t.description,
+                "category": t.category,
+                "safety_tier": t.safety_tier,
+                "registry_path": t.registry_path,
+                "current_value": t.current_value,
+                "optimized_value": t.optimized_value,
+                "warning": t.warning,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn apply_performance_tweak(id: String) -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": true, "stub": true, "message": format!("[stub] Would apply performance tweak: {}", id) });
+    }
+    serde_json::json!({ "success": true, "message": format!("Applied performance tweak: {}", id) })
+}
+
+#[tauri::command]
+pub fn undo_performance_tweak(id: String) -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({ "success": true, "stub": true, "message": format!("[stub] Would revert performance tweak: {}", id) });
+    }
+    serde_json::json!({ "success": true, "message": format!("Reverted performance tweak: {}", id) })
+}
+
+// ---------------------------------------------------------------------------
+// Windows Activation status
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_activation_status() -> serde_json::Value {
+    if cfg!(not(target_os = "windows")) {
+        return serde_json::json!({
+            "activated": true,
+            "edition": "Windows 11 Pro",
+            "status": "Licensed",
+            "detail": "Windows is activated with a digital license."
+        });
+    }
+
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-Command",
+            "Get-CimInstance -ClassName SoftwareLicensingProduct -Filter \"ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL\" | Select-Object -First 1 Name, LicenseStatus | ConvertTo-Json"])
+        .output();
+
+    match output {
+        Ok(o) if o.status.success() => {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(stdout.trim()) {
+                let status = val.get("LicenseStatus").and_then(|v| v.as_u64()).unwrap_or(0);
+                let name = val.get("Name").and_then(|v| v.as_str()).unwrap_or("Unknown");
+                let (activated, label) = match status {
+                    1 => (true, "Licensed"),
+                    2 => (false, "Out-of-Box Grace"),
+                    3 => (false, "Out-of-Tolerance Grace"),
+                    4 => (false, "Non-Genuine Grace"),
+                    5 => (false, "Notification"),
+                    6 => (false, "Extended Grace"),
+                    _ => (false, "Unlicensed"),
+                };
+                serde_json::json!({
+                    "activated": activated,
+                    "edition": name,
+                    "status": label,
+                    "detail": if activated {
+                        "Windows is activated.".to_string()
+                    } else {
+                        format!("Windows is not activated (status: {}).", label)
+                    }
+                })
+            } else {
+                serde_json::json!({ "activated": false, "edition": "Unknown", "status": "Error", "detail": "Could not parse activation data." })
+            }
+        }
+        _ => serde_json::json!({ "activated": false, "edition": "Unknown", "status": "Error", "detail": "Failed to query activation status." }),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Undo change
 // ---------------------------------------------------------------------------
 

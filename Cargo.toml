@@ -24,6 +24,7 @@ members = [
     "crates/mod-temps",
     "crates/mod-uninstall",
     "crates/mod-bloatware",
+    "crates/mod-performance",
 ]
 
 [workspace.package]

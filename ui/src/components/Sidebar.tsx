@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import type { View } from "../App";
+import { invoke } from "../lib/tauri";
 import "./Sidebar.css";
 
 interface Props {
@@ -15,6 +17,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: "⌂", section: "system" },
+  { id: "performance", label: "Performance", icon: "⏱", section: "optimize" },
   { id: "visual", label: "Visual Effects", icon: "◑", section: "optimize" },
   { id: "privacy", label: "Privacy", icon: "◉", section: "optimize" },
   { id: "services", label: "Services", icon: "⚙", section: "optimize" },
@@ -36,6 +39,14 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export default function Sidebar({ current, onNavigate }: Props) {
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    invoke<{ is_admin: boolean }>("check_admin_status")
+      .then((r) => setIsAdmin(r.is_admin))
+      .catch(() => setIsAdmin(null));
+  }, []);
+
   const sections = [
     { key: "system" as const, label: "" },
     { key: "optimize" as const, label: "OPTIMIZE" },
@@ -48,6 +59,14 @@ export default function Sidebar({ current, onNavigate }: Props) {
         <span className="logo">◆</span>
         <span className="title">Cove</span>
       </div>
+      {isAdmin !== null && (
+        <div className={`admin-badge ${isAdmin ? "admin-yes" : "admin-no"}`}>
+          <span className="admin-icon">{isAdmin ? "🛡" : "⚠"}</span>
+          <span className="admin-label">
+            {isAdmin ? "Admin" : "Not Admin"}
+          </span>
+        </div>
+      )}
       {sections.map((section) => {
         const items = NAV_ITEMS.filter((i) => i.section === section.key);
         if (!items.length) return null;

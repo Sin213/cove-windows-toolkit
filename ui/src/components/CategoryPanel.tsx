@@ -1,6 +1,7 @@
 import type { View } from "../App";
 import "./CategoryPanel.css";
 
+import PerformancePanel from "./PerformancePanel";
 import VisualPanel from "./VisualPanel";
 import PrivacyPanel from "./PrivacyPanel";
 import ServicesPanel from "./ServicesPanel";
@@ -26,6 +27,11 @@ interface Props {
 }
 
 const VIEW_META: Record<string, { title: string; description: string }> = {
+  performance: {
+    title: "Performance Tweaks",
+    description:
+      "Registry-based optimizations for filesystem, memory, CPU scheduling, and boot — all reversible.",
+  },
   visual: {
     title: "Visual Effects",
     description:
@@ -114,6 +120,7 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
 };
 
 const PANELS: Record<string, React.ComponentType> = {
+  performance: PerformancePanel,
   visual: VisualPanel,
   privacy: PrivacyPanel,
   services: ServicesPanel,

@@ -1,0 +1,153 @@
+.performance-panel .perf-category {
+  margin-bottom: 20px;
+}
+
+.performance-panel .perf-category-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.performance-panel .tweaks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.performance-panel .tweak-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  transition: border-color 0.15s;
+}
+
+.performance-panel .tweak-item:hover {
+  border-color: var(--text-muted);
+}
+
+.performance-panel .tweak-item.tweak-applied {
+  border-color: var(--green);
+  background: rgba(63, 185, 80, 0.04);
+}
+
+.performance-panel .tweak-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.performance-panel .tweak-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.performance-panel .tweak-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.performance-panel .tweak-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.performance-panel .tweak-warning {
+  font-size: 11px;
+  color: var(--yellow);
+  margin-top: 4px;
+}
+
+.performance-panel .tweak-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  margin-left: 16px;
+  flex-shrink: 0;
+}
+
+.performance-panel .tweak-values {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.performance-panel .val-current {
+  color: var(--text-muted);
+}
+
+.performance-panel .val-arrow {
+  color: var(--text-muted);
+}
+
+.performance-panel .val-optimized {
+  color: var(--green);
+  font-weight: 500;
+}
+
+.performance-panel .apply-btn,
+.performance-panel .undo-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 4px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 60px;
+}
+
+.performance-panel .apply-btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.performance-panel .undo-btn {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.performance-panel .undo-btn:hover {
+  background: var(--yellow);
+  color: #000;
+}
+
+.performance-panel .apply-btn:disabled,
+.performance-panel .undo-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.performance-panel .batch-actions {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.performance-panel .batch-btn {
+  background: var(--green);
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.performance-panel .batch-btn:hover {
+  opacity: 0.85;
+}
