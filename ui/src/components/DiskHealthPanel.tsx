@@ -120,7 +120,7 @@ export default function DiskHealthPanel() {
         tier: "Yellow",
         title: "Schedule chkdsk /f",
         message:
-          "This will schedule a filesystem error check on next reboot. The system volume cannot be checked while Windows is running — a reboot is required. Continue?",
+          "This will schedule a filesystem error check on next reboot. The system volume cannot be checked while Windows is running -a reboot is required. Continue?",
       });
     }
   };
@@ -291,7 +291,7 @@ export default function DiskHealthPanel() {
           <div className="last-chkdsk">
             {lastChkdsk.dirty_bit && (
               <div className="dirty-bit-warn">
-                <span>{"⚠"}</span> Volume dirty bit is set — a chkdsk may
+                <span>{"⚠"}</span> Volume dirty bit is set -a chkdsk may
                 run automatically on next boot.
               </div>
             )}
@@ -337,10 +337,10 @@ export default function DiskHealthPanel() {
         </div>
         <div className="chkdsk-hint">
           <span>
-            <strong>/scan</strong> — online read-only check (safe, immediate)
+            <strong>/scan</strong> -online read-only check (safe, immediate)
           </span>
           <span>
-            <strong>/f</strong> — fix filesystem errors (requires reboot)
+            <strong>/f</strong> -fix filesystem errors (requires reboot)
           </span>
         </div>
 

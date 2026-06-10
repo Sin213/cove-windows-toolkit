@@ -321,7 +321,7 @@ fn dotnet_core_status(version: &str) -> (bool, Option<String>) {
     match major {
         // EOL versions
         5 | 7 => (true, Some(DOTNET9_URL.into())),
-        // Supported LTS — not outdated
+        // Supported LTS -not outdated
         6 | 8 => (false, None),
         // Current
         9 => (false, None),

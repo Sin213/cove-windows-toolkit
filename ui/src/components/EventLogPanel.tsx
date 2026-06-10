@@ -9,15 +9,13 @@ interface EventEntry {
   level: string;
   message: string;
   time: string;
-  count: number;
 }
 
 interface LogChannel {
-  total: number;
   critical: number;
   error: number;
   warning: number;
-  events: EventEntry[];
+  recent_events: EventEntry[];
 }
 
 interface EventLogData {
@@ -64,7 +62,6 @@ export default function EventLogPanel() {
       </div>
 
       <div className="log-summary-bar">
-        <span className="log-stat total">{channel.total.toLocaleString()} total</span>
         {channel.critical > 0 && (
           <span className="log-stat critical">{channel.critical} critical</span>
         )}
@@ -73,7 +70,7 @@ export default function EventLogPanel() {
       </div>
 
       <div className="events-list">
-        {channel.events.map((ev, i) => (
+        {channel.recent_events.map((ev, i) => (
           <div key={i} className="event-item">
             <span className={`event-level-bar level-${ev.level.toLowerCase()}`} />
             <div className="event-content">
@@ -83,9 +80,6 @@ export default function EventLogPanel() {
                   {ev.level}
                 </span>
                 <span className="event-id">ID {ev.id}</span>
-                {ev.count > 1 && (
-                  <span className="event-count">x{ev.count}</span>
-                )}
                 <span className="event-time">{timeAgo(ev.time)}</span>
               </div>
               <div className="event-message">{ev.message}</div>

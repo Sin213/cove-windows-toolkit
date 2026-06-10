@@ -5,13 +5,12 @@ import "./NetDiagPanel.css";
 interface Adapter {
   name: string;
   type: string;
-  mac: string;
-  ipv4: string | null;
-  ipv6: string | null;
-  gateway: string | null;
+  speed: string;
+  ip: string;
+  gateway: string;
   dns: string[];
-  speed: string | null;
   status: string;
+  signal: number | null;
 }
 
 interface TestResult {
@@ -23,14 +22,14 @@ interface TestResult {
 
 interface WifiInfo {
   ssid: string;
-  signal_percent: number;
+  signal_quality: number;
+  signal_dbm: number;
   channel: number;
   frequency: string;
-  security: string;
 }
 
 interface NetDiagData {
-  adapters: Adapter[];
+  adapter: Adapter | null;
   tests: TestResult[];
   wifi: WifiInfo | null;
 }
@@ -94,9 +93,8 @@ export default function NetDiagPanel() {
   }, []);
 
   const detectCurrentDns = (d: NetDiagData) => {
-    const active = d.adapters.find((a) => a.status === "Connected");
-    if (!active?.dns?.length) return;
-    const primary = active.dns[0];
+    if (!d.adapter?.dns?.length) return;
+    const primary = d.adapter.dns[0];
     const match = DNS_PRESETS.find((p) => p.primary === primary);
     if (match) setDnsPreset(match.id);
   };
@@ -138,38 +136,32 @@ export default function NetDiagPanel() {
   if (error) return <div className="panel-error">Error: {error}</div>;
   if (!data) return null;
 
-  const activeAdapter = data.adapters.find((a) => a.status === "Connected");
-
   return (
     <div className="netdiag-panel">
       {/* Active adapter card */}
-      {activeAdapter && (
+      {data.adapter && (
         <div className="adapter-card">
           <div className="adapter-header">
-            <span className="adapter-name">{activeAdapter.name}</span>
-            <span className="adapter-type">{activeAdapter.type}</span>
-            <span className="adapter-connected">Connected</span>
+            <span className="adapter-name">{data.adapter.name}</span>
+            <span className="adapter-type">{data.adapter.type}</span>
+            <span className="adapter-connected">{data.adapter.status}</span>
           </div>
           <div className="adapter-grid">
             <div className="adapter-field">
-              <span className="field-label">IPv4</span>
-              <span className="field-value">{activeAdapter.ipv4 || "N/A"}</span>
+              <span className="field-label">IP</span>
+              <span className="field-value">{data.adapter.ip || "N/A"}</span>
             </div>
             <div className="adapter-field">
               <span className="field-label">Gateway</span>
-              <span className="field-value">{activeAdapter.gateway || "N/A"}</span>
+              <span className="field-value">{data.adapter.gateway || "N/A"}</span>
             </div>
             <div className="adapter-field">
               <span className="field-label">DNS</span>
-              <span className="field-value">{activeAdapter.dns.join(", ") || "N/A"}</span>
+              <span className="field-value">{data.adapter.dns.join(", ") || "N/A"}</span>
             </div>
             <div className="adapter-field">
               <span className="field-label">Speed</span>
-              <span className="field-value">{activeAdapter.speed || "N/A"}</span>
-            </div>
-            <div className="adapter-field">
-              <span className="field-label">MAC</span>
-              <span className="field-value mono">{activeAdapter.mac}</span>
+              <span className="field-value">{data.adapter.speed || "N/A"}</span>
             </div>
           </div>
         </div>
@@ -225,15 +217,11 @@ export default function NetDiagPanel() {
             </div>
             <div className="wifi-field">
               <span className="field-label">Signal</span>
-              <span className="field-value">{data.wifi.signal_percent}%</span>
+              <span className="field-value">{data.wifi.signal_quality}% ({data.wifi.signal_dbm} dBm)</span>
             </div>
             <div className="wifi-field">
               <span className="field-label">Channel</span>
-              <span className="field-value">{data.wifi.channel}</span>
-            </div>
-            <div className="wifi-field">
-              <span className="field-label">Security</span>
-              <span className="field-value">{data.wifi.security}</span>
+              <span className="field-value">{data.wifi.channel} ({data.wifi.frequency})</span>
             </div>
           </div>
         </div>
@@ -316,21 +304,6 @@ export default function NetDiagPanel() {
         </div>
       </div>
 
-      {/* Other adapters */}
-      {data.adapters.filter((a) => a.status !== "Connected").length > 0 && (
-        <div className="other-adapters">
-          <h3>Other Adapters</h3>
-          {data.adapters
-            .filter((a) => a.status !== "Connected")
-            .map((a) => (
-              <div key={a.name} className="adapter-row-small">
-                <span className="adapter-name-small">{a.name}</span>
-                <span className="adapter-type-small">{a.type}</span>
-                <span className="adapter-status-small">{a.status}</span>
-              </div>
-            ))}
-        </div>
-      )}
     </div>
   );
 }

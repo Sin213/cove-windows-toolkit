@@ -137,7 +137,7 @@ function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
       ? "outdated"
       : "installed"
     : "missing";
-  const icon = entry.installed ? (entry.outdated ? "⚠" : "✔") : "—";
+  const icon = entry.installed ? (entry.outdated ? "⚠" : "✔") : "-";
 
   const handleDownload = () => {
     if (entry.download_url) {

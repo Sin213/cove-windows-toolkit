@@ -34,7 +34,7 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
   performance: {
     title: "Performance Tweaks",
     description:
-      "Registry-based optimizations for filesystem, memory, CPU scheduling, and boot — all reversible.",
+      "Registry-based optimizations for filesystem, memory, CPU scheduling, and boot -all reversible.",
   },
   visual: {
     title: "Visual Effects",

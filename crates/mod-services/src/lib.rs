@@ -23,8 +23,8 @@ pub struct ServicesTweaks {
 #[cfg(target_os = "windows")]
 pub fn get_tweaks() -> ServicesTweaks {
     let conservative_defs = vec![
-        ("svc.wsearch", "Windows Search", "WSearch", "Indexing service — uses RAM and disk I/O", "green", "Manual", "Search works but first query is slower", None),
-        ("svc.sysmain", "SysMain (Superfetch)", "SysMain", "Prefetch service — irrelevant on SSDs", "green", "Manual", "Frees RAM and reduces disk I/O on SSDs", None),
+        ("svc.wsearch", "Windows Search", "WSearch", "Indexing service -uses RAM and disk I/O", "green", "Manual", "Search works but first query is slower", None),
+        ("svc.sysmain", "SysMain (Superfetch)", "SysMain", "Prefetch service -irrelevant on SSDs", "green", "Manual", "Frees RAM and reduces disk I/O on SSDs", None),
         ("svc.diagtrack", "DiagTrack", "DiagTrack", "Connected User Experiences and Telemetry", "green", "Manual", "Stops telemetry data upload", None),
         ("svc.spooler", "Print Spooler", "Spooler", "Manages print jobs", "green", "Manual", "Set Manual only if no printer detected", None),
         ("svc.xbox_auth", "Xbox Live Auth Manager", "XblAuthManager", "Xbox Live authentication", "green", "Disabled", "No effect unless Xbox app is actively used", None),

@@ -4,13 +4,12 @@ import { timeAgo } from "../lib/format";
 import "./BsodPanel.css";
 
 interface BsodDump {
-  filename: string;
-  timestamp: string;
-  bug_check_code: string;
+  file: string;
+  date: string;
+  bug_check: string;
   bug_check_name: string;
   faulting_module: string;
-  faulting_driver: string;
-  detail: string;
+  description: string;
   recommendation: string;
 }
 
@@ -27,8 +26,8 @@ export default function BsodPanel() {
       .finally(() => setLoading(false));
   }, []);
 
-  const toggle = (filename: string) =>
-    setExpanded((s) => ({ ...s, [filename]: !s[filename] }));
+  const toggle = (file: string) =>
+    setExpanded((s) => ({ ...s, [file]: !s[file] }));
 
   if (loading) return <div className="panel-loading">Scanning minidumps...</div>;
   if (error) return <div className="panel-error">Error: {error}</div>;
@@ -53,34 +52,30 @@ export default function BsodPanel() {
 
       <div className="dumps-list">
         {dumps.map((dump) => (
-          <div key={dump.filename} className="dump-item">
-            <button className="dump-header" onClick={() => toggle(dump.filename)}>
+          <div key={dump.file} className="dump-item">
+            <button className="dump-header" onClick={() => toggle(dump.file)}>
               <span className="dump-chevron">
-                {expanded[dump.filename] ? "▾" : "▸"}
+                {expanded[dump.file] ? "▾" : "▸"}
               </span>
               <div className="dump-header-info">
-                <span className="dump-code">{dump.bug_check_code}</span>
+                <span className="dump-code">{dump.bug_check}</span>
                 <span className="dump-name">{dump.bug_check_name}</span>
               </div>
-              <span className="dump-time">{timeAgo(dump.timestamp)}</span>
+              <span className="dump-time">{timeAgo(dump.date)}</span>
             </button>
-            {expanded[dump.filename] && (
+            {expanded[dump.file] && (
               <div className="dump-details">
                 <div className="dump-row">
                   <span className="dump-label">File</span>
-                  <span className="dump-value mono">{dump.filename}</span>
+                  <span className="dump-value mono">{dump.file}</span>
                 </div>
                 <div className="dump-row">
                   <span className="dump-label">Faulting Module</span>
                   <span className="dump-value mono">{dump.faulting_module}</span>
                 </div>
                 <div className="dump-row">
-                  <span className="dump-label">Faulting Driver</span>
-                  <span className="dump-value mono">{dump.faulting_driver}</span>
-                </div>
-                <div className="dump-row">
                   <span className="dump-label">Description</span>
-                  <span className="dump-value">{dump.detail}</span>
+                  <span className="dump-value">{dump.description}</span>
                 </div>
                 <div className="dump-recommendation">
                   <span className="rec-label">Recommendation</span>
