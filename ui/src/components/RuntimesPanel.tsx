@@ -9,11 +9,14 @@ interface RuntimeEntry {
   path?: string | null;
   installed: boolean;
   arch?: string;
+  outdated: boolean;
+  download_url?: string | null;
 }
 
 interface DirectXInfo {
   version: string;
   feature_level: string;
+  download_url: string;
 }
 
 interface RuntimesData {
@@ -129,20 +132,40 @@ export default function RuntimesPanel() {
 }
 
 function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
-  const statusClass = entry.installed ? "installed" : "missing";
-  const icon = entry.installed ? "✔" : "—";
+  const statusClass = entry.installed
+    ? entry.outdated
+      ? "outdated"
+      : "installed"
+    : "missing";
+  const icon = entry.installed ? (entry.outdated ? "⚠" : "✔") : "—";
+
+  const handleDownload = () => {
+    if (entry.download_url) {
+      invoke("open_url", { url: entry.download_url });
+    }
+  };
 
   return (
     <div className="runtime-item">
       <span className={`runtime-status-icon ${statusClass}`}>{icon}</span>
       <div className="runtime-info">
-        <div className="runtime-name">{entry.name}</div>
+        <div className="runtime-name">
+          {entry.name}
+          {entry.outdated && (
+            <span className="runtime-outdated-badge">Outdated</span>
+          )}
+        </div>
         {entry.path && <div className="runtime-detail">{entry.path}</div>}
         {!entry.installed && <div className="runtime-detail">Not installed</div>}
       </div>
       {entry.arch && <span className="runtime-arch">{entry.arch}</span>}
       {entry.installed && entry.version && (
         <span className="runtime-version">{entry.version}</span>
+      )}
+      {entry.download_url && (
+        <button className="runtime-dl-btn" onClick={handleDownload}>
+          {entry.installed ? "Update" : "Download"}
+        </button>
       )}
     </div>
   );

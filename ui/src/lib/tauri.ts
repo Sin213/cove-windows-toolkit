@@ -1071,18 +1071,19 @@ const MOCKS: Record<string, unknown> = {
   // ── Runtimes ─────────────────────────────────────────────────────────
   get_installed_runtimes: {
     dotnet: [
-      { name: ".NET Framework 4.8", version: "4.8", path: "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319", installed: true },
-      { name: ".NET 8.0.3 (runtime)", version: "8.0.3", runtime_type: "runtime", path: "C:\\Program Files\\dotnet", installed: true },
-      { name: ".NET Framework 3.5", version: "3.5", path: null, installed: false },
+      { name: ".NET Framework 4.8", version: "4.8", path: "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319", installed: true, outdated: true, download_url: "https://dotnet.microsoft.com/download/dotnet-framework/net481" },
+      { name: ".NET 8.0.3 (runtime)", version: "8.0.3", runtime_type: "runtime", path: "C:\\Program Files\\dotnet", installed: true, outdated: false },
+      { name: ".NET Framework 3.5", version: "3.5", path: null, installed: false, outdated: false, download_url: "https://dotnet.microsoft.com/download/dotnet-framework/net35-sp1" },
     ],
     vcredist: [
-      { name: "Visual C++ 2015-2022 (x64)", version: "14.38.33135", arch: "x64", installed: true },
-      { name: "Visual C++ 2015-2022 (x86)", version: "14.38.33135", arch: "x86", installed: true },
-      { name: "Visual C++ 2013 (x64)", version: "12.0.40664", arch: "x64", installed: true },
+      { name: "Visual C++ 2015-2022 (x64)", version: "14.38.33135", arch: "x64", installed: true, outdated: true, download_url: "https://aka.ms/vs/17/release/vc_redist.x64.exe" },
+      { name: "Visual C++ 2015-2022 (x86)", version: "14.38.33135", arch: "x86", installed: true, outdated: true, download_url: "https://aka.ms/vs/17/release/vc_redist.x86.exe" },
+      { name: "Visual C++ 2013 (x64)", version: "12.0.40664", arch: "x64", installed: true, outdated: false },
     ],
-    directx: { version: "12.0", feature_level: "12_1" },
+    directx: { version: "12.0", feature_level: "12_1", download_url: "https://www.microsoft.com/en-us/download/details.aspx?id=35" },
     java: [],
   },
+  open_url: { success: true },
 
   // ── Security ────────────────────────────────────────────────────────
   get_security_status: {

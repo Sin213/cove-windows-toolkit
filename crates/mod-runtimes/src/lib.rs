@@ -11,12 +11,16 @@ pub struct RuntimeEntry {
     pub installed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arch: Option<String>,
+    pub outdated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
 }
 
 #[derive(Serialize)]
 pub struct DirectXInfo {
     pub version: String,
     pub feature_level: String,
+    pub download_url: String,
 }
 
 #[derive(Serialize)]
@@ -79,22 +83,30 @@ try {
             let parts: Vec<&str> = line.split('|').collect();
             if parts.len() >= 2 {
                 if parts[0] == "FOUND" && parts.len() >= 4 {
+                    let ver = parts[2].to_string();
+                    let outdated = is_dotnet_fw_outdated(&ver);
                     entries.push(RuntimeEntry {
                         name: parts[1].to_string(),
-                        version: parts[2].to_string(),
+                        version: ver,
                         runtime_type: None,
                         path: Some(parts[3].to_string()),
                         installed: true,
                         arch: None,
+                        outdated,
+                        download_url: if outdated { Some(DOTNET_FW_URL.into()) } else { None },
                     });
                 } else if parts[0] == "NOTFOUND" {
+                    let name = parts[1].to_string();
+                    let url = if name.contains("3.5") { DOTNET_FW35_URL } else { DOTNET_FW_URL };
                     entries.push(RuntimeEntry {
-                        name: parts[1].to_string(),
+                        name,
                         version: String::new(),
                         runtime_type: None,
                         path: None,
                         installed: false,
                         arch: None,
+                        outdated: false,
+                        download_url: Some(url.into()),
                     });
                 }
             }
@@ -111,13 +123,17 @@ try {
             let parts: Vec<&str> = trimmed.splitn(3, ' ').collect();
             if parts.len() >= 2 {
                 let rt_type = parts[0].replace("Microsoft.", "").replace("App", "").replace(".", " ").trim().to_string();
+                let ver = parts[1].to_string();
+                let (outdated, url) = dotnet_core_status(&ver);
                 entries.push(RuntimeEntry {
-                    name: format!(".NET {} ({})", parts[1], if rt_type.is_empty() { "runtime" } else { &rt_type }),
-                    version: parts[1].to_string(),
+                    name: format!(".NET {} ({})", ver, if rt_type.is_empty() { "runtime" } else { &rt_type }),
+                    version: ver,
                     runtime_type: Some("runtime".into()),
                     path: parts.get(2).map(|p| p.trim_matches(|c| c == '[' || c == ']').to_string()),
                     installed: true,
                     arch: None,
+                    outdated,
+                    download_url: url,
                 });
             }
         }
@@ -146,14 +162,19 @@ Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','
             let parts: Vec<&str> = line.splitn(2, '|').collect();
             if parts.len() == 2 {
                 let name = parts[0].trim();
+                let ver = parts[1].trim().to_string();
                 let arch = if name.contains("x64") { "x64" } else if name.contains("x86") { "x86" } else { "x64" };
+                let outdated = is_vcredist_outdated(&ver);
+                let url = if arch == "x64" { VCREDIST_X64_URL } else { VCREDIST_X86_URL };
                 Some(RuntimeEntry {
                     name: name.to_string(),
-                    version: parts[1].trim().to_string(),
+                    version: ver,
                     runtime_type: None,
                     path: None,
                     installed: true,
                     arch: Some(arch.to_string()),
+                    outdated,
+                    download_url: if outdated { Some(url.into()) } else { None },
                 })
             } else {
                 None
@@ -186,11 +207,12 @@ try {
             return DirectXInfo {
                 version: parts[0].to_string(),
                 feature_level: parts[1].to_string(),
+                download_url: DIRECTX_URL.into(),
             };
         }
     }
 
-    DirectXInfo { version: "12.0".into(), feature_level: "12_1".into() }
+    DirectXInfo { version: "12.0".into(), feature_level: "12_1".into(), download_url: DIRECTX_URL.into() }
 }
 
 #[cfg(target_os = "windows")]
@@ -224,13 +246,17 @@ else { $found | ForEach-Object { Write-Output $_ } }
             return stdout.lines().filter_map(|line| {
                 let parts: Vec<&str> = line.splitn(3, '|').collect();
                 if parts.len() == 3 {
+                    let ver = parts[0].to_string();
+                    let outdated = is_java_outdated(&ver);
                     Some(RuntimeEntry {
-                        name: format!("Java {} ({})", parts[0], parts[1]),
-                        version: parts[0].to_string(),
+                        name: format!("Java {} ({})", ver, parts[1]),
+                        version: ver,
                         runtime_type: Some(parts[1].to_string()),
                         path: Some(parts[2].to_string()),
                         installed: true,
                         arch: None,
+                        outdated,
+                        download_url: if outdated { Some(JAVA_URL.into()) } else { None },
                     })
                 } else {
                     None
@@ -244,17 +270,17 @@ else { $found | ForEach-Object { Write-Output $_ } }
 
 fn stub_dotnet() -> Vec<RuntimeEntry> {
     vec![
-        RuntimeEntry { name: ".NET Framework 4.8".into(), version: "4.8".into(), runtime_type: None, path: Some(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319".into()), installed: true, arch: None },
-        RuntimeEntry { name: ".NET 8.0.3 (runtime)".into(), version: "8.0.3".into(), runtime_type: Some("runtime".into()), path: Some(r"C:\Program Files\dotnet".into()), installed: true, arch: None },
-        RuntimeEntry { name: ".NET Framework 3.5".into(), version: "3.5".into(), runtime_type: None, path: None, installed: false, arch: None },
+        RuntimeEntry { name: ".NET Framework 4.8".into(), version: "4.8".into(), runtime_type: None, path: Some(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319".into()), installed: true, arch: None, outdated: true, download_url: Some(DOTNET_FW_URL.into()) },
+        RuntimeEntry { name: ".NET 8.0.3 (runtime)".into(), version: "8.0.3".into(), runtime_type: Some("runtime".into()), path: Some(r"C:\Program Files\dotnet".into()), installed: true, arch: None, outdated: false, download_url: None },
+        RuntimeEntry { name: ".NET Framework 3.5".into(), version: "3.5".into(), runtime_type: None, path: None, installed: false, arch: None, outdated: false, download_url: Some(DOTNET_FW35_URL.into()) },
     ]
 }
 
 fn stub_vcredist() -> Vec<RuntimeEntry> {
     vec![
-        RuntimeEntry { name: "Visual C++ 2015-2022 (x64)".into(), version: "14.38.33135".into(), runtime_type: None, path: None, installed: true, arch: Some("x64".into()) },
-        RuntimeEntry { name: "Visual C++ 2015-2022 (x86)".into(), version: "14.38.33135".into(), runtime_type: None, path: None, installed: true, arch: Some("x86".into()) },
-        RuntimeEntry { name: "Visual C++ 2013 (x64)".into(), version: "12.0.40664".into(), runtime_type: None, path: None, installed: true, arch: Some("x64".into()) },
+        RuntimeEntry { name: "Visual C++ 2015-2022 (x64)".into(), version: "14.38.33135".into(), runtime_type: None, path: None, installed: true, arch: Some("x64".into()), outdated: true, download_url: Some(VCREDIST_X64_URL.into()) },
+        RuntimeEntry { name: "Visual C++ 2015-2022 (x86)".into(), version: "14.38.33135".into(), runtime_type: None, path: None, installed: true, arch: Some("x86".into()), outdated: true, download_url: Some(VCREDIST_X86_URL.into()) },
+        RuntimeEntry { name: "Visual C++ 2013 (x64)".into(), version: "12.0.40664".into(), runtime_type: None, path: None, installed: true, arch: Some("x64".into()), outdated: false, download_url: None },
     ]
 }
 
@@ -263,7 +289,59 @@ fn stub_runtimes() -> RuntimesReport {
     RuntimesReport {
         dotnet: stub_dotnet(),
         vcredist: stub_vcredist(),
-        directx: DirectXInfo { version: "12.0".into(), feature_level: "12_1".into() },
+        directx: DirectXInfo { version: "12.0".into(), feature_level: "12_1".into(), download_url: DIRECTX_URL.into() },
         java: Vec::new(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Download URLs and version checks
+// ---------------------------------------------------------------------------
+
+const DOTNET_FW_URL: &str = "https://dotnet.microsoft.com/download/dotnet-framework/net481";
+const DOTNET_FW35_URL: &str = "https://dotnet.microsoft.com/download/dotnet-framework/net35-sp1";
+const DOTNET8_URL: &str = "https://dotnet.microsoft.com/download/dotnet/8.0";
+const DOTNET9_URL: &str = "https://dotnet.microsoft.com/download/dotnet/9.0";
+const VCREDIST_X64_URL: &str = "https://aka.ms/vs/17/release/vc_redist.x64.exe";
+const VCREDIST_X86_URL: &str = "https://aka.ms/vs/17/release/vc_redist.x86.exe";
+const DIRECTX_URL: &str = "https://www.microsoft.com/en-us/download/details.aspx?id=35";
+const JAVA_URL: &str = "https://adoptium.net/";
+
+fn is_dotnet_fw_outdated(version: &str) -> bool {
+    // 4.8.1 is the latest .NET Framework
+    if version.starts_with("4.8.1") {
+        false
+    } else {
+        version.starts_with("4.")
+    }
+}
+
+fn dotnet_core_status(version: &str) -> (bool, Option<String>) {
+    let major: u32 = version.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    match major {
+        // EOL versions
+        5 | 7 => (true, Some(DOTNET9_URL.into())),
+        // Supported LTS — not outdated
+        6 | 8 => (false, None),
+        // Current
+        9 => (false, None),
+        // Very old or unknown
+        _ if major < 5 => (true, Some(DOTNET8_URL.into())),
+        _ => (false, None),
+    }
+}
+
+fn is_vcredist_outdated(version: &str) -> bool {
+    // 14.40+ is current (2015-2022 latest)
+    let parts: Vec<u32> = version.split('.').filter_map(|s| s.parse().ok()).collect();
+    if parts.len() >= 2 && parts[0] == 14 {
+        return parts[1] < 40;
+    }
+    false
+}
+
+fn is_java_outdated(version: &str) -> bool {
+    let major: u32 = version.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0);
+    // Current LTS: 21, 17. Current: 22+
+    major > 0 && major < 17
 }

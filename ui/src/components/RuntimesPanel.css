@@ -46,7 +46,7 @@
   color: var(--text-muted);
 }
 
-.runtime-status-icon.warning {
+.runtime-status-icon.outdated {
   color: var(--yellow);
 }
 
@@ -114,6 +114,34 @@
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
+}
+
+.runtime-outdated-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--yellow-bg);
+  color: var(--yellow);
+  margin-left: 6px;
+  font-weight: 600;
+}
+
+.runtime-dl-btn {
+  padding: 4px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.runtime-dl-btn:hover {
+  background: var(--accent);
+  color: #fff;
 }
 
 .java-empty {

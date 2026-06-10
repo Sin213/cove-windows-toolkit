@@ -898,6 +898,25 @@ pub fn run_heuristic_scan() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// Open URL in default browser
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn open_url(url: String) -> serde_json::Value {
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url])
+            .spawn();
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    }
+    serde_json::json!({ "success": true })
+}
+
+// ---------------------------------------------------------------------------
 // Disk Health
 // ---------------------------------------------------------------------------
 

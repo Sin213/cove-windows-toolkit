@@ -117,6 +117,8 @@ fn main() {
             commands::get_machine_diff,
             // Runtimes
             commands::get_installed_runtimes,
+            // Open URL
+            commands::open_url,
             // Security
             commands::get_security_status,
             commands::run_defender_scan,
