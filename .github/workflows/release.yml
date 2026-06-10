@@ -1,0 +1,153 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (no leading v)'
+        required: false
+        default: '0.0.0-dev'
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - id: ver
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"
+          else
+            v="${{ github.event.inputs.version }}"
+            [ -z "$v" ] && v="0.0.0-dev"
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    needs: resolve-version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/optimizer-app
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        run: pnpm --prefix ui install --frozen-lockfile
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --version "^2"
+
+      - name: Patch version
+        shell: pwsh
+        run: |
+          $conf = Get-Content crates/optimizer-app/tauri.conf.json | ConvertFrom-Json
+          $conf.version = $env:VERSION
+          $conf | ConvertTo-Json -Depth 10 | Set-Content crates/optimizer-app/tauri.conf.json
+
+      - name: Build Tauri app
+        shell: pwsh
+        run: cargo tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ""
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          $bundlePath = "crates/optimizer-app/target/release/bundle"
+
+          # NSIS installer
+          $nsis = Get-ChildItem -Path "$bundlePath/nsis" -Filter "*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($nsis) {
+            Copy-Item $nsis.FullName "release/Cove-Windows-Optimizer-$env:VERSION-Setup.exe"
+          }
+
+          # MSI portable - just the raw exe
+          $exe = "crates/optimizer-app/target/release/optimizer-app.exe"
+          if (Test-Path $exe) {
+            Copy-Item $exe "release/Cove-Windows-Optimizer-$env:VERSION-Portable.exe"
+          }
+
+          Get-ChildItem release/
+
+      - name: Upload Setup installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          path: release/*-Setup.exe
+          if-no-files-found: error
+
+      - name: Upload Portable exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable
+          path: release/*-Portable.exe
+          if-no-files-found: error
+
+  publish-release:
+    if: github.ref_type == 'tag'
+    needs: [resolve-version, build-windows]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.resolve-version.outputs.version }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*-Setup.exe' -o -name '*-Portable.exe' \) -exec cp {} release/ \;
+          cd release
+          sha256sum * > checksums-sha256.txt
+          cat checksums-sha256.txt
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          fail_on_unmatched_files: true
+          body: |
+            ## Cove Windows Optimizer v${{ env.VERSION }}
+
+            ### Downloads
+
+            | File | Type |
+            |------|------|
+            | `Cove-Windows-Optimizer-${{ env.VERSION }}-Setup.exe` | Windows Installer |
+            | `Cove-Windows-Optimizer-${{ env.VERSION }}-Portable.exe` | Portable (no install) |
+
+            Verify downloads with `checksums-sha256.txt`:
+            ```
+            certutil -hashfile <file> SHA256
+            ```
+          make_latest: true
