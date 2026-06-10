@@ -164,8 +164,13 @@
   margin-bottom: 24px;
 }
 
+.diag-batch-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .diag-batch-btn {
-  width: 100%;
+  flex: 1;
   padding: 12px;
   border-radius: 8px;
   border: 1px solid var(--accent);
@@ -184,6 +189,44 @@
 .diag-batch-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.export-btn {
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.export-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-card-hover);
+}
+
+.export-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.export-result {
+  margin-top: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--green);
+  background: var(--green-bg);
+  border: 1px solid var(--green);
+  border-radius: 6px;
+}
+
+.export-path {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 11px;
+  word-break: break-all;
 }
 
 .diag-results {

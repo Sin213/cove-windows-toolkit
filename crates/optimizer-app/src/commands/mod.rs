@@ -346,6 +346,143 @@ pub fn generate_report() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// Export full report
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn export_report() -> serde_json::Value {
+    let health = get_health_report();
+    let drivers = get_driver_audit();
+    let events = get_event_log_summary();
+    let updates = get_update_status();
+    let temps = get_temperatures();
+    let disk = get_disk_health();
+    let runtimes = get_installed_runtimes();
+    let security = get_security_status();
+    let activation = get_activation_status();
+
+    let data = mod_report::FullReportData {
+        health_score: health.get("score").and_then(|v| v.as_u64()).unwrap_or(0),
+        health_findings: health.get("findings").and_then(|v| v.as_array()).map(|a| {
+            a.iter().filter_map(|f| {
+                let sev = f.get("severity").and_then(|s| s.as_str()).unwrap_or("Info");
+                let title = f.get("title").and_then(|s| s.as_str()).unwrap_or("");
+                let detail = f.get("detail").and_then(|s| s.as_str()).unwrap_or("");
+                Some(format!("[{}] {} - {}", sev, title, detail))
+            }).collect()
+        }).unwrap_or_default(),
+        driver_total: drivers.get("total").and_then(|v| v.as_u64()).unwrap_or(0),
+        driver_unsigned: drivers.get("unsigned").and_then(|v| v.as_u64()).unwrap_or(0),
+        driver_outdated: drivers.get("outdated").and_then(|v| v.as_u64()).unwrap_or(0),
+        driver_issues: drivers.get("problematic").and_then(|v| v.as_array()).map(|a| {
+            a.iter().filter_map(|d| {
+                let name = d.get("name").and_then(|s| s.as_str()).unwrap_or("");
+                let status = d.get("status").and_then(|s| s.as_str()).unwrap_or("");
+                let ver = d.get("version").and_then(|s| s.as_str()).unwrap_or("");
+                Some(format!("[{}] {} (v{})", status.to_uppercase(), name, ver))
+            }).collect()
+        }).unwrap_or_default(),
+        event_critical: events.pointer("/system/critical").and_then(|v| v.as_u64()).unwrap_or(0),
+        event_error: events.pointer("/system/error").and_then(|v| v.as_u64()).unwrap_or(0),
+        event_warning: events.pointer("/system/warning").and_then(|v| v.as_u64()).unwrap_or(0),
+        recent_events: events.pointer("/system/recent_events").and_then(|v| v.as_array()).map(|a| {
+            a.iter().take(10).filter_map(|e| {
+                let level = e.get("level").and_then(|s| s.as_str()).unwrap_or("");
+                let source = e.get("source").and_then(|s| s.as_str()).unwrap_or("");
+                let msg = e.get("message").and_then(|s| s.as_str()).unwrap_or("");
+                Some(format!("[{}] {} - {}", level, source, msg))
+            }).collect()
+        }).unwrap_or_default(),
+        update_service: updates.get("service_status").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+        pending_updates: updates.get("pending_updates").and_then(|v| v.as_array()).map(|a| {
+            a.iter().filter_map(|u| {
+                let title = u.get("title").and_then(|s| s.as_str()).unwrap_or("");
+                let sev = u.get("severity").and_then(|s| s.as_str()).unwrap_or("");
+                Some(format!("[{}] {}", sev, title))
+            }).collect()
+        }).unwrap_or_default(),
+        temperatures: temps.get("readings").and_then(|v| v.as_array()).map(|a| {
+            a.iter().filter_map(|t| {
+                let sensor = t.get("sensor").and_then(|s| s.as_str()).unwrap_or("");
+                let temp = t.get("temperature_c").and_then(|v| v.as_i64()).unwrap_or(0);
+                Some(format!("{}: {}C", sensor, temp))
+            }).collect()
+        }).unwrap_or_default(),
+        disk_health: disk.as_array().map(|a| {
+            a.iter().filter_map(|d| {
+                let model = d.get("model").and_then(|s| s.as_str()).unwrap_or("");
+                let rating = d.get("health_rating").and_then(|s| s.as_str()).unwrap_or("");
+                let temp = d.get("temperature_c").and_then(|v| v.as_i64());
+                let wear = d.get("wear_percent").and_then(|v| v.as_f64());
+                let mut line = format!("[{}] {}", rating, model);
+                if let Some(t) = temp { line.push_str(&format!(" | Temp: {}C", t)); }
+                if let Some(w) = wear { line.push_str(&format!(" | Wear: {}%", w)); }
+                Some(line)
+            }).collect()
+        }).unwrap_or_default(),
+        runtimes: {
+            let mut lines = Vec::new();
+            if let Some(dotnet) = runtimes.get("dotnet").and_then(|v| v.as_array()) {
+                for r in dotnet {
+                    let name = r.get("name").and_then(|s| s.as_str()).unwrap_or("");
+                    let installed = r.get("installed").and_then(|v| v.as_bool()).unwrap_or(false);
+                    lines.push(format!("[{}] {}", if installed { "OK" } else { "--" }, name));
+                }
+            }
+            if let Some(vc) = runtimes.get("vcredist").and_then(|v| v.as_array()) {
+                for r in vc {
+                    let name = r.get("name").and_then(|s| s.as_str()).unwrap_or("");
+                    lines.push(format!("[OK] {}", name));
+                }
+            }
+            lines
+        },
+        security_summary: {
+            let defender = security.get("defender");
+            let rtp = defender.and_then(|d| d.get("real_time_enabled")).and_then(|v| v.as_bool()).unwrap_or(false);
+            let defs = defender.and_then(|d| d.get("definitions_age_days")).and_then(|v| v.as_u64()).unwrap_or(0);
+            format!("Real-time Protection: {}  |  Definition age: {} days", if rtp { "ON" } else { "OFF" }, defs)
+        },
+        activation: {
+            let status = activation.get("status").and_then(|s| s.as_str()).unwrap_or("Unknown");
+            let edition = activation.get("edition").and_then(|s| s.as_str()).unwrap_or("Unknown");
+            format!("{} - {}", edition, status)
+        },
+    };
+
+    let html = mod_report::generate_full_report(&data);
+
+    let report_dir = directories::ProjectDirs::from("com", "cove", "optimizer")
+        .map(|dirs| dirs.data_local_dir().join("reports"))
+        .unwrap_or_else(|| std::path::PathBuf::from("reports"));
+    let _ = std::fs::create_dir_all(&report_dir);
+    let filename = format!("report-{}.html", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+    let filepath = report_dir.join(&filename);
+    let _ = std::fs::write(&filepath, &html);
+
+    #[cfg(target_os = "windows")]
+    { let _ = std::process::Command::new("cmd").args(["/C", "start", "", &filepath.to_string_lossy()]).spawn(); }
+    #[cfg(not(target_os = "windows"))]
+    { let _ = std::process::Command::new("xdg-open").arg(&filepath).spawn(); }
+
+    serde_json::json!({
+        "success": true,
+        "path": filepath.to_string_lossy(),
+        "filename": filename,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Speed test
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn run_speed_test() -> serde_json::Value {
+    let result = mod_netdiag::run_speed_test();
+    serde_json::to_value(result).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // Generic apply / undo for any module
 // ---------------------------------------------------------------------------
 

@@ -41,6 +41,14 @@ interface ActionResult {
   output?: string;
 }
 
+interface SpeedTestResult {
+  download_mbps: number;
+  test_url: string;
+  bytes_downloaded: number;
+  duration_ms: number;
+  status: string;
+}
+
 const DNS_PRESETS = [
   { id: "auto", label: "Automatic (DHCP)", primary: "", secondary: "", desc: "Use your router/ISP default" },
   { id: "cloudflare", label: "Cloudflare", primary: "1.1.1.1", secondary: "1.0.0.1", desc: "Fast, privacy-focused" },
@@ -66,6 +74,8 @@ export default function NetDiagPanel() {
   const [runningCmd, setRunningCmd] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [cmdOutput, setCmdOutput] = useState<string | null>(null);
+  const [speedTesting, setSpeedTesting] = useState(false);
+  const [speedResult, setSpeedResult] = useState<SpeedTestResult | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -164,6 +174,45 @@ export default function NetDiagPanel() {
           </div>
         </div>
       )}
+
+      {/* Speed test */}
+      <div className="speed-test-section">
+        <div className="speed-test-header">
+          <h3>Speed Test</h3>
+          <button
+            className="speed-test-btn"
+            disabled={speedTesting}
+            onClick={async () => {
+              setSpeedTesting(true);
+              setSpeedResult(null);
+              try {
+                const res = await invoke<SpeedTestResult>("run_speed_test");
+                setSpeedResult(res);
+              } catch (e) {
+                console.error("Speed test failed:", e);
+              } finally {
+                setSpeedTesting(false);
+              }
+            }}
+          >
+            {speedTesting ? "Testing..." : "Run Speed Test"}
+          </button>
+        </div>
+        {speedTesting && (
+          <div className="speed-testing-msg">Downloading test file... this may take a few seconds.</div>
+        )}
+        {speedResult && speedResult.status === "ok" && (
+          <div className="speed-result">
+            <div className="speed-value">{speedResult.download_mbps} <span className="speed-unit">Mbps</span></div>
+            <div className="speed-detail">
+              Downloaded {(speedResult.bytes_downloaded / (1024 * 1024)).toFixed(1)} MB in {(speedResult.duration_ms / 1000).toFixed(1)}s
+            </div>
+          </div>
+        )}
+        {speedResult && speedResult.status !== "ok" && (
+          <div className="speed-fail">Speed test failed. Check your internet connection.</div>
+        )}
+      </div>
 
       {/* Wi-Fi info */}
       {data.wifi && (

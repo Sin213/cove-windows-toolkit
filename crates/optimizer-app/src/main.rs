@@ -119,6 +119,10 @@ fn main() {
             commands::get_installed_runtimes,
             // Open URL
             commands::open_url,
+            // Export report
+            commands::export_report,
+            // Speed test
+            commands::run_speed_test,
             // Security
             commands::get_security_status,
             commands::run_defender_scan,

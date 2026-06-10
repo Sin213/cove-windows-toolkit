@@ -1023,6 +1023,8 @@ const MOCKS: Record<string, unknown> = {
     java: [],
   },
   open_url: { success: true },
+  export_report: { success: true, path: "C:\\Users\\CS\\AppData\\Local\\cove\\optimizer\\reports\\report-20260610-120000.html", filename: "report-20260610-120000.html" },
+  run_speed_test: { download_mbps: 94.5, test_url: "http://speedtest.tele2.net/10MB.zip", bytes_downloaded: 10_485_760, duration_ms: 887, status: "ok" },
 
   // ── Security ────────────────────────────────────────────────────────
   get_security_status: {

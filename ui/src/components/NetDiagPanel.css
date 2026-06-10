@@ -372,3 +372,81 @@
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* Speed test */
+.speed-test-section {
+  margin-bottom: 16px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.speed-test-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.speed-test-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.speed-test-btn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.speed-test-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.speed-test-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.speed-testing-msg {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
+.speed-result {
+  padding: 8px 0;
+}
+
+.speed-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+.speed-unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.speed-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.speed-fail {
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--red);
+}

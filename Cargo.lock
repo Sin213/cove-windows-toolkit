@@ -1942,6 +1942,7 @@ dependencies = [
 name = "mod-report"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "optimizer-core",
  "serde",
  "serde_json",

@@ -51,6 +51,71 @@ pub fn run_diagnostics() -> NetDiagReport {
     NetDiagReport { adapter: None, tests: Vec::new(), wifi: None }
 }
 
+// ---------------------------------------------------------------------------
+// Speed test
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct SpeedTestResult {
+    pub download_mbps: f64,
+    pub test_url: String,
+    pub bytes_downloaded: u64,
+    pub duration_ms: u64,
+    pub status: String,
+}
+
+#[cfg(target_os = "windows")]
+pub fn run_speed_test() -> SpeedTestResult {
+    use std::process::Command;
+
+    let ps = r#"
+$url = 'http://speedtest.tele2.net/10MB.zip'
+$tmp = "$env:TEMP\cove_speedtest.tmp"
+try {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -ErrorAction Stop
+    $sw.Stop()
+    $size = (Get-Item $tmp -ErrorAction SilentlyContinue).Length
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    if ($null -eq $size) { $size = 0 }
+    $ms = $sw.ElapsedMilliseconds
+    $mbps = if ($ms -gt 0) { [math]::Round(($size * 8) / ($ms * 1000), 2) } else { 0 }
+    Write-Output "OK|$mbps|$size|$ms|$url"
+} catch {
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    Write-Output "FAIL|0|0|0|$url|$($_.Exception.Message)"
+}
+"#;
+
+    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+        let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        let p: Vec<&str> = line.split('|').collect();
+        if p.len() >= 5 && p[0] == "OK" {
+            return SpeedTestResult {
+                download_mbps: p[1].parse().unwrap_or(0.0),
+                bytes_downloaded: p[2].parse().unwrap_or(0),
+                duration_ms: p[3].parse().unwrap_or(0),
+                test_url: p[4].to_string(),
+                status: "ok".into(),
+            };
+        }
+    }
+
+    SpeedTestResult {
+        download_mbps: 0.0, bytes_downloaded: 0, duration_ms: 0,
+        test_url: "http://speedtest.tele2.net/10MB.zip".into(),
+        status: "fail".into(),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn run_speed_test() -> SpeedTestResult {
+    SpeedTestResult {
+        download_mbps: 0.0, bytes_downloaded: 0, duration_ms: 0,
+        test_url: String::new(), status: "stub".into(),
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn get_primary_adapter() -> Option<AdapterInfo> {
     use std::process::Command;

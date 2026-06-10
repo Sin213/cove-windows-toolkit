@@ -277,6 +277,8 @@ export default function Dashboard({ onNavigate }: Props) {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetRunning, setPresetRunning] = useState<string | null>(null);
   const [presetResult, setPresetResult] = useState<PresetResult | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportPath, setExportPath] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<HealthReport>("get_health_report")
@@ -358,15 +360,40 @@ export default function Dashboard({ onNavigate }: Props) {
         <span>{statusText}</span>
       </div>
 
-      {/* Run All Diagnostics */}
+      {/* Run All Diagnostics + Export */}
       <div className="diag-batch-section">
-        <button
-          className="diag-batch-btn"
-          onClick={handleRunDiag}
-          disabled={diagRunning}
-        >
-          {diagRunning ? "Running Diagnostics..." : "Run All Diagnostics"}
-        </button>
+        <div className="diag-batch-actions">
+          <button
+            className="diag-batch-btn"
+            onClick={handleRunDiag}
+            disabled={diagRunning}
+          >
+            {diagRunning ? "Running Diagnostics..." : "Run All Diagnostics"}
+          </button>
+          <button
+            className="export-btn"
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true);
+              setExportPath(null);
+              try {
+                const res = await invoke<{ success: boolean; path: string }>("export_report");
+                if (res.success) setExportPath(res.path);
+              } catch (e) {
+                console.error("Export failed:", e);
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            {exporting ? "Exporting..." : "Export Report"}
+          </button>
+        </div>
+        {exportPath && (
+          <div className="export-result">
+            Report saved and opened: <span className="export-path">{exportPath}</span>
+          </div>
+        )}
         {diagResult && (
           <div className="diag-results">
             <div className={`diag-overall ${SEVERITY_CLASS[diagResult.overall_severity]}`}>
