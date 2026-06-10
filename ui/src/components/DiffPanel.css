@@ -1,0 +1,131 @@
+.diff-panel {
+  max-width: 700px;
+}
+
+.diff-first-visit {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+}
+
+.diff-first-visit-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+}
+
+.diff-timestamp {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.diff-snapshot-btn {
+  margin-top: 16px;
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.diff-snapshot-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.diff-snapshot-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.diff-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diff-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.diff-row-label {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.diff-row-value {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.diff-row-value.positive {
+  color: var(--green);
+}
+
+.diff-row-value.negative {
+  color: var(--red);
+}
+
+.diff-row-value.neutral {
+  color: var(--text-muted);
+}
+
+.diff-list-section {
+  margin-top: 16px;
+}
+
+.diff-list-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.diff-list-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.diff-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.diff-list-icon {
+  font-size: 12px;
+  width: 16px;
+  text-align: center;
+}
+
+.diff-list-icon.added {
+  color: var(--red);
+}
+
+.diff-list-icon.removed {
+  color: var(--green);
+}
+
+.diff-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+}

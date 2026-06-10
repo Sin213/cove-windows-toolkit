@@ -24,7 +24,8 @@ export type View =
   | "sfc"
   | "restore"
   | "history"
-  | "performance";
+  | "performance"
+  | "diff";
 
 function App() {
   const [view, setView] = useState<View>("dashboard");

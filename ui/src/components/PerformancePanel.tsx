@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./PerformancePanel.css";
 
 interface PerformanceTweak {
@@ -20,6 +21,7 @@ export default function PerformancePanel() {
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState<Record<string, boolean>>({});
   const [applied, setApplied] = useState<Record<string, boolean>>({});
+  const [pendingConfirm, setPendingConfirm] = useState<PerformanceTweak | null>(null);
 
   useEffect(() => {
     invoke<PerformanceTweak[]>("get_performance_tweaks")
@@ -115,7 +117,13 @@ export default function PerformancePanel() {
                     ) : (
                       <button
                         className="apply-btn"
-                        onClick={() => handleApply(tweak)}
+                        onClick={() => {
+                          if (tweak.safety_tier !== "Green") {
+                            setPendingConfirm(tweak);
+                          } else {
+                            handleApply(tweak);
+                          }
+                        }}
                         disabled={applying[tweak.id]}
                       >
                         {applying[tweak.id] ? "..." : "Apply"}
@@ -133,6 +141,22 @@ export default function PerformancePanel() {
           Apply All Green Tweaks
         </button>
       </div>
+      <ConfirmDialog
+        open={!!pendingConfirm}
+        title={pendingConfirm?.name ?? ""}
+        message={
+          pendingConfirm?.warning ??
+          (pendingConfirm?.safety_tier === "Red"
+            ? "This is a destructive operation. Are you sure?"
+            : "This changes system settings. Continue?")
+        }
+        safetyTier={(pendingConfirm?.safety_tier as "Yellow" | "Red") ?? "Yellow"}
+        onConfirm={() => {
+          if (pendingConfirm) handleApply(pendingConfirm);
+          setPendingConfirm(null);
+        }}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 }

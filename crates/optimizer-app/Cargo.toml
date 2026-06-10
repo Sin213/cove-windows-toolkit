@@ -33,6 +33,7 @@ tracing.workspace = true
 tauri = { version = "2", features = [] }
 tauri-build = { version = "2", features = [] }
 hostname = "0.4"
+chrono.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 directories = "6"

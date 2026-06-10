@@ -158,6 +158,187 @@
   line-height: 1.4;
 }
 
+/* ── Run All Diagnostics ──────────────────────────────────────────── */
+
+.diag-batch-section {
+  margin-bottom: 24px;
+}
+
+.diag-batch-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+
+.diag-batch-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.diag-batch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.diag-results {
+  margin-top: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.diag-overall {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+
+.diag-overall.sev-ok { color: var(--green); }
+.diag-overall.sev-warning { color: var(--yellow); }
+.diag-overall.sev-critical { color: var(--red); }
+
+.diag-module-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.diag-module-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+  width: 100%;
+  transition: background 0.1s;
+}
+
+.diag-module-row:hover {
+  background: var(--bg-card-hover);
+}
+
+.diag-module-row + .diag-module-row {
+  border-top: 1px solid var(--border);
+}
+
+.diag-sev-icon {
+  width: 20px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.diag-sev-icon.sev-ok { color: var(--green); }
+.diag-sev-icon.sev-warning { color: var(--yellow); }
+.diag-sev-icon.sev-critical { color: var(--red); }
+
+.diag-module-name {
+  flex: 1;
+}
+
+.diag-sev-label {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.diag-sev-label.sev-ok { background: var(--green-bg); color: var(--green); }
+.diag-sev-label.sev-warning { background: var(--yellow-bg); color: var(--yellow); }
+.diag-sev-label.sev-critical { background: var(--red-bg); color: var(--red); }
+
+/* ── Presets ─────────────────────────────────────────────────────── */
+
+.preset-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.preset-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.preset-info {
+  flex: 1;
+}
+
+.preset-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.preset-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.preset-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.preset-run-btn {
+  padding: 8px 20px;
+  border-radius: 6px;
+  border: none;
+  background: var(--green);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.15s;
+}
+
+.preset-run-btn:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.preset-run-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.preset-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.preset-result-icon {
+  font-size: 16px;
+  color: var(--green);
+}
+
 @media (max-width: 700px) {
   .card-grid {
     grid-template-columns: repeat(2, 1fr);

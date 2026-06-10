@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
 import { formatBytes } from "../lib/format";
+import ConfirmDialog from "./ConfirmDialog";
 import "./CleanupPanel.css";
 
 interface CleanupTarget {
@@ -19,6 +20,7 @@ export default function CleanupPanel() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [cleaning, setCleaning] = useState(false);
   const [cleaned, setCleaned] = useState<Record<string, boolean>>({});
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     invoke<CleanupTarget[]>("get_cleanup_targets")
@@ -96,7 +98,14 @@ export default function CleanupPanel() {
           </button>
           <button
             className="clean-btn"
-            onClick={handleClean}
+            onClick={() => {
+              const hasYellow = selectedTargets.some((t) => t.safety !== "green");
+              if (hasYellow) {
+                setShowConfirm(true);
+              } else {
+                handleClean();
+              }
+            }}
             disabled={cleaning || selectedTargets.length === 0}
           >
             {cleaning ? "Cleaning..." : "Clean Selected"}
@@ -134,6 +143,17 @@ export default function CleanupPanel() {
           </label>
         ))}
       </div>
+      <ConfirmDialog
+        open={showConfirm}
+        title="Clean Selected Files"
+        message={`This will delete ${formatBytes(totalSize)} across ${selectedTargets.length} targets, including system caches. This cannot be undone. Continue?`}
+        safetyTier="Yellow"
+        onConfirm={() => {
+          setShowConfirm(false);
+          handleClean();
+        }}
+        onCancel={() => setShowConfirm(false)}
+      />
     </div>
   );
 }

@@ -107,6 +107,14 @@ fn main() {
             commands::undo_performance_tweak,
             // Activation
             commands::get_activation_status,
+            // Batch diagnostics
+            commands::run_all_diagnostics,
+            // Presets
+            commands::get_presets,
+            commands::run_preset,
+            // Snapshot / Diff
+            commands::take_snapshot,
+            commands::get_machine_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

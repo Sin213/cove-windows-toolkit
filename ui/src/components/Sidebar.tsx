@@ -35,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "temps", label: "Temperatures", icon: "🌡", section: "system" },
   { id: "sfc", label: "DISM / SFC", icon: "⛏", section: "system" },
   { id: "restore", label: "System Restore", icon: "🛡", section: "system" },
+  { id: "diff", label: "What Changed", icon: "⇄", section: "system" },
   { id: "history", label: "Change History", icon: "↺", section: "system" },
 ];
 

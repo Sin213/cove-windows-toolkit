@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./StartupPanel.css";
 
 interface StartupItem {
@@ -16,6 +17,7 @@ export default function StartupPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
+  const [pendingConfirm, setPendingConfirm] = useState<StartupItem | null>(null);
 
   useEffect(() => {
     invoke<StartupItem[]>("get_startup_items")
@@ -77,7 +79,7 @@ export default function StartupPanel() {
             <div className="startup-right">
               <button
                 className={`toggle-btn ${item.enabled ? "toggle-on" : "toggle-off"}`}
-                onClick={() => handleToggle(item)}
+                onClick={() => setPendingConfirm(item)}
                 disabled={toggling[item.id]}
               >
                 <span className="toggle-knob" />
@@ -86,6 +88,21 @@ export default function StartupPanel() {
           </div>
         ))}
       </div>
+      <ConfirmDialog
+        open={!!pendingConfirm}
+        title={`${pendingConfirm?.enabled ? "Disable" : "Enable"} ${pendingConfirm?.name ?? ""}`}
+        message={
+          pendingConfirm?.enabled
+            ? `This will prevent ${pendingConfirm.name} from starting at boot. Continue?`
+            : `This will allow ${pendingConfirm?.name ?? ""} to run at startup. Continue?`
+        }
+        safetyTier="Yellow"
+        onConfirm={() => {
+          if (pendingConfirm) handleToggle(pendingConfirm);
+          setPendingConfirm(null);
+        }}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 }

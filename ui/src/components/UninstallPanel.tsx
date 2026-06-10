@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./UninstallPanel.css";
 
 interface InstalledProgram {
@@ -51,6 +52,7 @@ export default function UninstallPanel() {
   const [checkedLeftovers, setCheckedLeftovers] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState<string | null>(null);
   const [removeResults, setRemoveResults] = useState<RemoveResult | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"uninstall" | "clean" | null>(null);
 
   useEffect(() => {
     invoke<InstalledProgram[]>("get_installed_programs")
@@ -212,7 +214,7 @@ export default function UninstallPanel() {
               {selected.install_location && <DetailRow label="Location" value={selected.install_location} />}
             </div>
             <div className="action-buttons">
-              <button className="action-btn action-primary" onClick={handleUninstall}
+              <button className="action-btn action-primary" onClick={() => setConfirmAction("uninstall")}
                 disabled={!selected.uninstall_string && !selected.quiet_uninstall_string}>
                 Uninstall + Deep Clean
               </button>
@@ -273,7 +275,7 @@ export default function UninstallPanel() {
                   ))}
                 </div>
                 <div className="leftovers-actions">
-                  <button className="action-btn action-danger" onClick={handleClean} disabled={checkedLeftovers.size === 0}>
+                  <button className="action-btn action-danger" onClick={() => setConfirmAction("clean")} disabled={checkedLeftovers.size === 0}>
                     Remove Selected ({checkedLeftovers.size})
                   </button>
                   <button className="action-btn action-secondary" onClick={resetToList}>Cancel</button>
@@ -309,6 +311,26 @@ export default function UninstallPanel() {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={
+          confirmAction === "uninstall"
+            ? `Uninstall ${selected?.name ?? ""}`
+            : `Remove ${checkedLeftovers.size} Leftover Items`
+        }
+        message={
+          confirmAction === "uninstall"
+            ? `This will uninstall ${selected?.name ?? ""} and scan for leftover files. This cannot be undone.`
+            : `This will permanently delete ${checkedLeftovers.size} leftover files and registry entries. This cannot be undone.`
+        }
+        safetyTier="Red"
+        onConfirm={() => {
+          if (confirmAction === "uninstall") handleUninstall();
+          else if (confirmAction === "clean") handleClean();
+          setConfirmAction(null);
+        }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

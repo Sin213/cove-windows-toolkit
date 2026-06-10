@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./PrivacyPanel.css";
 
 interface PrivacyTweak {
@@ -36,7 +37,7 @@ export default function PrivacyPanel() {
     advanced: false,
   });
   const [applied, setApplied] = useState<Record<string, boolean>>({});
-  const [confirming, setConfirming] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PrivacyTweak | null>(null);
 
   useEffect(() => {
     invoke<PrivacyData>("get_privacy_tweaks")
@@ -49,11 +50,6 @@ export default function PrivacyPanel() {
     setExpanded((s) => ({ ...s, [tier]: !s[tier] }));
 
   const handleApply = async (tweak: PrivacyTweak) => {
-    if (tweak.tier === "red" && confirming !== tweak.id) {
-      setConfirming(tweak.id);
-      return;
-    }
-    setConfirming(null);
     try {
       await invoke("apply_tweak", { module: "privacy", id: tweak.id });
       setApplied((s) => ({ ...s, [tweak.id]: true }));
@@ -114,26 +110,16 @@ export default function PrivacyPanel() {
                   <div className="privacy-item-right">
                     {applied[tweak.id] ? (
                       <span className="applied-label">Applied</span>
-                    ) : confirming === tweak.id ? (
-                      <div className="confirm-group">
-                        <span className="confirm-label">Are you sure?</span>
-                        <button
-                          className="confirm-btn"
-                          onClick={() => handleApply(tweak)}
-                        >
-                          Confirm
-                        </button>
-                        <button
-                          className="cancel-btn"
-                          onClick={() => setConfirming(null)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
                     ) : (
                       <button
                         className="apply-btn"
-                        onClick={() => handleApply(tweak)}
+                        onClick={() => {
+                          if (tweak.tier !== "green") {
+                            setPendingConfirm(tweak);
+                          } else {
+                            handleApply(tweak);
+                          }
+                        }}
                       >
                         Apply
                       </button>
@@ -145,6 +131,22 @@ export default function PrivacyPanel() {
           )}
         </div>
       ))}
+      <ConfirmDialog
+        open={!!pendingConfirm}
+        title={pendingConfirm?.name ?? ""}
+        message={
+          pendingConfirm?.warning ??
+          (pendingConfirm?.tier === "red"
+            ? "This is a destructive operation. Are you sure?"
+            : "This changes system settings. Continue?")
+        }
+        safetyTier={pendingConfirm?.tier === "red" ? "Red" : "Yellow"}
+        onConfirm={() => {
+          if (pendingConfirm) handleApply(pendingConfirm);
+          setPendingConfirm(null);
+        }}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 }

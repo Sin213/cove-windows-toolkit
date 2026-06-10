@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./PowerPanel.css";
 
 interface PowerPlan {
@@ -36,6 +37,7 @@ export default function PowerPanel() {
   const [sleep, setSleep] = useState(0);
   const [disk, setDisk] = useState(0);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [pendingPlan, setPendingPlan] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<PowerData>("get_power_info")
@@ -103,7 +105,7 @@ export default function PowerPanel() {
             <button
               key={plan.guid}
               className={`plan-card ${selectedPlan === plan.guid ? "active" : ""}`}
-              onClick={() => handlePlanChange(plan.guid)}
+              onClick={() => setPendingPlan(plan.guid)}
             >
               <span className="plan-name">{plan.name}</span>
               {selectedPlan === plan.guid && (
@@ -134,6 +136,17 @@ export default function PowerPanel() {
           />
         </div>
       </div>
+      <ConfirmDialog
+        open={!!pendingPlan}
+        title="Change Power Plan"
+        message={`Switch to ${data.available_plans.find((p) => p.guid === pendingPlan)?.name ?? "selected"} plan? This affects system power behavior.`}
+        safetyTier="Yellow"
+        onConfirm={() => {
+          if (pendingPlan) handlePlanChange(pendingPlan);
+          setPendingPlan(null);
+        }}
+        onCancel={() => setPendingPlan(null)}
+      />
     </div>
   );
 }

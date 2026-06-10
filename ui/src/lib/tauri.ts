@@ -50,14 +50,6 @@ const MOCKS: Record<string, unknown> = {
         remediation: null,
       },
       {
-        id: "battery.health",
-        severity: "Warning",
-        title: "Battery Wear Level",
-        detail: "Design capacity 56,000 mWh, current full-charge 41,200 mWh (73.6%)",
-        metric: { Percent: 73.6 },
-        remediation: "Battery degradation is normal over time. Consider replacement below 50%.",
-      },
-      {
         id: "uptime",
         severity: "Info",
         title: "System Uptime",
@@ -1075,6 +1067,76 @@ const MOCKS: Record<string, unknown> = {
   // ── Network tools ────────────────────────────────────────────────────
   set_dns: { success: true, message: "DNS updated successfully." },
   run_network_command: { success: true, message: "Command completed.", output: "Successfully flushed the DNS Resolver Cache." },
+
+  // ── Run All Diagnostics ─────────────────────────────────────────────
+  run_all_diagnostics: {
+    overall_severity: "Warning",
+    modules: [
+      { id: "health", name: "System Health", severity: "Warning" },
+      { id: "eventlog", name: "Event Logs", severity: "Critical" },
+      { id: "bsod", name: "BSOD Dumps", severity: "Warning" },
+      { id: "drivers", name: "Drivers", severity: "Warning" },
+      { id: "netdiag", name: "Network", severity: "Ok" },
+      { id: "updates", name: "Windows Update", severity: "Warning" },
+      { id: "sysinfo", name: "System Info", severity: "Ok" },
+      { id: "temps", name: "Temperatures", severity: "Ok" },
+    ],
+    activated: true,
+  },
+
+  // ── Presets ────────────────────────────────────────────────────────
+  get_presets: [
+    {
+      id: "general_tuneup",
+      name: "General Tune-Up",
+      description: "Apply common safe optimizations - visual effects, performance tweaks, and basic privacy settings",
+      actions: [
+        { module: "visual", action_id: "visual.transparency", display_name: "Disable Transparency" },
+        { module: "visual", action_id: "visual.animations", display_name: "Disable Animations" },
+        { module: "visual", action_id: "visual.taskbar_anim", display_name: "Disable Taskbar Animations" },
+        { module: "performance", action_id: "perf.game_bar", display_name: "Disable Game Bar" },
+        { module: "performance", action_id: "perf.game_dvr", display_name: "Disable Game DVR" },
+        { module: "privacy", action_id: "priv.advertising_id", display_name: "Disable Advertising ID" },
+        { module: "privacy", action_id: "priv.feedback", display_name: "Disable Feedback Prompts" },
+        { module: "privacy", action_id: "priv.tips", display_name: "Disable Tips and Suggestions" },
+      ],
+    },
+  ],
+  run_preset: {
+    success: true,
+    total: 8,
+    succeeded: 8,
+    failed: 0,
+    results: [
+      { action_id: "visual.transparency", display_name: "Disable Transparency", success: true },
+      { action_id: "visual.animations", display_name: "Disable Animations", success: true },
+      { action_id: "visual.taskbar_anim", display_name: "Disable Taskbar Animations", success: true },
+      { action_id: "perf.game_bar", display_name: "Disable Game Bar", success: true },
+      { action_id: "perf.game_dvr", display_name: "Disable Game DVR", success: true },
+      { action_id: "priv.advertising_id", display_name: "Disable Advertising ID", success: true },
+      { action_id: "priv.feedback", display_name: "Disable Feedback Prompts", success: true },
+      { action_id: "priv.tips", display_name: "Disable Tips and Suggestions", success: true },
+    ],
+  },
+
+  // ── Snapshot / Diff ────────────────────────────────────────────────
+  take_snapshot: { success: true, timestamp: "2026-06-09T10:00:00-05:00", hostname: "DEV-PC" },
+  get_machine_diff: {
+    has_previous: true,
+    previous_timestamp: "2026-05-26T14:30:00-05:00",
+    changes: {
+      new_startup_items: ["NVIDIA GeForce Experience", "Steam Client Bootstrapper"],
+      removed_startup_items: [],
+      new_programs: ["SignalRGB"],
+      removed_programs: [],
+      new_bloatware: [],
+      health_score_change: -8,
+      disk_free_change: -15000000000,
+      temp_size_change: 524288000,
+      critical_event_change: 2,
+      warning_event_change: 14,
+    },
+  },
 
   // ── Apply / Undo commands (return success) ───────────────────────────
   apply_tweak: { success: true, message: "Applied" },

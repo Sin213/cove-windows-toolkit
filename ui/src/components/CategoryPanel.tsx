@@ -20,6 +20,7 @@ import TempsPanel from "./TempsPanel";
 import SfcPanel from "./SfcPanel";
 import RestorePanel from "./RestorePanel";
 import HistoryPanel from "./HistoryPanel";
+import DiffPanel from "./DiffPanel";
 
 interface Props {
   view: View;
@@ -62,7 +63,7 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
   },
   health: {
     title: "System Health",
-    description: "Quick triage - disk, RAM, CPU, battery, SMART status.",
+    description: "Quick triage - disk, RAM, CPU, SMART status.",
   },
   eventlog: {
     title: "Event Log Analyzer",
@@ -113,6 +114,10 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     description:
       "Create restore points before optimizing and roll back Windows if anything goes wrong.",
   },
+  diff: {
+    title: "What Changed",
+    description: "Compare the current machine state to the last visit's snapshot.",
+  },
   history: {
     title: "Change History",
     description: "View and undo all changes made by the optimizer.",
@@ -138,6 +143,7 @@ const PANELS: Record<string, React.ComponentType> = {
   temps: TempsPanel,
   sfc: SfcPanel,
   restore: RestorePanel,
+  diff: DiffPanel,
   history: HistoryPanel,
 };
 

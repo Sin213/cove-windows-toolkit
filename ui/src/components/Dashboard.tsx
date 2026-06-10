@@ -12,6 +12,32 @@ interface HealthReport {
   findings: { severity: string }[];
 }
 
+interface DiagModule {
+  id: string;
+  name: string;
+  severity: string;
+}
+
+interface DiagResult {
+  overall_severity: string;
+  modules: DiagModule[];
+  activated: boolean;
+}
+
+interface Preset {
+  id: string;
+  name: string;
+  description: string;
+  actions: { module: string; action_id: string; display_name: string }[];
+}
+
+interface PresetResult {
+  success: boolean;
+  total: number;
+  succeeded: number;
+  failed: number;
+}
+
 interface CategoryCard {
   id: View;
   title: string;
@@ -92,7 +118,7 @@ const DIAGNOSTIC_CARDS: CategoryCard[] = [
   {
     id: "health",
     title: "System Health",
-    description: "Disk, RAM, CPU, battery - quick triage",
+    description: "Disk, RAM, CPU, SMART - quick triage",
     icon: "♥",
     section: "diagnose",
   },
@@ -215,9 +241,28 @@ function Card({
   );
 }
 
+const SEVERITY_ICON: Record<string, string> = {
+  Ok: "✔",
+  Info: "ℹ",
+  Warning: "⚠",
+  Critical: "✖",
+};
+
+const SEVERITY_CLASS: Record<string, string> = {
+  Ok: "sev-ok",
+  Info: "sev-ok",
+  Warning: "sev-warning",
+  Critical: "sev-critical",
+};
+
 export default function Dashboard({ onNavigate }: Props) {
   const [score, setScore] = useState<number | null>(null);
   const [statusText, setStatusText] = useState("Loading...");
+  const [diagRunning, setDiagRunning] = useState(false);
+  const [diagResult, setDiagResult] = useState<DiagResult | null>(null);
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [presetRunning, setPresetRunning] = useState<string | null>(null);
+  const [presetResult, setPresetResult] = useState<PresetResult | null>(null);
 
   useEffect(() => {
     invoke<HealthReport>("get_health_report")
@@ -237,7 +282,37 @@ export default function Dashboard({ onNavigate }: Props) {
       .catch(() => {
         setStatusText("Ready to scan. Could not reach backend.");
       });
+
+    invoke<Preset[]>("get_presets")
+      .then(setPresets)
+      .catch(() => {});
   }, []);
+
+  const handleRunDiag = async () => {
+    setDiagRunning(true);
+    setDiagResult(null);
+    try {
+      const result = await invoke<DiagResult>("run_all_diagnostics");
+      setDiagResult(result);
+    } catch (e) {
+      console.error("Diagnostics failed:", e);
+    } finally {
+      setDiagRunning(false);
+    }
+  };
+
+  const handleRunPreset = async (preset: Preset) => {
+    setPresetRunning(preset.id);
+    setPresetResult(null);
+    try {
+      const result = await invoke<PresetResult>("run_preset", { id: preset.id });
+      setPresetResult(result);
+    } catch (e) {
+      console.error("Preset failed:", e);
+    } finally {
+      setPresetRunning(null);
+    }
+  };
 
   // Update the health card badge with live score
   const diagCards = DIAGNOSTIC_CARDS.map((c) => {
@@ -268,6 +343,77 @@ export default function Dashboard({ onNavigate }: Props) {
         <span className="status-dot" />
         <span>{statusText}</span>
       </div>
+
+      {/* Run All Diagnostics */}
+      <div className="diag-batch-section">
+        <button
+          className="diag-batch-btn"
+          onClick={handleRunDiag}
+          disabled={diagRunning}
+        >
+          {diagRunning ? "Running Diagnostics..." : "Run All Diagnostics"}
+        </button>
+        {diagResult && (
+          <div className="diag-results">
+            <div className={`diag-overall ${SEVERITY_CLASS[diagResult.overall_severity]}`}>
+              Overall: {diagResult.overall_severity}
+            </div>
+            <div className="diag-module-list">
+              {diagResult.modules.map((m) => (
+                <button
+                  key={m.id}
+                  className="diag-module-row"
+                  onClick={() => onNavigate(m.id as View)}
+                >
+                  <span className={`diag-sev-icon ${SEVERITY_CLASS[m.severity]}`}>
+                    {SEVERITY_ICON[m.severity]}
+                  </span>
+                  <span className="diag-module-name">{m.name}</span>
+                  <span className={`diag-sev-label ${SEVERITY_CLASS[m.severity]}`}>
+                    {m.severity}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Quick Actions (Presets) */}
+      {presets.length > 0 && (
+        <section className="dashboard-section">
+          <h2>Quick Actions</h2>
+          <div className="preset-grid">
+            {presets.map((p) => (
+              <div key={p.id} className="preset-card">
+                <div className="preset-info">
+                  <div className="preset-name">{p.name}</div>
+                  <div className="preset-desc">{p.description}</div>
+                  <div className="preset-count">{p.actions.length} actions (all Green tier)</div>
+                </div>
+                <button
+                  className="preset-run-btn"
+                  onClick={() => handleRunPreset(p)}
+                  disabled={presetRunning === p.id}
+                >
+                  {presetRunning === p.id ? "Running..." : "Run"}
+                </button>
+              </div>
+            ))}
+          </div>
+          {presetResult && (
+            <div className="preset-result">
+              <span className="preset-result-icon">
+                {presetResult.failed === 0 ? "✔" : "⚠"}
+              </span>
+              <span>
+                {presetResult.succeeded} of {presetResult.total} actions applied
+                {presetResult.failed > 0 && ` (${presetResult.failed} failed)`}
+              </span>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="dashboard-section">
         <h2>Optimize</h2>

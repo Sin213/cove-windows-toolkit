@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./RestorePanel.css";
 
 interface RestorePoint {
@@ -28,6 +29,7 @@ export default function RestorePanel() {
   const [enabling, setEnabling] = useState(false);
   const [description, setDescription] = useState("Cove Optimizer - Pre-optimization backup");
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [confirmRestore, setConfirmRestore] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -141,7 +143,7 @@ export default function RestorePanel() {
         <p className="section-hint">
           Opens the Windows System Restore wizard. You can choose a restore point and confirm before any changes are made.
         </p>
-        <button className="launch-btn" onClick={handleLaunchRestore} disabled={!status?.enabled}>
+        <button className="launch-btn" onClick={() => setConfirmRestore(true)} disabled={!status?.enabled}>
           Open System Restore...
         </button>
       </div>
@@ -174,6 +176,17 @@ export default function RestorePanel() {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={confirmRestore}
+        title="Open System Restore"
+        message="This will open the Windows System Restore wizard. You will be able to choose a restore point before any changes are made."
+        safetyTier="Yellow"
+        onConfirm={() => {
+          setConfirmRestore(false);
+          handleLaunchRestore();
+        }}
+        onCancel={() => setConfirmRestore(false)}
+      />
     </div>
   );
 }

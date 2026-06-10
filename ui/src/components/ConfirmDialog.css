@@ -1,0 +1,114 @@
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fade-in 0.12s ease;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.confirm-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.confirm-dialog.tier-yellow {
+  border-color: var(--yellow);
+}
+
+.confirm-dialog.tier-red {
+  border-color: var(--red);
+}
+
+.confirm-tier-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.confirm-tier-badge.tier-yellow {
+  background: var(--yellow-bg);
+  color: var(--yellow);
+}
+
+.confirm-tier-badge.tier-red {
+  background: var(--red-bg);
+  color: var(--red);
+}
+
+.confirm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.confirm-message {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-cancel-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.confirm-cancel-btn:hover {
+  background: var(--bg-secondary);
+}
+
+.confirm-proceed-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #fff;
+}
+
+.confirm-proceed-btn.tier-yellow {
+  background: var(--yellow);
+}
+
+.confirm-proceed-btn.tier-yellow:hover {
+  filter: brightness(1.1);
+}
+
+.confirm-proceed-btn.tier-red {
+  background: var(--red);
+}
+
+.confirm-proceed-btn.tier-red:hover {
+  filter: brightness(1.1);
+}

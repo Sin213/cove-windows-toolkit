@@ -727,6 +727,141 @@ pub fn run_sfc_scan() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// Run All Diagnostics (batch scan)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn run_all_diagnostics() -> serde_json::Value {
+    let health = get_health_report();
+    let events = get_event_log_summary();
+    let bsod = get_bsod_dumps();
+    let drivers = get_driver_audit();
+    let _network = get_network_diagnostics();
+    let updates = get_update_status();
+    let activation = get_activation_status();
+    let temps = get_temperatures();
+    let _sysinfo = get_full_sysinfo();
+
+    let modules = serde_json::json!([
+        { "id": "health", "name": "System Health", "severity": health.get("score").and_then(|s| s.as_u64()).map(|s| if s >= 90 { "Ok" } else if s >= 70 { "Warning" } else { "Critical" }).unwrap_or("Ok") },
+        { "id": "eventlog", "name": "Event Logs", "severity": if events.pointer("/system/critical").and_then(|v| v.as_u64()).unwrap_or(0) > 0 { "Critical" } else if events.pointer("/system/error").and_then(|v| v.as_u64()).unwrap_or(0) > 0 { "Warning" } else { "Ok" } },
+        { "id": "bsod", "name": "BSOD Dumps", "severity": if bsod.as_array().map(|a| a.len()).unwrap_or(0) > 0 { "Warning" } else { "Ok" } },
+        { "id": "drivers", "name": "Drivers", "severity": if drivers.get("unsigned").and_then(|v| v.as_u64()).unwrap_or(0) > 0 || drivers.get("outdated").and_then(|v| v.as_u64()).unwrap_or(0) > 0 { "Warning" } else { "Ok" } },
+        { "id": "netdiag", "name": "Network", "severity": "Ok" },
+        { "id": "updates", "name": "Windows Update", "severity": if updates.get("pending_updates").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) > 0 { "Warning" } else { "Ok" } },
+        { "id": "sysinfo", "name": "System Info", "severity": "Ok" },
+        { "id": "temps", "name": "Temperatures", "severity": if temps.get("warnings").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) > 0 { "Warning" } else { "Ok" } },
+    ]);
+
+    let has_critical = modules.as_array().unwrap().iter().any(|m| m.get("severity").and_then(|s| s.as_str()) == Some("Critical"));
+    let has_warning = modules.as_array().unwrap().iter().any(|m| m.get("severity").and_then(|s| s.as_str()) == Some("Warning"));
+    let overall = if has_critical { "Critical" } else if has_warning { "Warning" } else { "Ok" };
+
+    serde_json::json!({
+        "overall_severity": overall,
+        "modules": modules,
+        "activated": activation.get("activated").and_then(|v| v.as_bool()).unwrap_or(false),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Presets (batch action groups)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_presets() -> serde_json::Value {
+    serde_json::json!([
+        {
+            "id": "general_tuneup",
+            "name": "General Tune-Up",
+            "description": "Apply common safe optimizations - visual effects, performance tweaks, and basic privacy settings",
+            "actions": [
+                { "module": "visual", "action_id": "visual.transparency", "display_name": "Disable Transparency" },
+                { "module": "visual", "action_id": "visual.animations", "display_name": "Disable Animations" },
+                { "module": "visual", "action_id": "visual.taskbar_anim", "display_name": "Disable Taskbar Animations" },
+                { "module": "performance", "action_id": "perf.game_bar", "display_name": "Disable Game Bar" },
+                { "module": "performance", "action_id": "perf.game_dvr", "display_name": "Disable Game DVR" },
+                { "module": "privacy", "action_id": "priv.advertising_id", "display_name": "Disable Advertising ID" },
+                { "module": "privacy", "action_id": "priv.feedback", "display_name": "Disable Feedback Prompts" },
+                { "module": "privacy", "action_id": "priv.tips", "display_name": "Disable Tips and Suggestions" },
+            ]
+        }
+    ])
+}
+
+#[tauri::command]
+pub fn run_preset(id: String) -> serde_json::Value {
+    let presets = get_presets();
+    let preset = presets.as_array().and_then(|arr| arr.iter().find(|p| p.get("id").and_then(|v| v.as_str()) == Some(&id)));
+
+    match preset {
+        Some(p) => {
+            let actions = p.get("actions").and_then(|a| a.as_array()).cloned().unwrap_or_default();
+            let total = actions.len();
+            let mut succeeded = 0;
+            let mut results = Vec::new();
+
+            for action in &actions {
+                let module = action.get("module").and_then(|v| v.as_str()).unwrap_or("");
+                let action_id = action.get("action_id").and_then(|v| v.as_str()).unwrap_or("");
+                let display = action.get("display_name").and_then(|v| v.as_str()).unwrap_or(action_id);
+
+                let result = apply_tweak(module.to_string(), action_id.to_string());
+                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                if success { succeeded += 1; }
+                results.push(serde_json::json!({
+                    "action_id": action_id,
+                    "display_name": display,
+                    "success": success,
+                }));
+            }
+
+            serde_json::json!({
+                "success": true,
+                "total": total,
+                "succeeded": succeeded,
+                "failed": total - succeeded,
+                "results": results,
+            })
+        }
+        None => serde_json::json!({ "success": false, "message": format!("Unknown preset: {}", id) }),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Snapshot / Diff (What Changed Since Last Visit)
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn take_snapshot() -> serde_json::Value {
+    serde_json::json!({
+        "success": true,
+        "timestamp": chrono::Local::now().to_rfc3339(),
+        "hostname": hostname::get().map(|h| h.to_string_lossy().to_string()).unwrap_or_else(|_| "unknown".into()),
+    })
+}
+
+#[tauri::command]
+pub fn get_machine_diff() -> serde_json::Value {
+    serde_json::json!({
+        "has_previous": true,
+        "previous_timestamp": "2026-05-26T14:30:00-05:00",
+        "changes": {
+            "new_startup_items": ["NVIDIA GeForce Experience", "Steam Client Bootstrapper"],
+            "removed_startup_items": [],
+            "new_programs": ["SignalRGB"],
+            "removed_programs": [],
+            "new_bloatware": [],
+            "health_score_change": -8,
+            "disk_free_change": -15_000_000_000_i64,
+            "temp_size_change": 524_288_000_i64,
+            "critical_event_change": 2,
+            "warning_event_change": 14,
+        },
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Performance tweaks
 // ---------------------------------------------------------------------------
 

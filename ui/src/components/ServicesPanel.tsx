@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./ServicesPanel.css";
 
 interface ServiceItem {
@@ -30,6 +31,7 @@ export default function ServicesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [activeProfile, setActiveProfile] = useState("conservative");
   const [applied, setApplied] = useState<Record<string, boolean>>({});
+  const [pendingConfirm, setPendingConfirm] = useState<ServiceItem | null>(null);
 
   useEffect(() => {
     invoke<ServicesData>("get_services_tweaks")
@@ -105,7 +107,13 @@ export default function ServicesPanel() {
               ) : (
                 <button
                   className="apply-btn"
-                  onClick={() => handleApply(svc)}
+                  onClick={() => {
+                    if (svc.tier !== "green") {
+                      setPendingConfirm(svc);
+                    } else {
+                      handleApply(svc);
+                    }
+                  }}
                 >
                   Apply
                 </button>
@@ -114,6 +122,22 @@ export default function ServicesPanel() {
           </div>
         ))}
       </div>
+      <ConfirmDialog
+        open={!!pendingConfirm}
+        title={`Change ${pendingConfirm?.name ?? ""}`}
+        message={
+          pendingConfirm?.warning ??
+          (pendingConfirm?.tier === "red"
+            ? "This is a destructive operation. Are you sure?"
+            : `This will change ${pendingConfirm?.service ?? "the service"} from ${pendingConfirm?.current ?? ""} to ${pendingConfirm?.optimized ?? ""}. Continue?`)
+        }
+        safetyTier={pendingConfirm?.tier === "red" ? "Red" : "Yellow"}
+        onConfirm={() => {
+          if (pendingConfirm) handleApply(pendingConfirm);
+          setPendingConfirm(null);
+        }}
+        onCancel={() => setPendingConfirm(null)}
+      />
     </div>
   );
 }
