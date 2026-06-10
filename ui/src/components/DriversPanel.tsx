@@ -4,12 +4,11 @@ import "./DriversPanel.css";
 
 interface DriverEntry {
   name: string;
-  driver_file: string;
+  device: string;
   version: string;
   date: string;
   signed: boolean;
   status: string;
-  detail?: string;
 }
 
 interface DriverAudit {
@@ -37,6 +36,10 @@ export default function DriversPanel() {
   if (error) return <div className="panel-error">Error: {error}</div>;
   if (!data) return null;
 
+  const handleCheckUpdates = () => {
+    invoke("open_url", { url: "ms-settings:windowsupdate-optionalupdates" });
+  };
+
   return (
     <div className="drivers-panel">
       <div className="driver-stats">
@@ -54,12 +57,26 @@ export default function DriversPanel() {
         </div>
       </div>
 
+      {(data.outdated > 0 || data.unsigned > 0) && (
+        <div className="driver-update-bar">
+          <span>
+            {data.outdated > 0 && `${data.outdated} outdated`}
+            {data.outdated > 0 && data.unsigned > 0 && " and "}
+            {data.unsigned > 0 && `${data.unsigned} unsigned`}
+            {" driver"}{(data.outdated + data.unsigned) !== 1 && "s"} found
+          </span>
+          <button className="driver-update-btn" onClick={handleCheckUpdates}>
+            Check for Driver Updates
+          </button>
+        </div>
+      )}
+
       {data.problematic.length > 0 && (
         <div className="driver-section">
           <h3>Problematic Drivers</h3>
           <div className="driver-table">
-            {data.problematic.map((d) => (
-              <div key={d.driver_file} className="driver-row problem-row">
+            {data.problematic.map((d, i) => (
+              <div key={`${d.name}-${i}`} className="driver-row problem-row">
                 <div className="driver-info">
                   <div className="driver-name-row">
                     <span className="driver-name">{d.name}</span>
@@ -70,10 +87,7 @@ export default function DriversPanel() {
                       <span className="unsigned-badge">unsigned</span>
                     )}
                   </div>
-                  <div className="driver-file">{d.driver_file}</div>
-                  {d.detail && (
-                    <div className="driver-detail">{d.detail}</div>
-                  )}
+                  <div className="driver-device">{d.device}</div>
                 </div>
                 <div className="driver-meta">
                   <div className="driver-version">{d.version}</div>
@@ -94,14 +108,14 @@ export default function DriversPanel() {
         </button>
         {showHealthy && (
           <div className="driver-table">
-            {data.healthy.map((d) => (
-              <div key={d.driver_file} className="driver-row">
+            {data.healthy.map((d, i) => (
+              <div key={`${d.name}-${i}`} className="driver-row">
                 <div className="driver-info">
                   <div className="driver-name-row">
                     <span className="driver-name">{d.name}</span>
                     <span className="driver-status-badge status-ok">ok</span>
                   </div>
-                  <div className="driver-file">{d.driver_file}</div>
+                  <div className="driver-device">{d.device}</div>
                 </div>
                 <div className="driver-meta">
                   <div className="driver-version">{d.version}</div>

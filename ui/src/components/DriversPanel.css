@@ -120,16 +120,40 @@
   font-weight: 600;
 }
 
-.driver-file {
+.driver-device {
   font-size: 11px;
   color: var(--text-muted);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
 }
 
-.driver-detail {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 2px;
+.driver-update-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--yellow-bg);
+  border: 1px solid var(--yellow);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--yellow);
+}
+
+.driver-update-btn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: filter 0.15s;
+}
+
+.driver-update-btn:hover {
+  filter: brightness(1.1);
 }
 
 .driver-meta {
