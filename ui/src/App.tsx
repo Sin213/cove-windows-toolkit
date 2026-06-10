@@ -27,7 +27,8 @@ export type View =
   | "performance"
   | "diff"
   | "security"
-  | "runtimes";
+  | "runtimes"
+  | "diskhealth";
 
 function App() {
   const [view, setView] = useState<View>("dashboard");

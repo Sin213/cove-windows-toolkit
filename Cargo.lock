@@ -1859,6 +1859,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-diskhealth"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mod-drivers"
 version = "0.1.0"
 dependencies = [
@@ -2347,6 +2355,7 @@ dependencies = [
  "mod-bloatware",
  "mod-bsod",
  "mod-cleanup",
+ "mod-diskhealth",
  "mod-drivers",
  "mod-eventlog",
  "mod-health",

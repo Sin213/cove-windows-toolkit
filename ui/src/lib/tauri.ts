@@ -1109,6 +1109,65 @@ const MOCKS: Record<string, unknown> = {
     scan_time_ms: 3200,
   },
 
+  // ── Disk Health ──────────────────────────────────────────────────────
+  get_disk_health: [
+    {
+      model: "Samsung SSD 980 PRO 1TB",
+      serial: "S6B1NJ0T123456",
+      interface_type: "NVMe",
+      media_type: "SSD",
+      size_bytes: 1_000_204_886_016,
+      status: "Healthy",
+      temperature_c: 38,
+      wear_percent: 3,
+      read_errors: 0,
+      write_errors: 0,
+      power_on_hours: 8760,
+      trim_enabled: true,
+      health_rating: "Good",
+    },
+    {
+      model: "WD Blue SN570 500GB",
+      serial: "WD-WX42A123456",
+      interface_type: "NVMe",
+      media_type: "SSD",
+      size_bytes: 500_107_862_016,
+      status: "Healthy",
+      temperature_c: 35,
+      wear_percent: 1,
+      read_errors: 0,
+      write_errors: 0,
+      power_on_hours: 4380,
+      trim_enabled: true,
+      health_rating: "Good",
+    },
+  ],
+  get_disk_space: {
+    drive: "C:",
+    total_bytes: 500_000_000_000,
+    free_bytes: 185_000_000_000,
+    largest_files: [
+      { name: "Win11_23H2_English_x64.iso", extension: "ISO", path: "C:\\Users\\CS\\Downloads\\Win11_23H2_English_x64.iso", size_bytes: 6_200_000_000 },
+      { name: "backup-2026-05.vhdx", extension: "VHDX", path: "C:\\Users\\CS\\Documents\\Backups\\backup-2026-05.vhdx", size_bytes: 4_800_000_000 },
+      { name: "gameplay-recording.mp4", extension: "MP4", path: "C:\\Users\\CS\\Videos\\Captures\\gameplay-recording.mp4", size_bytes: 3_100_000_000 },
+      { name: "node_modules.tar.gz", extension: "GZ", path: "C:\\Users\\CS\\Downloads\\node_modules.tar.gz", size_bytes: 1_800_000_000 },
+      { name: "photoshop-scratch.tmp", extension: "TMP", path: "C:\\Users\\CS\\AppData\\Local\\Temp\\photoshop-scratch.tmp", size_bytes: 950_000_000 },
+    ],
+  },
+  run_chkdsk: {
+    success: true,
+    mode: "scan",
+    scheduled_reboot: false,
+    message: "No errors found. Online scan completed successfully.",
+    output: "Stage 1: Examining basic file system structure ...\n  262144 file records processed.\nStage 2: Examining file name linkage ...\n  302426 index entries processed.\nStage 3: Examining security descriptors ...\n  Security descriptor verification completed.\nWindows has scanned the file system and found no problems.\nNo further action is required.",
+  },
+  get_last_chkdsk: {
+    found: true,
+    timestamp: "2026-06-01T03:15:00-05:00",
+    result_text: "Checking file system on C:. Windows has checked the file system and found no problems. No further action is required.",
+    dirty_bit: false,
+  },
+
   // ── Run All Diagnostics ─────────────────────────────────────────────
   run_all_diagnostics: {
     overall_severity: "Warning",
@@ -1121,6 +1180,7 @@ const MOCKS: Record<string, unknown> = {
       { id: "updates", name: "Windows Update", severity: "Warning" },
       { id: "sysinfo", name: "System Info", severity: "Ok" },
       { id: "temps", name: "Temperatures", severity: "Ok" },
+      { id: "diskhealth", name: "Disk Health", severity: "Ok" },
     ],
     activated: true,
   },

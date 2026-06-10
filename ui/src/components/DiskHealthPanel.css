@@ -1,0 +1,338 @@
+.diskhealth-panel {
+  max-width: 750px;
+}
+
+/* Drive health cards */
+.drive-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.drive-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.drive-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.drive-model {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.drive-rating {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 12px;
+}
+
+.drive-rating.rating-good {
+  color: var(--green);
+  background: var(--green-bg);
+}
+
+.drive-rating.rating-warn {
+  color: var(--yellow);
+  background: var(--yellow-bg);
+}
+
+.drive-rating.rating-crit {
+  color: var(--red);
+  background: var(--red-bg);
+}
+
+.drive-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.drive-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.drive-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stat-value.stat-warn {
+  color: var(--yellow);
+}
+
+/* Disk space breakdown */
+.space-section {
+  margin-bottom: 24px;
+}
+
+.space-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.space-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.space-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.space-bar-container {
+  margin-bottom: 16px;
+}
+
+.space-bar-bg {
+  height: 12px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.space-bar-used {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 6px;
+  transition: width 0.3s;
+}
+
+.space-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.file-rank {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  min-width: 24px;
+}
+
+.file-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.file-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-ext {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.file-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.file-size {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* chkdsk section */
+.chkdsk-section h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.last-chkdsk {
+  margin-bottom: 12px;
+}
+
+.dirty-bit-warn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--yellow-bg);
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.last-chkdsk-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.last-label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.last-result-text {
+  width: 100%;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-top: 4px;
+  word-break: break-all;
+}
+
+.no-chkdsk {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.chkdsk-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.chkdsk-yellow {
+  border-color: var(--yellow) !important;
+  color: var(--yellow) !important;
+}
+
+.chkdsk-yellow:hover:not(:disabled) {
+  background: var(--yellow-bg) !important;
+}
+
+
+.chkdsk-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.chkdsk-result {
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.chkdsk-result.chkdsk-ok {
+  background: var(--green-bg);
+  border: 1px solid var(--green);
+  color: var(--green);
+}
+
+.chkdsk-result.chkdsk-fail {
+  background: var(--red-bg);
+  border: 1px solid var(--red);
+  color: var(--red);
+}
+
+.chkdsk-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.reboot-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--yellow-bg);
+  color: var(--yellow);
+  border: 1px solid var(--yellow);
+}
+
+.chkdsk-output {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 8px;
+  border-radius: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

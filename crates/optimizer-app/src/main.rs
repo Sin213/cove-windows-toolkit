@@ -121,6 +121,11 @@ fn main() {
             commands::get_security_status,
             commands::run_defender_scan,
             commands::run_heuristic_scan,
+            // Disk Health
+            commands::get_disk_health,
+            commands::get_disk_space,
+            commands::run_chkdsk,
+            commands::get_last_chkdsk,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

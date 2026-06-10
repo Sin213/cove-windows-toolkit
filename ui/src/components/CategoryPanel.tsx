@@ -23,6 +23,7 @@ import HistoryPanel from "./HistoryPanel";
 import DiffPanel from "./DiffPanel";
 import SecurityPanel from "./SecurityPanel";
 import RuntimesPanel from "./RuntimesPanel";
+import DiskHealthPanel from "./DiskHealthPanel";
 
 interface Props {
   view: View;
@@ -124,6 +125,10 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     title: "Installed Runtimes",
     description: ".NET, Visual C++ Redistributables, DirectX, and Java installations.",
   },
+  diskhealth: {
+    title: "Disk Health",
+    description: "SMART health monitoring, disk space breakdown, and chkdsk tools.",
+  },
   diff: {
     title: "What Changed",
     description: "Compare the current machine state to the last visit's snapshot.",
@@ -155,6 +160,7 @@ const PANELS: Record<string, React.ComponentType> = {
   restore: RestorePanel,
   security: SecurityPanel,
   runtimes: RuntimesPanel,
+  diskhealth: DiskHealthPanel,
   diff: DiffPanel,
   history: HistoryPanel,
 };

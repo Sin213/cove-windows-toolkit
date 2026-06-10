@@ -898,6 +898,34 @@ pub fn run_heuristic_scan() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// Disk Health
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_disk_health() -> serde_json::Value {
+    let drives = mod_diskhealth::collect_drive_health();
+    serde_json::to_value(drives).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn get_disk_space(drive: String) -> serde_json::Value {
+    let report = mod_diskhealth::get_largest_files(&drive);
+    serde_json::to_value(report).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn run_chkdsk(mode: String, drive: String) -> serde_json::Value {
+    let result = mod_diskhealth::run_chkdsk(&mode, &drive);
+    serde_json::to_value(result).unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn get_last_chkdsk() -> serde_json::Value {
+    let info = mod_diskhealth::get_last_chkdsk();
+    serde_json::to_value(info).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // Performance tweaks
 // ---------------------------------------------------------------------------
 

@@ -27,6 +27,7 @@ members = [
     "crates/mod-performance",
     "crates/mod-runtimes",
     "crates/mod-security",
+    "crates/mod-diskhealth",
 ]
 
 [workspace.package]

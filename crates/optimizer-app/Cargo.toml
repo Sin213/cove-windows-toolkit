@@ -28,6 +28,7 @@ mod-bloatware = { path = "../mod-bloatware" }
 mod-performance = { path = "../mod-performance" }
 mod-runtimes = { path = "../mod-runtimes" }
 mod-security = { path = "../mod-security" }
+mod-diskhealth = { path = "../mod-diskhealth" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
