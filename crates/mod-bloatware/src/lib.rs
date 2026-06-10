@@ -119,7 +119,7 @@ pub fn remove_apps(packages: &[String]) -> Vec<RemoveResult> {
             pkg.replace('\'', "''"),
             pkg.replace('\'', "''"),
         );
-        let output = std::process::Command::new("powershell")
+        let output = optimizer_core::silent_cmd("powershell")
             .args(["-NoProfile", "-Command", &script])
             .output();
 
@@ -153,8 +153,8 @@ pub fn remove_apps(packages: &[String]) -> Vec<RemoveResult> {
 
 #[cfg(target_os = "windows")]
 fn run_ps(script: &str) -> String {
-    use std::process::Command;
-    match Command::new("powershell").args(["-NoProfile", "-Command", script]).output() {
+    
+    match optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", script]).output() {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(_) => "[]".to_string(),
     }

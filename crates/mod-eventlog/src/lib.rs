@@ -41,7 +41,7 @@ pub fn get_summary() -> EventLogReport {
 
 #[cfg(target_os = "windows")]
 fn query_log(log_name: &str) -> LogSummary {
-    use std::process::Command;
+    
 
     let ps = format!(
         r#"
@@ -62,7 +62,7 @@ try {{
 
     let mut summary = LogSummary { critical: 0, error: 0, warning: 0, recent_events: Vec::new() };
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if line.starts_with("COUNTS|") {

@@ -12,7 +12,7 @@ pub struct StartupItem {
 
 #[cfg(target_os = "windows")]
 pub fn list_items() -> Vec<StartupItem> {
-    use std::process::Command;
+    
 
     let ps = r#"
 # HKCU Run
@@ -53,7 +53,7 @@ try {
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if line.starts_with("ITEM|") {
@@ -98,7 +98,7 @@ fn estimate_impact(name: &str, _cmd: &str) -> String {
 
 #[cfg(target_os = "windows")]
 pub fn toggle(name: &str, enabled: bool) -> Result<String, String> {
-    use std::process::Command;
+    
 
     let action = if enabled { "enable" } else { "disable" };
     let ps = format!(
@@ -141,7 +141,7 @@ if ($found) {{ Write-Output 'OK' }} else {{ Write-Output 'NOTFOUND' }}
         name, name, action, name, name, action, name, name, name, name
     );
 
-    let o = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
         .map_err(|e| e.to_string())?;
     let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if result == "OK" {

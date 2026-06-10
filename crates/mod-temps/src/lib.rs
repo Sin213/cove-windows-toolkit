@@ -50,8 +50,8 @@ pub fn collect_temps() -> TempReport {
 
 #[cfg(target_os = "windows")]
 fn run_ps(script: &str) -> String {
-    use std::process::Command;
-    let out = Command::new("powershell")
+    
+    let out = optimizer_core::silent_cmd("powershell")
         .args(["-NoProfile", "-Command", script])
         .output();
     match out {

@@ -38,7 +38,7 @@ pub struct HeuristicResult {
 
 #[cfg(target_os = "windows")]
 pub fn get_defender_status() -> DefenderStatus {
-    use std::process::Command;
+    
 
     let ps = r#"
 try {
@@ -52,7 +52,7 @@ try {
 }
 "#;
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.split('|').collect();
         if parts.len() >= 4 {
@@ -84,7 +84,7 @@ fn stub_defender() -> DefenderStatus {
 
 #[cfg(target_os = "windows")]
 pub fn run_scan(scan_type: &str) -> ScanResult {
-    use std::process::Command;
+    
 
     let scan_flag = match scan_type {
         "quick" => "-ScanType 1",
@@ -96,7 +96,7 @@ pub fn run_scan(scan_type: &str) -> ScanResult {
     let args_str = format!("-Scan {}", scan_flag);
     let args: Vec<&str> = args_str.split_whitespace().collect();
 
-    match Command::new(mp_path).args(&args).output() {
+    match optimizer_core::silent_cmd(mp_path).args(&args).output() {
         Ok(o) => {
             let code = o.status.code().unwrap_or(-1);
             match code {
@@ -120,7 +120,7 @@ pub fn run_scan(_scan_type: &str) -> ScanResult {
 
 #[cfg(target_os = "windows")]
 pub fn run_heuristics() -> HeuristicResult {
-    use std::process::Command;
+    
     use std::time::Instant;
 
     let start = Instant::now();
@@ -132,7 +132,7 @@ Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\L
     Select-Object Id, ProcessName, Path |
     ForEach-Object { Write-Output "$($_.Id)|$($_.ProcessName)|$($_.Path)" }
 "#;
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps_procs]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps_procs]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.splitn(3, '|').collect();
@@ -177,7 +177,7 @@ $total = ($count.Values | Measure-Object -Sum).Sum
 $detail = ($count.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }) -join ', '
 Write-Output "$total|$detail"
 "#;
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps_ext]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps_ext]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.splitn(2, '|').collect();
         if parts.len() == 2 {

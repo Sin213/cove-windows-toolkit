@@ -16,8 +16,8 @@ pub struct RestoreStatus {
 
 #[cfg(target_os = "windows")]
 pub fn get_restore_status() -> RestoreStatus {
-    use std::process::Command;
-    let output = Command::new("powershell")
+    
+    let output = optimizer_core::silent_cmd("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -57,8 +57,8 @@ pub fn get_restore_status() -> RestoreStatus {
 
 #[cfg(target_os = "windows")]
 pub fn list_restore_points() -> Vec<RestorePoint> {
-    use std::process::Command;
-    let output = Command::new("powershell")
+    
+    let output = optimizer_core::silent_cmd("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -113,12 +113,12 @@ pub fn list_restore_points() -> Vec<RestorePoint> {
 
 #[cfg(target_os = "windows")]
 pub fn create_restore_point(description: &str) -> Result<String, String> {
-    use std::process::Command;
+    
     let script = format!(
         "Checkpoint-Computer -Description '{}' -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop",
         description.replace('\'', "''")
     );
-    let output = Command::new("powershell")
+    let output = optimizer_core::silent_cmd("powershell")
         .args(["-NoProfile", "-Command", &script])
         .output()
         .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
@@ -145,8 +145,8 @@ pub fn create_restore_point(description: &str) -> Result<String, String> {
 
 #[cfg(target_os = "windows")]
 pub fn enable_system_protection() -> Result<String, String> {
-    use std::process::Command;
-    let output = Command::new("powershell")
+    
+    let output = optimizer_core::silent_cmd("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -170,8 +170,8 @@ pub fn enable_system_protection() -> Result<String, String> {
 
 #[cfg(target_os = "windows")]
 pub fn launch_system_restore() -> Result<String, String> {
-    use std::process::Command;
-    Command::new("rstrui.exe")
+    
+    optimizer_core::silent_cmd("rstrui.exe")
         .spawn()
         .map_err(|e| format!("Failed to launch System Restore: {}", e))?;
     Ok("System Restore wizard launched.".to_string())

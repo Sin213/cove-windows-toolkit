@@ -20,7 +20,7 @@ pub struct UpdateStatus {
 
 #[cfg(target_os = "windows")]
 pub fn get_status() -> UpdateStatus {
-    use std::process::Command;
+    
 
     let ps = r#"
 # WU service status
@@ -71,7 +71,7 @@ try {
         days_since_last_update: 0,
     };
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if line.starts_with("STATUS|") {

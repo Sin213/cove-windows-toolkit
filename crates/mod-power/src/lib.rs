@@ -18,7 +18,7 @@ pub struct PowerInfo {
 
 #[cfg(target_os = "windows")]
 pub fn get_info() -> PowerInfo {
-    use std::process::Command;
+    
 
     let mut info = PowerInfo {
         current_plan: "Unknown".into(),
@@ -29,7 +29,7 @@ pub fn get_info() -> PowerInfo {
     };
 
     // List plans
-    if let Ok(o) = Command::new("powercfg").args(["/list"]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powercfg").args(["/list"]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if let Some(guid_start) = line.find('(')
@@ -51,12 +51,12 @@ pub fn get_info() -> PowerInfo {
 
 
     // Display timeout
-    if let Ok(o) = Command::new("powercfg").args(["/query", "SCHEME_CURRENT", "7516b95f-f776-4464-8c53-06167f40cc99", "3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e"]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powercfg").args(["/query", "SCHEME_CURRENT", "7516b95f-f776-4464-8c53-06167f40cc99", "3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e"]).output() {
         info.display_off_minutes = parse_powercfg_timeout(&String::from_utf8_lossy(&o.stdout));
     }
 
     // Sleep timeout
-    if let Ok(o) = Command::new("powercfg").args(["/query", "SCHEME_CURRENT", "238c9fa8-0aad-41ed-83f4-97be242c8f20", "29f6c1db-86da-48c5-9fdb-f2b67b1f44da"]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powercfg").args(["/query", "SCHEME_CURRENT", "238c9fa8-0aad-41ed-83f4-97be242c8f20", "29f6c1db-86da-48c5-9fdb-f2b67b1f44da"]).output() {
         info.sleep_minutes = parse_powercfg_timeout(&String::from_utf8_lossy(&o.stdout));
     }
 
@@ -88,8 +88,8 @@ fn parse_powercfg_timeout(output: &str) -> u32 {
 
 #[cfg(target_os = "windows")]
 pub fn set_plan(guid: &str) -> Result<String, String> {
-    use std::process::Command;
-    let o = Command::new("powercfg").args(["/setactive", guid]).output()
+    
+    let o = optimizer_core::silent_cmd("powercfg").args(["/setactive", guid]).output()
         .map_err(|e| e.to_string())?;
     if o.status.success() {
         Ok(format!("Power plan set to {}", guid))

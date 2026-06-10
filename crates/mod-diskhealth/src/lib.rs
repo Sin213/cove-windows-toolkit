@@ -60,7 +60,7 @@ pub struct LastChkdskInfo {
 
 #[cfg(target_os = "windows")]
 pub fn collect_drive_health() -> Vec<DriveHealth> {
-    use std::process::Command;
+    
 
     let ps = r#"
 $disks = Get-PhysicalDisk | Select-Object DeviceId, FriendlyName, SerialNumber, BusType, MediaType, Size, HealthStatus
@@ -80,7 +80,7 @@ foreach ($d in $disks) {
 
     let mut drives = Vec::new();
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('|').collect();
@@ -116,7 +116,7 @@ foreach ($d in $disks) {
     }
 
     // Check TRIM status
-    if let Ok(o) = Command::new("fsutil").args(["behavior", "query", "DisableDeleteNotify"]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("fsutil").args(["behavior", "query", "DisableDeleteNotify"]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         let trim_enabled = stdout.contains("= 0");
         for drive in &mut drives {
@@ -165,7 +165,7 @@ fn compute_health_rating(
 
 #[cfg(target_os = "windows")]
 pub fn get_largest_files(drive_letter: &str) -> DiskSpaceReport {
-    use std::process::Command;
+    
 
     let drive = if drive_letter.ends_with(':') {
         drive_letter.to_string()
@@ -198,7 +198,7 @@ Get-ChildItem -Path '{}\Users' -Recurse -File -Force -ErrorAction SilentlyContin
         largest_files: Vec::new(),
     };
 
-    if let Ok(o) = Command::new("powershell")
+    if let Ok(o) = optimizer_core::silent_cmd("powershell")
         .args(["-NoProfile", "-Command", &ps])
         .output()
     {
@@ -242,7 +242,7 @@ pub fn get_largest_files(drive_letter: &str) -> DiskSpaceReport {
 
 #[cfg(target_os = "windows")]
 pub fn run_chkdsk(mode: &str, drive: &str) -> ChkdskResult {
-    use std::process::Command;
+    
 
     let drive_arg = if drive.ends_with(':') {
         drive.to_string()
@@ -252,7 +252,7 @@ pub fn run_chkdsk(mode: &str, drive: &str) -> ChkdskResult {
 
     match mode {
         "scan" => {
-            let output = Command::new("chkdsk")
+            let output = optimizer_core::silent_cmd("chkdsk")
                 .args([&drive_arg, "/scan"])
                 .output();
             match output {
@@ -287,7 +287,7 @@ pub fn run_chkdsk(mode: &str, drive: &str) -> ChkdskResult {
                 r#"echo Y | chkdsk {} {}"#,
                 drive_arg, flag
             );
-            let output = Command::new("cmd")
+            let output = optimizer_core::silent_cmd("cmd")
                 .args(["/C", &ps])
                 .output();
             match output {
@@ -344,7 +344,7 @@ pub fn run_chkdsk(mode: &str, _drive: &str) -> ChkdskResult {
 
 #[cfg(target_os = "windows")]
 pub fn get_last_chkdsk() -> LastChkdskInfo {
-    use std::process::Command;
+    
 
     let ps = r#"
 # Check dirty bit on C:
@@ -376,7 +376,7 @@ Write-Output "DIRTY|$dirty"
         dirty_bit: false,
     };
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if line.starts_with("FOUND|") {

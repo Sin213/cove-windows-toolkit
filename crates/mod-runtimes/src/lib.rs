@@ -48,7 +48,7 @@ pub fn collect_runtimes() -> RuntimesReport {
 
 #[cfg(target_os = "windows")]
 fn detect_dotnet() -> Vec<RuntimeEntry> {
-    use std::process::Command;
+    
 
     let mut entries = Vec::new();
 
@@ -77,7 +77,7 @@ try {
 } catch { Write-Output 'NOTFOUND|.NET Framework 3.5' }
 "#;
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('|').collect();
@@ -114,7 +114,7 @@ try {
     }
 
     // .NET 5+ via dotnet CLI
-    if let Ok(o) = Command::new("dotnet").args(["--list-runtimes"]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("dotnet").args(["--list-runtimes"]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let trimmed = line.trim();
@@ -147,7 +147,7 @@ try {
 
 #[cfg(target_os = "windows")]
 fn detect_vcredist() -> Vec<RuntimeEntry> {
-    use std::process::Command;
+    
 
     let ps = r#"
 Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
@@ -156,7 +156,7 @@ Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','
     ForEach-Object { Write-Output "$($_.DisplayName)|$($_.DisplayVersion)" }
 "#;
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         let entries: Vec<RuntimeEntry> = stdout.lines().filter_map(|line| {
             let parts: Vec<&str> = line.splitn(2, '|').collect();
@@ -191,7 +191,7 @@ Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','
 
 #[cfg(target_os = "windows")]
 fn detect_directx() -> DirectXInfo {
-    use std::process::Command;
+    
 
     let ps = r#"
 try {
@@ -200,7 +200,7 @@ try {
 } catch { Write-Output '12.0|12_1' }
 "#;
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.split('|').collect();
         if parts.len() >= 2 {
@@ -217,7 +217,7 @@ try {
 
 #[cfg(target_os = "windows")]
 fn detect_java() -> Vec<RuntimeEntry> {
-    use std::process::Command;
+    
 
     let ps = r#"
 $found = @()
@@ -240,7 +240,7 @@ if ($found.Count -eq 0) { Write-Output 'NONE' }
 else { $found | ForEach-Object { Write-Output $_ } }
 "#;
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if stdout != "NONE" {
             return stdout.lines().filter_map(|line| {

@@ -218,7 +218,7 @@ pub fn set_dns(preset: String) -> serde_json::Value {
         )
     };
 
-    let output = std::process::Command::new("powershell")
+    let output = optimizer_core::silent_cmd("powershell")
         .args(["-NoProfile", "-Command", &script])
         .output();
 
@@ -247,7 +247,7 @@ pub fn run_network_command(command: String) -> serde_json::Value {
         return serde_json::json!({ "success": true, "stub": true, "message": format!("[stub] Would run: {} {}", cmd, args.join(" ")), "output": format!("{} completed (stub).", label) });
     }
 
-    let output = std::process::Command::new(cmd).args(&args).output();
+    let output = optimizer_core::silent_cmd(cmd).args(&args).output();
 
     match output {
         Ok(o) => {
@@ -295,7 +295,7 @@ foreach ($s in $services) { Start-Service -Name $s -ErrorAction SilentlyContinue
 $log -join "`n"
 "#;
 
-    let output = std::process::Command::new("powershell")
+    let output = optimizer_core::silent_cmd("powershell")
         .args(["-NoProfile", "-Command", script])
         .output();
 
@@ -318,7 +318,7 @@ pub fn trigger_update_check() -> serde_json::Value {
         return serde_json::json!({ "success": true, "stub": true, "message": "[stub] Would open Windows Update settings." });
     }
 
-    let result = std::process::Command::new("cmd")
+    let result = optimizer_core::silent_cmd("cmd")
         .args(["/C", "start ms-settings:windowsupdate-action"])
         .spawn();
 
@@ -461,9 +461,9 @@ pub fn export_report() -> serde_json::Value {
     let _ = std::fs::write(&filepath, &html);
 
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("cmd").args(["/C", "start", "", &filepath.to_string_lossy()]).spawn(); }
+    { let _ = optimizer_core::silent_cmd("cmd").args(["/C", "start", "", &filepath.to_string_lossy()]).spawn(); }
     #[cfg(not(target_os = "windows"))]
-    { let _ = std::process::Command::new("xdg-open").arg(&filepath).spawn(); }
+    { let _ = optimizer_core::silent_cmd("xdg-open").arg(&filepath).spawn(); }
 
     serde_json::json!({
         "success": true,
@@ -540,7 +540,7 @@ fn apply_registry_tweak(path: &str, name: &str, value: &str) -> serde_json::Valu
             "try {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ Write-Output $_.Exception.Message }}",
             path, path, name, value
         );
-        if let Ok(o) = std::process::Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+        if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
             let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
             if result == "OK" {
                 return serde_json::json!({ "success": true, "message": format!("Applied: {} = {}", name, value) });
@@ -681,7 +681,7 @@ pub fn set_power_timeout(setting: String, minutes: u32) -> serde_json::Value {
         _ => return serde_json::json!({ "success": false, "message": format!("Unknown setting: {}", setting) }),
     }, minutes);
 
-    let output = std::process::Command::new("cmd").args(["/C", &cmd]).output();
+    let output = optimizer_core::silent_cmd("cmd").args(["/C", &cmd]).output();
     let dc_setting = match setting.as_str() {
         "display" => "monitor-timeout-dc",
         "sleep" => "standby-timeout-dc",
@@ -690,7 +690,7 @@ pub fn set_power_timeout(setting: String, minutes: u32) -> serde_json::Value {
     };
     if !dc_setting.is_empty() {
         let dc_cmd = format!("powercfg /change {} {}", dc_setting, minutes);
-        let _ = std::process::Command::new("cmd").args(["/C", &dc_cmd]).output();
+        let _ = optimizer_core::silent_cmd("cmd").args(["/C", &dc_cmd]).output();
     }
 
     match output {
@@ -1062,9 +1062,9 @@ pub fn run_heuristic_scan() -> serde_json::Value {
 #[tauri::command]
 pub fn open_url(url: String) -> serde_json::Value {
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("cmd").args(["/C", "start", "", &url]).spawn(); }
+    { let _ = optimizer_core::silent_cmd("cmd").args(["/C", "start", "", &url]).spawn(); }
     #[cfg(not(target_os = "windows"))]
-    { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+    { let _ = optimizer_core::silent_cmd("xdg-open").arg(&url).spawn(); }
     serde_json::json!({ "success": true })
 }
 
@@ -1157,7 +1157,7 @@ pub fn get_activation_status() -> serde_json::Value {
         return serde_json::json!({ "activated": true, "edition": "Windows 11 Pro", "status": "Licensed", "detail": "Windows is activated with a digital license." });
     }
 
-    let output = std::process::Command::new("powershell")
+    let output = optimizer_core::silent_cmd("powershell")
         .args(["-NoProfile", "-Command",
             "Get-CimInstance -ClassName SoftwareLicensingProduct -Filter \"ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL\" | Select-Object -First 1 Name, LicenseStatus | ConvertTo-Json"])
         .output();

@@ -21,7 +21,7 @@ pub struct DriverReport {
 
 #[cfg(target_os = "windows")]
 pub fn audit_drivers() -> DriverReport {
-    use std::process::Command;
+    
 
     let ps = r#"
 Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue |
@@ -36,7 +36,7 @@ Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue |
 
     let mut all_drivers = Vec::new();
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('|').collect();

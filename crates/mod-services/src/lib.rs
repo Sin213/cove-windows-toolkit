@@ -67,14 +67,14 @@ fn build_service_tweak(def: (&str, &str, &str, &str, &str, &str, &str, Option<&s
 
 #[cfg(target_os = "windows")]
 fn query_service_start_type(service: &str) -> String {
-    use std::process::Command;
+    
 
     let ps = format!(
         "try {{ $s = Get-Service '{}' -ErrorAction Stop; $st = (Get-WmiObject Win32_Service -Filter \"Name='{}'\").StartMode; Write-Output $st }} catch {{ Write-Output 'NotFound' }}",
         service, service
     );
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if !result.is_empty() { return result; }
     }
@@ -83,13 +83,13 @@ fn query_service_start_type(service: &str) -> String {
 
 #[cfg(target_os = "windows")]
 pub fn apply_change(service: &str, start_type: &str) -> Result<String, String> {
-    use std::process::Command;
+    
 
     let ps = format!(
         "Set-Service -Name '{}' -StartupType '{}' -ErrorAction Stop; Write-Output 'OK'",
         service, start_type
     );
-    let o = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
         .map_err(|e| e.to_string())?;
     let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if result == "OK" {

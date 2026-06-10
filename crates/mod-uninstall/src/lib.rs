@@ -47,7 +47,7 @@ pub fn list_programs() -> Vec<InstalledProgram> {
 
 #[cfg(target_os = "windows")]
 pub fn run_uninstall(uninstall_string: &str, quiet_string: &str) -> UninstallResult {
-    use std::process::Command;
+    
 
     let cmd = if !quiet_string.is_empty() { quiet_string } else { uninstall_string };
     if cmd.is_empty() {
@@ -58,7 +58,7 @@ pub fn run_uninstall(uninstall_string: &str, quiet_string: &str) -> UninstallRes
         };
     }
 
-    let output = Command::new("cmd")
+    let output = optimizer_core::silent_cmd("cmd")
         .args(["/C", cmd])
         .output();
 
@@ -122,7 +122,7 @@ pub fn scan_leftovers(name: &str, _publisher: &str, _install_location: &str, _re
 pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
     paths.iter().map(|p| {
         if p.starts_with("HK") {
-            let result = std::process::Command::new("powershell")
+            let result = optimizer_core::silent_cmd("powershell")
                 .args(["-NoProfile", "-Command", &format!("Remove-Item -Path 'Registry::{}' -Recurse -Force -ErrorAction Stop", p.replace('\'', "''"))])
                 .output();
             match result {
@@ -131,7 +131,7 @@ pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
                 Err(e) => (p.clone(), false, e.to_string()),
             }
         } else {
-            let result = std::process::Command::new("powershell")
+            let result = optimizer_core::silent_cmd("powershell")
                 .args(["-NoProfile", "-Command", &format!("Remove-Item -Path '{}' -Recurse -Force -ErrorAction Stop", p.replace('\'', "''"))])
                 .output();
             match result {
@@ -150,8 +150,8 @@ pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
 
 #[cfg(target_os = "windows")]
 fn run_ps(script: &str) -> String {
-    use std::process::Command;
-    match Command::new("powershell").args(["-NoProfile", "-Command", script]).output() {
+    
+    match optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", script]).output() {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(_) => "[]".to_string(),
     }

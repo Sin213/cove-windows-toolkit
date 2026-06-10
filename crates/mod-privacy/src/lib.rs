@@ -101,13 +101,13 @@ fn build_tweak(def: TweakDef) -> PrivacyTweak {
 
 #[cfg(target_os = "windows")]
 fn read_reg(path: &str, name: &str) -> String {
-    use std::process::Command;
+    
 
     let ps = format!(
         "try {{ $v = (Get-ItemProperty -Path 'Registry::{}' -Name '{}' -ErrorAction Stop).'{}'; Write-Output $v }} catch {{ Write-Output 'NotSet' }}",
         path, name, name
     );
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if !val.is_empty() { return val; }
     }
@@ -121,12 +121,12 @@ fn read_reg(_path: &str, _name: &str) -> String {
 
 #[cfg(target_os = "windows")]
 fn query_service(service: &str) -> String {
-    use std::process::Command;
+    
     let ps = format!(
         "try {{ (Get-WmiObject Win32_Service -Filter \"Name='{}'\").StartMode }} catch {{ 'Unknown' }}",
         service
     );
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         return String::from_utf8_lossy(&o.stdout).trim().to_string();
     }
     "Unknown".into()

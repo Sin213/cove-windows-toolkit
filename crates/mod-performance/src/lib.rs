@@ -76,12 +76,12 @@ pub fn get_tweaks() -> Vec<PerformanceTweak> {
 
 #[cfg(target_os = "windows")]
 fn read_registry_value(path: &str, name: &str) -> Option<String> {
-    use std::process::Command;
+    
     let ps = format!(
         "try {{ $v = (Get-ItemProperty -Path 'Registry::{}' -Name '{}' -ErrorAction Stop).'{}'; Write-Output $v }} catch {{ Write-Output 'NOTFOUND' }}",
         path, name, name
     );
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if val != "NOTFOUND" && !val.is_empty() { return Some(val); }
     }
@@ -95,12 +95,12 @@ fn read_registry_value(_path: &str, _name: &str) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 pub fn apply_tweak(path: &str, name: &str, value: &str) -> Result<String, String> {
-    use std::process::Command;
+    
     let ps = format!(
         "try {{ Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force; Write-Output 'OK' }}",
         path, name, value, path, path, name, value
     );
-    let o = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
         .map_err(|e| e.to_string())?;
     if String::from_utf8_lossy(&o.stdout).trim() == "OK" {
         Ok(format!("Applied: {} = {}", name, value))

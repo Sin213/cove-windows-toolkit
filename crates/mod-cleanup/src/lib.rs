@@ -54,7 +54,7 @@ fn expand_env(path: &str) -> String {
 
 #[cfg(target_os = "windows")]
 fn measure_dir(path: &str) -> (u64, u64) {
-    use std::process::Command;
+    
 
     let ps = format!(
         r#"
@@ -68,7 +68,7 @@ Write-Output "$size|$count"
         path, path
     );
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = line.split('|').collect();
         if parts.len() >= 2 {
@@ -106,7 +106,7 @@ pub fn clean_targets(_ids: &[String]) -> Vec<(String, bool, String)> {
 
 #[cfg(target_os = "windows")]
 fn clean_directory(path: &str) -> Result<String, String> {
-    use std::process::Command;
+    
 
     let ps = format!(
         r#"
@@ -122,7 +122,7 @@ Write-Output "OK|$freed"
         path, path, path, path
     );
 
-    let o = Command::new("powershell").args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
         .map_err(|e| e.to_string())?;
     let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if line.starts_with("OK|") {

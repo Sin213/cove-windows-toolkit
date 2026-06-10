@@ -13,7 +13,7 @@ pub struct BsodDump {
 
 #[cfg(target_os = "windows")]
 pub fn scan_dumps() -> Vec<BsodDump> {
-    use std::process::Command;
+    
 
     let ps = r#"
 $dir = "$env:SystemRoot\Minidump"
@@ -27,7 +27,7 @@ Get-ChildItem -Path $dir -Filter '*.dmp' -ErrorAction SilentlyContinue |
 "#;
 
     let mut dumps = Vec::new();
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if !line.starts_with("DUMP|") { continue; }

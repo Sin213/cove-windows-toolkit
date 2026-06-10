@@ -17,8 +17,8 @@ pub struct AdminStatus {
 
 #[cfg(target_os = "windows")]
 pub fn check_admin() -> AdminStatus {
-    use std::process::Command;
-    let output = Command::new("net")
+    
+    let output = optimizer_core::silent_cmd("net")
         .args(["session"])
         .output();
 
@@ -41,8 +41,8 @@ pub fn check_admin() -> AdminStatus {
 
 #[cfg(target_os = "windows")]
 pub fn run_dism() -> ScanResult {
-    use std::process::Command;
-    let output = Command::new("dism")
+    
+    let output = optimizer_core::silent_cmd("dism")
         .args(["/online", "/cleanup-image", "/restorehealth"])
         .output();
 
@@ -84,8 +84,8 @@ pub fn run_dism() -> ScanResult {
 
 #[cfg(target_os = "windows")]
 pub fn run_sfc() -> ScanResult {
-    use std::process::Command;
-    let output = Command::new("sfc")
+    
+    let output = optimizer_core::silent_cmd("sfc")
         .args(["/scannow"])
         .output();
 

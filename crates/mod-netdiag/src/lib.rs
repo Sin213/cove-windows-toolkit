@@ -66,7 +66,7 @@ pub struct SpeedTestResult {
 
 #[cfg(target_os = "windows")]
 pub fn run_speed_test() -> SpeedTestResult {
-    use std::process::Command;
+    
 
     let ps = r#"
 $url = 'http://speedtest.tele2.net/10MB.zip'
@@ -87,7 +87,7 @@ try {
 }
 "#;
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let p: Vec<&str> = line.split('|').collect();
         if p.len() >= 5 && p[0] == "OK" {
@@ -118,7 +118,7 @@ pub fn run_speed_test() -> SpeedTestResult {
 
 #[cfg(target_os = "windows")]
 fn get_primary_adapter() -> Option<AdapterInfo> {
-    use std::process::Command;
+    
     let ps = r#"
 $a = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
 if (-not $a) { exit 0 }
@@ -131,7 +131,7 @@ try { $speed = "$($a.LinkSpeed)" } catch {}
 Write-Output "$($a.Name)|$($a.InterfaceDescription)|$speed|$ip|$gw|$dns|$($a.Status)"
 "#;
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let p: Vec<&str> = line.split('|').collect();
         if p.len() >= 7 {
@@ -200,9 +200,9 @@ try {
 
 #[cfg(target_os = "windows")]
 fn run_single_test(name: &str, ps_script: &str) -> TestResult {
-    use std::process::Command;
+    
 
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps_script]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps_script]).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let p: Vec<&str> = line.splitn(3, '|').collect();
         if p.len() >= 3 {
@@ -219,9 +219,9 @@ fn run_single_test(name: &str, ps_script: &str) -> TestResult {
 
 #[cfg(target_os = "windows")]
 fn get_wifi_info() -> Option<WifiInfo> {
-    use std::process::Command;
+    
 
-    let o = Command::new("netsh").args(["wlan", "show", "interfaces"]).output().ok()?;
+    let o = optimizer_core::silent_cmd("netsh").args(["wlan", "show", "interfaces"]).output().ok()?;
     let stdout = String::from_utf8_lossy(&o.stdout);
     if !stdout.contains("SSID") { return None; }
 
