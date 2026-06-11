@@ -241,3 +241,101 @@ pub fn collect_temps() -> TempReport {
         lhm_status: "active".into(),
     }
 }
+
+// ---------------------------------------------------------------------------
+// LHM launcher - find, detect, and launch LibreHardwareMonitor
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "windows")]
+pub mod lhm_launcher {
+    use std::path::{Path, PathBuf};
+
+    pub fn is_lhm_running() -> bool {
+        use sysinfo::System;
+        let mut sys = System::new();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        sys.processes().values().any(|p| {
+            let name = p.name().to_string_lossy().to_lowercase();
+            name == "librehardwaremonitor.exe" || name == "librehardwaremonitor"
+        })
+    }
+
+    pub fn find_lhm_exe(resource_dir: &Path) -> Option<PathBuf> {
+        let bundled = resource_dir.join("lhm").join("LibreHardwareMonitor.exe");
+        if bundled.exists() {
+            return Some(bundled);
+        }
+
+        let program_files = std::env::var("ProgramFiles").unwrap_or_default();
+        if !program_files.is_empty() {
+            let pf = PathBuf::from(&program_files)
+                .join("LibreHardwareMonitor")
+                .join("LibreHardwareMonitor.exe");
+            if pf.exists() {
+                return Some(pf);
+            }
+        }
+
+        let program_files_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_default();
+        if !program_files_x86.is_empty() {
+            let pf86 = PathBuf::from(&program_files_x86)
+                .join("LibreHardwareMonitor")
+                .join("LibreHardwareMonitor.exe");
+            if pf86.exists() {
+                return Some(pf86);
+            }
+        }
+
+        None
+    }
+
+    pub fn launch_lhm(exe_path: &Path) -> Result<(), String> {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new(exe_path)
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| format!("Failed to launch LHM: {}", e))
+    }
+
+    pub fn ensure_lhm_running(resource_dir: &Path) -> Result<String, String> {
+        if is_lhm_running() {
+            return Ok("active".into());
+        }
+
+        let exe = match find_lhm_exe(resource_dir) {
+            Some(p) => p,
+            None => return Ok("not_found".into()),
+        };
+
+        launch_lhm(&exe)?;
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        if is_lhm_running() {
+            Ok("active".into())
+        } else {
+            Ok("starting".into())
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub mod lhm_launcher {
+    use std::path::{Path, PathBuf};
+
+    pub fn is_lhm_running() -> bool {
+        true
+    }
+
+    pub fn find_lhm_exe(_resource_dir: &Path) -> Option<PathBuf> {
+        Some(PathBuf::from("/mock/LibreHardwareMonitor.exe"))
+    }
+
+    pub fn launch_lhm(_exe_path: &Path) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn ensure_lhm_running(_resource_dir: &Path) -> Result<String, String> {
+        Ok("active".into())
+    }
+}
