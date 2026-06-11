@@ -108,7 +108,14 @@ $computer.Close()
         let dir = extract_lhm_if_needed()
             .ok_or_else(|| "Failed to extract sensor library".to_string())?;
 
-        let script = build_sensor_script(&dir.display().to_string());
+        let dir_str = dir.display().to_string();
+        let dll_path = dir.join("LibreHardwareMonitorLib.dll");
+
+        if !dll_path.exists() {
+            return Err(format!("DLL not found at: {}", dll_path.display()));
+        }
+
+        let script = build_sensor_script(&dir_str);
 
         let output = optimizer_core::silent_cmd("powershell")
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
@@ -117,7 +124,7 @@ $computer.Close()
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Sensor query failed: {}", stderr.trim()));
+            return Err(format!("Sensor query failed (dir={}): {}", dir_str, stderr.trim()));
         }
 
         let json = String::from_utf8_lossy(&output.stdout);
