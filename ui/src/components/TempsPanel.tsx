@@ -13,6 +13,7 @@ interface TempReading {
 interface TempReport {
   readings: TempReading[];
   warnings: string[];
+  lhm_status: string;
 }
 
 function tempColor(c: number, max: number | null): string {
@@ -38,6 +39,7 @@ export default function TempsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [lhmStarting, setLhmStarting] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
@@ -53,9 +55,21 @@ export default function TempsPanel() {
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, 3000);
     return () => clearInterval(id);
   }, [autoRefresh, load]);
+
+  const handleStartLhm = () => {
+    setLhmStarting(true);
+    invoke<{ status: string }>("ensure_lhm_running")
+      .then((r) => {
+        if (r.status === "active" || r.status === "starting") {
+          setTimeout(load, 3000);
+        }
+      })
+      .catch((e) => setError(String(e)))
+      .finally(() => setLhmStarting(false));
+  };
 
   if (loading) return <div className="panel-loading">Reading sensors...</div>;
   if (error) return <div className="panel-error">Error: {error}</div>;
@@ -74,8 +88,20 @@ export default function TempsPanel() {
         <button className="temps-refresh-btn" onClick={load}>Refresh</button>
         <label className="auto-refresh-label">
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-          Auto-refresh (5s)
+          Auto-refresh (3s)
         </label>
+        {report.lhm_status === "active" && (
+          <span className="lhm-badge lhm-active">LHM Active</span>
+        )}
+        {report.lhm_status === "not_found" && (
+          <button
+            className="lhm-start-btn"
+            onClick={handleStartLhm}
+            disabled={lhmStarting}
+          >
+            {lhmStarting ? "Starting LHM..." : "Start LHM"}
+          </button>
+        )}
       </div>
 
       {report.warnings.length > 0 && (
@@ -103,8 +129,8 @@ export default function TempsPanel() {
           <div key={cat} className="temps-category">
             <h3 className="temps-cat-title">{cat}</h3>
             <div className="temps-grid">
-              {readings.map((r, i) => (
-                <TempGauge key={i} reading={r} />
+              {readings.map((r) => (
+                <TempGauge key={r.sensor} reading={r} />
               ))}
             </div>
           </div>
