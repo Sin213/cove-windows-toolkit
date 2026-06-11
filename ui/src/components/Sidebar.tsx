@@ -58,10 +58,6 @@ export default function Sidebar({ current, onNavigate }: Props) {
 
   return (
     <nav className="sidebar">
-      <div className="sidebar-header">
-        <span className="logo">◆</span>
-        <span className="title">Cove</span>
-      </div>
       {isAdmin !== null && (
         <div className={`admin-badge ${isAdmin ? "admin-yes" : "admin-no"}`}>
           <span className="admin-icon">{isAdmin ? "🛡" : "⚠"}</span>
