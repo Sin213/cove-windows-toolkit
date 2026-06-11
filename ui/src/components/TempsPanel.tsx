@@ -39,12 +39,21 @@ export default function TempsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [lhmStarting, setLhmStarting] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
     invoke<TempReport>("get_temperatures")
-      .then(setReport)
+      .then((r) => {
+        setReport(r);
+        // LHM just launched - retry after it registers WMI
+        if (r.lhm_status !== "active" && r.readings.length === 0) {
+          setTimeout(() => {
+            invoke<TempReport>("get_temperatures")
+              .then(setReport)
+              .catch(() => {});
+          }, 4000);
+        }
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -58,18 +67,6 @@ export default function TempsPanel() {
     const id = setInterval(load, 3000);
     return () => clearInterval(id);
   }, [autoRefresh, load]);
-
-  const handleStartLhm = () => {
-    setLhmStarting(true);
-    invoke<{ status: string }>("ensure_lhm_running")
-      .then((r) => {
-        if (r.status === "active" || r.status === "starting") {
-          setTimeout(load, 3000);
-        }
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLhmStarting(false));
-  };
 
   if (loading) return <div className="panel-loading">Reading sensors...</div>;
   if (error) return <div className="panel-error">Error: {error}</div>;
@@ -90,18 +87,6 @@ export default function TempsPanel() {
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
           Auto-refresh (3s)
         </label>
-        {report.lhm_status === "active" && (
-          <span className="lhm-badge lhm-active">LHM Active</span>
-        )}
-        {report.lhm_status === "not_found" && (
-          <button
-            className="lhm-start-btn"
-            onClick={handleStartLhm}
-            disabled={lhmStarting}
-          >
-            {lhmStarting ? "Starting LHM..." : "Start LHM"}
-          </button>
-        )}
       </div>
 
       {report.warnings.length > 0 && (

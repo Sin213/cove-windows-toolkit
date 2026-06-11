@@ -290,9 +290,14 @@ pub mod lhm_launcher {
     }
 
     pub fn launch_lhm(exe_path: &Path) -> Result<(), String> {
-        use std::os::windows::process::CommandExt;
-        std::process::Command::new(exe_path)
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+        // LHM is a WinForms GUI app - CREATE_NO_WINDOW only hides consoles.
+        // Use PowerShell Start-Process -WindowStyle Hidden to suppress the window.
+        optimizer_core::silent_cmd("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("Start-Process '{}' -WindowStyle Hidden", exe_path.display()),
+            ])
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("Failed to launch LHM: {}", e))
