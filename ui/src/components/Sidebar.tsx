@@ -32,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "security", label: "Security Scan", icon: "🔒", section: "diagnose" },
   { id: "runtimes", label: "Runtimes", icon: "⊞", section: "diagnose" },
   { id: "diskhealth", label: "Disk Health", icon: "💾", section: "diagnose" },
+  { id: "temps", label: "Temperatures", icon: "🌡", section: "diagnose" },
   { id: "uninstall", label: "Uninstaller", icon: "✖", section: "system" },
   { id: "sysinfo", label: "System Info", icon: "ℹ", section: "system" },
   { id: "sfc", label: "DISM / SFC", icon: "⛏", section: "system" },
