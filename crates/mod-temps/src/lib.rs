@@ -71,37 +71,35 @@ mod windows {
         }
     }
 
-    fn probe_lhm(com: &COMLibrary) -> Option<Vec<TempReading>> {
-        for ns in ["root\\LibreHardwareMonitor", "root\\OpenHardwareMonitor"] {
-            let conn = match WMIConnection::with_namespace_path(ns, com.into()) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-            let sensors: Vec<WmiSensor> = match conn.raw_query(
-                "SELECT Name, Parent, Value FROM Sensor WHERE SensorType = 'Temperature'"
-            ) {
-                Ok(s) if !s.is_empty() => s,
-                _ => continue,
-            };
+    fn try_wmi_namespace(ns: &str) -> Option<Vec<WmiSensor>> {
+        let com = COMLibrary::new().ok()?;
+        let conn = WMIConnection::with_namespace_path(ns, com.into()).ok()?;
+        let sensors: Vec<WmiSensor> = conn.raw_query(
+            "SELECT Name, Parent, Value FROM Sensor WHERE SensorType = 'Temperature'"
+        ).ok()?;
+        if sensors.is_empty() { None } else { Some(sensors) }
+    }
 
-            let mut readings = Vec::new();
-            for s in &sensors {
-                let cat = classify(&s.name, &s.parent);
-                if cat == "Disk" {
-                    continue;
-                }
-                let (max_c, critical_c) = default_thresholds(cat);
-                readings.push(TempReading {
-                    sensor: s.name.clone(),
-                    category: cat.to_string(),
-                    temperature_c: round1(s.value),
-                    max_c,
-                    critical_c,
-                });
+    fn probe_lhm() -> Option<Vec<TempReading>> {
+        let sensors = try_wmi_namespace("root\\LibreHardwareMonitor")
+            .or_else(|| try_wmi_namespace("root\\OpenHardwareMonitor"))?;
+
+        let mut readings = Vec::new();
+        for s in &sensors {
+            let cat = classify(&s.name, &s.parent);
+            if cat == "Disk" {
+                continue;
             }
-            return Some(readings);
+            let (max_c, critical_c) = default_thresholds(cat);
+            readings.push(TempReading {
+                sensor: s.name.clone(),
+                category: cat.to_string(),
+                temperature_c: round1(s.value),
+                max_c,
+                critical_c,
+            });
         }
-        None
+        Some(readings)
     }
 
     fn probe_nvidia_smi() -> Vec<TempReading> {
@@ -130,7 +128,11 @@ mod windows {
         readings
     }
 
-    fn probe_acpi(com: &COMLibrary) -> Vec<TempReading> {
+    fn probe_acpi() -> Vec<TempReading> {
+        let com = match COMLibrary::new() {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
         let conn = match WMIConnection::with_namespace_path("root\\wmi", com.into()) {
             Ok(c) => c,
             Err(_) => return Vec::new(),
@@ -161,22 +163,10 @@ mod windows {
     }
 
     pub fn collect_temps_impl() -> TempReport {
-        let com = match COMLibrary::new() {
-            Ok(c) => c,
-            Err(e) => {
-                return TempReport {
-                    readings: Vec::new(),
-                    warnings: vec![format!("COM init failed: {}", e)],
-                    lhm_status: "not_found".into(),
-                };
-            }
-        };
-
-        if let Some(readings) = probe_lhm(&com) {
-            let warnings = Vec::new();
+        if let Some(readings) = probe_lhm() {
             return TempReport {
                 readings,
-                warnings,
+                warnings: Vec::new(),
                 lhm_status: "active".into(),
             };
         }
@@ -185,7 +175,7 @@ mod windows {
         let mut readings = Vec::new();
 
         readings.extend(probe_nvidia_smi());
-        readings.extend(probe_acpi(&com));
+        readings.extend(probe_acpi());
 
         let mut warnings = Vec::new();
 
