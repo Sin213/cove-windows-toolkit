@@ -35,7 +35,7 @@ pub fn get_scan_progress(tool: String) -> ScanProgress {
 
 #[tauri::command]
 pub fn start_scan(tool: String) -> serde_json::Value {
-    if tool != "sfc" && tool != "dism" {
+    if tool != "sfc" && tool != "dism" && tool != "full" {
         return serde_json::json!({ "success": false, "message": "Unknown tool" });
     }
     {
@@ -60,46 +60,43 @@ pub fn start_scan(tool: String) -> serde_json::Value {
     serde_json::json!({ "success": true })
 }
 
-#[tauri::command]
-pub fn open_scan_in_terminal(tool: String) -> serde_json::Value {
-    let cmdline = match tool.as_str() {
-        "sfc" => "sfc /scannow",
-        "dism" => "DISM /Online /Cleanup-Image /RestoreHealth",
-        _ => return serde_json::json!({ "success": false, "message": "Unknown tool" }),
-    };
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
-        // The app is elevated, so the child console inherits admin rights.
-        match std::process::Command::new("cmd")
-            .args(["/k", cmdline])
-            .creation_flags(CREATE_NEW_CONSOLE)
-            .spawn()
-        {
-            Ok(_) => serde_json::json!({ "success": true }),
-            Err(e) => serde_json::json!({ "success": false, "message": e.to_string() }),
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = cmdline;
-        serde_json::json!({ "success": false, "message": "Windows only" })
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Worker
 // ---------------------------------------------------------------------------
 
 #[cfg(target_os = "windows")]
-fn run_scan_thread(tool: &str) {
+fn run_scan_thread(key: &str) {
+    match key {
+        "dism" => {
+            let r = run_one("dism", key, 0.0, 1.0, "");
+            finish(key, r.0, r.1, &r.2, r.3);
+        }
+        "sfc" => {
+            let r = run_one("sfc", key, 0.0, 1.0, "");
+            finish(key, r.0, r.1, &r.2, r.3);
+        }
+        "full" => {
+            // DISM first (0-50% of the bar), then SFC (50-100%).
+            let d = run_one("dism", key, 0.0, 0.5, "DISM");
+            let s = run_one("sfc", key, 50.0, 0.5, "SFC");
+            let success = d.0 && s.0;
+            let summary = format!("DISM — {}   ·   SFC — {}", d.2, s.2);
+            finish(key, success, s.1, &summary, s.3);
+        }
+        _ => {}
+    }
+}
+
+/// Run a single tool, updating the shared progress under `key`. `base`/`scale`
+/// map the tool's 0-100% onto a slice of the bar (for the combined run).
+#[cfg(target_os = "windows")]
+fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, i32, String, Vec<String>) {
     use std::io::Read;
 
     let (program, args): (&str, &[&str]) = match tool {
         "sfc" => ("sfc", &["/scannow"]),
         "dism" => ("dism", &["/Online", "/Cleanup-Image", "/RestoreHealth"]),
-        _ => return,
+        _ => return (false, -1, "Unknown tool".into(), Vec::new()),
     };
 
     let spawned = optimizer_core::silent_cmd(program)
@@ -110,18 +107,12 @@ fn run_scan_thread(tool: &str) {
 
     let mut child = match spawned {
         Ok(c) => c,
-        Err(e) => {
-            finish(tool, false, -1, &format!("Failed to start {}: {}", program, e), Vec::new());
-            return;
-        }
+        Err(e) => return (false, -1, format!("Failed to start {}: {}", program, e), Vec::new()),
     };
 
     let mut out = match child.stdout.take() {
         Some(o) => o,
-        None => {
-            finish(tool, false, -1, "No output handle.", Vec::new());
-            return;
-        }
+        None => return (false, -1, "No output handle.".into(), Vec::new()),
     };
 
     // sfc.exe emits UTF-16LE; dism is single-byte. Accumulate raw bytes and
@@ -135,7 +126,7 @@ fn run_scan_thread(tool: &str) {
             Ok(n) => {
                 acc.extend_from_slice(&buf[..n]);
                 let text = decode(&acc, is_sfc);
-                update(tool, &text);
+                update(key, &text, base, scale, label);
             }
             Err(_) => break,
         }
@@ -145,14 +136,14 @@ fn run_scan_thread(tool: &str) {
     let code = status.as_ref().ok().and_then(|s| s.code()).unwrap_or(-1);
     let success = status.as_ref().map(|s| s.success()).unwrap_or(false);
     let final_text = decode(&acc, is_sfc);
-    let lines: Vec<String> = split_lines(&final_text);
+    let lines = split_lines(&final_text);
     let summary = summarize(tool, &final_text, code);
-    finish(tool, success, code, &summary, lines);
+    (success, code, summary, lines)
 }
 
 #[cfg(not(target_os = "windows"))]
-fn run_scan_thread(tool: &str) {
-    finish(tool, true, 0, "[stub] scan completed (not on Windows).", vec!["[stub] scan output".into()]);
+fn run_scan_thread(key: &str) {
+    finish(key, true, 0, "[stub] scan completed (not on Windows).", vec!["[stub] scan output".into()]);
 }
 
 fn decode(bytes: &[u8], utf16: bool) -> String {
@@ -206,18 +197,18 @@ fn last_percent(text: &str) -> Option<f32> {
     last
 }
 
-fn update(tool: &str, text: &str) {
+fn update(key: &str, text: &str, base: f32, scale: f32, label: &str) {
     let segs = split_lines(text);
     let tail: Vec<String> = segs.iter().rev().take(14).rev().cloned().collect();
-    let phase = segs.last().cloned().unwrap_or_default();
+    let line = segs.last().cloned().unwrap_or_default();
     let pct = last_percent(text);
     let mut g = scans().lock().unwrap();
-    if let Some(p) = g.get_mut(tool) {
+    if let Some(p) = g.get_mut(key) {
         if let Some(v) = pct {
-            p.percent = v;
+            p.percent = base + v * scale;
         }
-        if !phase.is_empty() {
-            p.phase = phase;
+        if !line.is_empty() {
+            p.phase = if label.is_empty() { line } else { format!("{} · {}", label, line) };
         }
         p.output_tail = tail;
     }

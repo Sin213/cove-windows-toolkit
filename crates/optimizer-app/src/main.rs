@@ -130,7 +130,6 @@ fn main() {
             // Live, tab-persistent scans
             scan::start_scan,
             scan::get_scan_progress,
-            scan::open_scan_in_terminal,
             // Undo
             commands::undo_change,
             // Performance tweaks
