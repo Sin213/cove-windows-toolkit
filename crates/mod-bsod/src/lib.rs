@@ -17,13 +17,20 @@ pub fn scan_dumps() -> Vec<BsodDump> {
 
     let ps = r#"
 $dir = "$env:SystemRoot\Minidump"
-if (-not (Test-Path $dir)) { exit 0 }
-Get-ChildItem -Path $dir -Filter '*.dmp' -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 10 |
-    ForEach-Object {
-        Write-Output "DUMP|$($_.FullName)|$($_.LastWriteTime.ToString('o'))|$($_.Length)"
-    }
+if (Test-Path $dir) {
+    Get-ChildItem -Path $dir -Filter '*.dmp' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 10 |
+        ForEach-Object {
+            Write-Output "DUMP|$($_.FullName)|$($_.LastWriteTime.ToString('o'))|$($_.Length)"
+        }
+}
+# Full/kernel memory dump (used when minidumps are disabled)
+$full = "$env:SystemRoot\MEMORY.DMP"
+if (Test-Path $full) {
+    $f = Get-Item $full -ErrorAction SilentlyContinue
+    if ($f) { Write-Output "DUMP|$($f.FullName)|$($f.LastWriteTime.ToString('o'))|$($f.Length)" }
+}
 "#;
 
     let mut dumps = Vec::new();

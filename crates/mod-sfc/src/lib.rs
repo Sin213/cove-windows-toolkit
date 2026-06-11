@@ -91,8 +91,10 @@ pub fn run_sfc() -> ScanResult {
 
     match output {
         Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+            // sfc.exe writes its output as UTF-16LE; decoding as UTF-8 yields
+            // NUL-interleaved garbage that breaks both parsing and display.
+            let stdout = decode_utf16le(&out.stdout);
+            let stderr = decode_utf16le(&out.stderr);
             let combined = if stderr.is_empty() { stdout.clone() } else { format!("{}\n{}", stdout, stderr) };
             let code = out.status.code().unwrap_or(-1);
             let summary = parse_sfc_summary(&stdout, code);
@@ -122,6 +124,24 @@ pub fn run_sfc() -> ScanResult {
         exit_code: 0,
         output: "[stub] sfc /scannow\n\nBeginning system scan. This process will take some time.\n\nBeginning verification phase of system scan.\nVerification 100% complete.\n\nWindows Resource Protection did not find any integrity violations.\n".to_string(),
         summary: "No integrity violations found.".to_string(),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn decode_utf16le(bytes: &[u8]) -> String {
+    // Heuristic: real UTF-16LE ASCII text has NUL bytes in the high half of each
+    // unit. If we see that pattern, decode as UTF-16LE; otherwise fall back to UTF-8.
+    let looks_utf16 = bytes.len() >= 2
+        && bytes.len() % 2 == 0
+        && bytes.iter().skip(1).step_by(2).take(16).filter(|&&b| b == 0).count() >= 2;
+    if looks_utf16 {
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        String::from_utf8_lossy(bytes).to_string()
     }
 }
 

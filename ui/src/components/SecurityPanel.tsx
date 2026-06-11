@@ -93,11 +93,10 @@ export default function SecurityPanel() {
   const d = data.defender;
 
   const formatDate = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleString();
-    } catch {
-      return iso;
-    }
+    // Backend may send sentinels like "Never"/"Unknown"; new Date() of those is
+    // Invalid Date (it doesn't throw), so guard with Date.parse and pass through.
+    if (!iso || Number.isNaN(Date.parse(iso))) return iso || "Unknown";
+    return new Date(iso).toLocaleString();
   };
 
   const grouped = SEV_ORDER.map((sev) => ({

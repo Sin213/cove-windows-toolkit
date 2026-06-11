@@ -15,39 +15,39 @@ pub fn list_items() -> Vec<StartupItem> {
     
 
     let ps = r#"
-# HKCU Run
-$hkcuRun = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-if (Test-Path $hkcuRun) {
-    $props = Get-ItemProperty $hkcuRun -ErrorAction SilentlyContinue
-    $props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
-        Write-Output "ITEM|$($_.Name)|$hkcuRun|$($_.Value)|true"
+# Registry Run keys (enabled) and our Run_Disabled keys (disabled)
+$runPairs = @(
+    @{ Enabled='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'; Disabled='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run_Disabled' },
+    @{ Enabled='HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'; Disabled='HKLM:\Software\Microsoft\Windows\CurrentVersion\Run_Disabled' }
+)
+foreach ($pair in $runPairs) {
+    if (Test-Path $pair.Enabled) {
+        $props = Get-ItemProperty $pair.Enabled -ErrorAction SilentlyContinue
+        $props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
+            Write-Output "ITEM|$($_.Name)|$($pair.Enabled)|$($_.Value)|true"
+        }
+    }
+    if (Test-Path $pair.Disabled) {
+        $props = Get-ItemProperty $pair.Disabled -ErrorAction SilentlyContinue
+        $props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
+            Write-Output "ITEM|$($_.Name)|$($pair.Disabled)|$($_.Value)|false"
+        }
     }
 }
 
-# HKLM Run
-$hklmRun = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'
-if (Test-Path $hklmRun) {
-    $props = Get-ItemProperty $hklmRun -ErrorAction SilentlyContinue
-    $props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
-        Write-Output "ITEM|$($_.Name)|$hklmRun|$($_.Value)|true"
-    }
-}
-
-# Startup folder
+# Startup folder (enabled) and its Disabled subfolder (disabled)
 $startupFolder = [Environment]::GetFolderPath('Startup')
 if (Test-Path $startupFolder) {
     Get-ChildItem $startupFolder -File -ErrorAction SilentlyContinue | ForEach-Object {
         Write-Output "ITEM|$($_.BaseName)|Shell:Startup|$($_.FullName)|true"
     }
-}
-
-# Disabled items from Task Manager startup (Autoruns via WMI)
-try {
-    Get-CimInstance Win32_StartupCommand -ErrorAction Stop | ForEach-Object {
-        # Skip items already found above
-        Write-Output "WMI|$($_.Name)|$($_.Location)|$($_.Command)"
+    $disabledFolder = Join-Path $startupFolder 'Disabled'
+    if (Test-Path $disabledFolder) {
+        Get-ChildItem $disabledFolder -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Output "ITEM|$($_.BaseName)|Shell:Startup\Disabled|$($_.FullName)|false"
+        }
     }
-} catch {}
+}
 "#;
 
     let mut items = Vec::new();

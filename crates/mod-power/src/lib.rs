@@ -14,6 +14,7 @@ pub struct PowerInfo {
     pub available_plans: Vec<PowerPlan>,
     pub display_off_minutes: u32,
     pub sleep_minutes: u32,
+    pub hdd_sleep_minutes: u32,
 }
 
 #[cfg(target_os = "windows")]
@@ -26,6 +27,7 @@ pub fn get_info() -> PowerInfo {
         available_plans: Vec::new(),
         display_off_minutes: 0,
         sleep_minutes: 0,
+        hdd_sleep_minutes: 0,
     };
 
     // List plans
@@ -60,6 +62,11 @@ pub fn get_info() -> PowerInfo {
         info.sleep_minutes = parse_powercfg_timeout(&String::from_utf8_lossy(&o.stdout));
     }
 
+    // Turn-off-hard-disk timeout (disk subgroup)
+    if let Ok(o) = optimizer_core::silent_cmd("powercfg").args(["/query", "SCHEME_CURRENT", "0012ee47-9041-4b5d-9b77-535fba8b1442", "6738e2c4-88ba-4115-9b53-c79b04976b04"]).output() {
+        info.hdd_sleep_minutes = parse_powercfg_timeout(&String::from_utf8_lossy(&o.stdout));
+    }
+
     info
 }
 
@@ -71,6 +78,7 @@ pub fn get_info() -> PowerInfo {
         available_plans: Vec::new(),
         display_off_minutes: 0,
         sleep_minutes: 0,
+        hdd_sleep_minutes: 0,
     }
 }
 

@@ -40,7 +40,8 @@ pub const BLOATWARE_LIST: &[(&str, &str, &str)] = &[
     ("microsoft.windowscommunicationsapps", "Mail and Calendar", "communication"),
     ("Microsoft.SkypeApp", "Skype", "communication"),
     ("Microsoft.YourPhone", "Phone Link", "communication"),
-    ("MicrosoftTeams", "Microsoft Teams", "communication"),
+    ("MicrosoftTeams", "Microsoft Teams (personal)", "communication"),
+    ("MSTeams", "Microsoft Teams (new)", "communication"),
     // Media
     ("Microsoft.ZuneMusic", "Groove Music", "media"),
     ("Microsoft.ZuneVideo", "Movies & TV", "media"),

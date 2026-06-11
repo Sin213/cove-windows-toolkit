@@ -58,12 +58,12 @@ try {
     $v4 = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full' -ErrorAction Stop
     $release = $v4.Release
     $ver = switch ($true) {
-        ($release -ge 533320) { '4.8.1' }
-        ($release -ge 528040) { '4.8' }
-        ($release -ge 461808) { '4.7.2' }
-        ($release -ge 461308) { '4.7.1' }
-        ($release -ge 460798) { '4.7' }
-        ($release -ge 394802) { '4.6.2' }
+        ($release -ge 533320) { '4.8.1'; break }
+        ($release -ge 528040) { '4.8'; break }
+        ($release -ge 461808) { '4.7.2'; break }
+        ($release -ge 461308) { '4.7.1'; break }
+        ($release -ge 460798) { '4.7'; break }
+        ($release -ge 394802) { '4.6.2'; break }
         default { '4.x' }
     }
     Write-Output "FOUND|.NET Framework $ver|$ver|$($v4.InstallPath)"
@@ -190,17 +190,31 @@ Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','
 fn detect_directx() -> DirectXInfo {
     
 
+    // The legacy HKLM\...\DirectX values (Version string / InstalledVersion
+    // REG_BINARY) are meaningless on modern Windows. Use dxdiag, which reports
+    // the real DirectX version and the GPU's supported feature levels.
     let ps = r#"
+$tmp = Join-Path $env:TEMP 'cove_dxdiag.xml'
+Remove-Item $tmp -ErrorAction SilentlyContinue
+Start-Process dxdiag -ArgumentList "/x `"$tmp`"" -Wait -WindowStyle Hidden
+$n = 0
+while (-not (Test-Path $tmp) -and $n -lt 30) { Start-Sleep -Milliseconds 500; $n++ }
 try {
-    $dx = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\DirectX' -ErrorAction Stop
-    Write-Output "$($dx.Version)|$($dx.InstalledVersion)"
-} catch { Write-Output '12.0|12_1' }
+    [xml]$x = Get-Content $tmp -Raw -ErrorAction Stop
+    $ver = ($x.DxDiag.SystemInformation.DirectXVersion -replace 'DirectX\s*','').Trim()
+    $dev = $x.DxDiag.DisplayDevices.DisplayDevice
+    if ($dev -is [System.Array]) { $dev = $dev[0] }
+    $fl = (($dev.FeatureLevels -split ',')[0]).Trim()
+    if (-not $ver) { $ver = '12' }
+    if (-not $fl) { $fl = 'Unknown' }
+    Write-Output "$ver|$fl"
+} catch { Write-Output 'Unknown|Unknown' }
 "#;
 
     if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.split('|').collect();
-        if parts.len() >= 2 {
+        if parts.len() >= 2 && !parts[0].is_empty() {
             return DirectXInfo {
                 version: parts[0].to_string(),
                 feature_level: parts[1].to_string(),
@@ -209,7 +223,7 @@ try {
         }
     }
 
-    DirectXInfo { version: "12.0".into(), feature_level: "12_1".into(), download_url: DIRECTX_URL.into() }
+    DirectXInfo { version: "Unknown".into(), feature_level: "Unknown".into(), download_url: DIRECTX_URL.into() }
 }
 
 #[cfg(target_os = "windows")]

@@ -293,7 +293,7 @@ pub fn run_chkdsk(mode: &str, drive: &str) -> ChkdskResult {
                         || stdout.contains("scheduled")
                         || stdout.contains("dismount");
                     ChkdskResult {
-                        success: true,
+                        success: o.status.success() || needs_reboot,
                         mode: mode.into(),
                         scheduled_reboot: needs_reboot,
                         message: if needs_reboot {
@@ -353,11 +353,11 @@ try {
 # Last chkdsk result from Wininit event log
 try {
     $evt = Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='Wininit'; Id=1001} -MaxEvents 1 -ErrorAction Stop
-    Write-Output "FOUND|$($evt.TimeCreated.ToString('o'))|$($evt.Message)"
+    Write-Output "FOUND|$($evt.TimeCreated.ToString('o'))|$(($evt.Message -replace '[\r\n]+',' ').Trim())"
 } catch {
     try {
         $evt = Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName='chkdsk'; Id=26214} -MaxEvents 1 -ErrorAction Stop
-        Write-Output "FOUND|$($evt.TimeCreated.ToString('o'))|$($evt.Message)"
+        Write-Output "FOUND|$($evt.TimeCreated.ToString('o'))|$(($evt.Message -replace '[\r\n]+',' ').Trim())"
     } catch {
         Write-Output 'NOTFOUND'
     }

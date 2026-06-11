@@ -2,9 +2,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RestorePoint {
+    // PowerShell emits PascalCase keys; accept those on input while still
+    // serializing snake_case for the UI.
+    #[serde(alias = "SequenceNumber")]
     pub sequence_number: u64,
+    #[serde(alias = "Description")]
     pub description: String,
+    #[serde(alias = "RestorePointType")]
     pub restore_point_type: String,
+    #[serde(alias = "CreationTime")]
     pub creation_time: String,
 }
 
@@ -21,23 +27,26 @@ pub fn get_restore_status() -> RestoreStatus {
         .args([
             "-NoProfile",
             "-Command",
-            "try { $null = Get-ComputerRestorePoint -ErrorAction Stop; Write-Output 'enabled' } catch { if ($_.Exception.Message -match 'disabled') { Write-Output 'disabled' } else { Write-Output 'enabled' } }",
+            "try { $null = Get-ComputerRestorePoint -ErrorAction Stop; Write-Output 'enabled' } catch { if ($_.Exception.Message -match 'disabled|ServiceDisabled') { Write-Output 'disabled' } else { Write-Output 'unknown' } }",
         ])
         .output();
 
     match output {
         Ok(out) => {
             let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if text == "disabled" {
-                RestoreStatus {
+            match text.as_str() {
+                "disabled" => RestoreStatus {
                     enabled: false,
                     message: "System Protection is disabled. Enable it in System Properties > System Protection.".to_string(),
-                }
-            } else {
-                RestoreStatus {
+                },
+                "enabled" => RestoreStatus {
                     enabled: true,
                     message: "System Protection is enabled.".to_string(),
-                }
+                },
+                _ => RestoreStatus {
+                    enabled: false,
+                    message: "Could not determine System Protection status.".to_string(),
+                },
             }
         }
         Err(e) => RestoreStatus {
@@ -62,7 +71,7 @@ pub fn list_restore_points() -> Vec<RestorePoint> {
         .args([
             "-NoProfile",
             "-Command",
-            "Get-ComputerRestorePoint | Select-Object SequenceNumber, Description, RestorePointType, @{N='CreationTime';E={$_.ConvertToDateTime($_.CreationTime).ToString('o')}} | ConvertTo-Json -Compress",
+            "Get-ComputerRestorePoint | Select-Object SequenceNumber, Description, @{N='RestorePointType';E={ switch ([int]$_.RestorePointType) { 0 {'Application Install'} 1 {'Application Uninstall'} 10 {'Device Driver Install'} 12 {'Modify Settings'} 13 {'Cancelled Operation'} default {\"Type $($_.RestorePointType)\"} } }}, @{N='CreationTime';E={$_.ConvertToDateTime($_.CreationTime).ToString('o')}} | ConvertTo-Json -Compress",
         ])
         .output();
 

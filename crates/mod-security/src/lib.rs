@@ -45,7 +45,7 @@ try {
     $s = Get-MpComputerStatus -ErrorAction Stop
     $age = ((Get-Date) - $s.AntivirusSignatureLastUpdated).Days
     $scanTime = if ($s.LastQuickScanEndTime) { $s.LastQuickScanEndTime.ToString('o') } else { 'Never' }
-    $scanType = if ($s.LastQuickScanEndTime -gt $s.LastFullScanEndTime) { 'Quick' } else { 'Full' }
+    $scanType = if (-not $s.LastQuickScanEndTime -and -not $s.LastFullScanEndTime) { 'None' } elseif ($s.LastQuickScanEndTime -gt $s.LastFullScanEndTime) { 'Quick' } else { 'Full' }
     Write-Output "$($s.RealTimeProtectionEnabled)|$age|$scanTime|$scanType"
 } catch {
     Write-Output 'True|0|Unknown|Unknown'

@@ -151,7 +151,13 @@ export default function UpdatesPanel() {
             <div className="cbs-field">
               <span className="cbs-label">Health</span>
               <span
-                className={`cbs-value ${data.component_store_health === "Healthy" ? "cbs-healthy" : "cbs-unhealthy"}`}
+                className={`cbs-value ${
+                  data.component_store_health === "Healthy"
+                    ? "cbs-healthy"
+                    : data.component_store_health === "Needs Repair"
+                      ? "cbs-unhealthy"
+                      : ""
+                }`}
               >
                 {data.component_store_health}
               </span>

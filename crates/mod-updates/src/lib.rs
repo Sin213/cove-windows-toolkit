@@ -57,8 +57,14 @@ foreach ($p in $pending) { Write-Output "UPDATE|$p" }
 # Component store
 try {
     $dism = & dism /Online /Cleanup-Image /CheckHealth 2>&1
-    $healthy = if ($dism -match 'No component store corruption') { 'Healthy' } else { 'Needs Repair' }
-    Write-Output "COMP|$healthy"
+    if ($LASTEXITCODE -ne 0) {
+        # e.g. error 740 (needs elevation) - we can't tell, so don't claim corruption
+        Write-Output "COMP|Unknown"
+    } elseif ($dism -match 'No component store corruption') {
+        Write-Output "COMP|Healthy"
+    } else {
+        Write-Output "COMP|Needs Repair"
+    }
 } catch { Write-Output "COMP|Unknown" }
 "#;
 
@@ -83,13 +89,15 @@ try {
                 }
             } else if line.starts_with("UPDATE|") {
                 let rest = &line[7..];
-                let p: Vec<&str> = rest.split('|').collect();
+                // Split from the right so a '|' inside the update title doesn't
+                // shift the trailing size/severity/category fields.
+                let p: Vec<&str> = rest.rsplitn(4, '|').collect(); // [cat, sev, size, title]
                 if p.len() >= 4 {
                     status.pending_updates.push(PendingUpdate {
-                        title: p[0].trim().to_string(),
-                        size_mb: p[1].trim().parse().unwrap_or(0),
-                        severity: p[2].trim().to_string(),
-                        category: p[3].trim().to_string(),
+                        title: p[3].trim().to_string(),
+                        size_mb: p[2].trim().parse().unwrap_or(0),
+                        severity: p[1].trim().to_string(),
+                        category: p[0].trim().to_string(),
                     });
                 }
             } else if line.starts_with("COMP|") {

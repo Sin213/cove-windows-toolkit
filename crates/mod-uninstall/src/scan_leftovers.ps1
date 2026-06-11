@@ -127,8 +127,9 @@ foreach ($l in $leftovers) {
     }
 }
 
-$totalSize = ($deduped | Measure-Object -Property size_bytes -Sum).Sum
-if (-not $totalSize) { $totalSize = 0 }
+# $deduped holds hashtables, whose keys Measure-Object can't sum; total manually.
+$totalSize = [long]0
+foreach ($l in $deduped) { $totalSize += [long]$l.size_bytes }
 
 @{
     leftovers = $deduped

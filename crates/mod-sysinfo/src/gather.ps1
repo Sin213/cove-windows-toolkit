@@ -65,12 +65,24 @@ foreach ($d in $disk) {
 }
 
 # GPU array
+# Win32_VideoController.AdapterRAM is a signed 32-bit field (caps at ~4GB).
+# The real VRAM is the 64-bit HardwareInformation.qwMemorySize in the display
+# class registry; build a name -> bytes lookup keyed by DriverDesc.
+$gpuMem = @{}
+Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}' -ErrorAction SilentlyContinue | ForEach-Object {
+    $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+    if ($p.DriverDesc -and $p.'HardwareInformation.qwMemorySize') {
+        $gpuMem[[string]$p.DriverDesc] = [long]$p.'HardwareInformation.qwMemorySize'
+    }
+}
+
 $gpuArr = @()
 foreach ($g in $gpu) {
+    $vram = if ($g.Name -and $gpuMem.ContainsKey([string]$g.Name)) { $gpuMem[[string]$g.Name] } else { [long]$g.AdapterRAM }
     $gpuArr += @{
         name = if ($g.Name) { $g.Name } else { 'Unknown' }
         driver_version = if ($g.DriverVersion) { $g.DriverVersion } else { '' }
-        vram_bytes = [long]$g.AdapterRAM
+        vram_bytes = [long]$vram
         status = if ($g.Status) { $g.Status } else { 'Unknown' }
     }
 }
@@ -170,7 +182,7 @@ $archStr = switch ($cpu.AddressWidth) { 64 { '64-bit' }; 32 { '32-bit' }; defaul
 $result = @{
     os = @{
         name = $os.Caption -replace 'Microsoft ',''
-        version = $os.Version.Split('.')[2..99] -join '.' | ForEach-Object { if ($_) { $_ } else { '' } }
+        version = $(if ($dv = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name DisplayVersion -ErrorAction SilentlyContinue).DisplayVersion) { $dv } else { (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name ReleaseId -ErrorAction SilentlyContinue).ReleaseId })
         build = "$($os.BuildNumber).$((Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name UBR -ErrorAction SilentlyContinue).UBR)"
         arch = $archStr
         install_date = if ($os.InstallDate) { $os.InstallDate.ToString('yyyy-MM-dd') } else { '' }
@@ -180,7 +192,7 @@ $result = @{
         name = if ($cpu.Name) { $cpu.Name.Trim() } else { '' }
         cores = [int]$cpu.NumberOfCores
         threads = [int]$cpu.NumberOfLogicalProcessors
-        base_clock_mhz = [int]$cpu.MaxClockSpeed
+        base_clock_mhz = $(if ($bm = (Get-ItemProperty 'HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\0' -Name '~MHz' -ErrorAction SilentlyContinue).'~MHz') { [int]$bm } else { [int]$cpu.MaxClockSpeed })
         max_clock_mhz = [int]$cpu.MaxClockSpeed
         architecture = $archStr
         temperature_c = $cpuTemp
