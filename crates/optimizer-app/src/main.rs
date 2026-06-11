@@ -95,6 +95,8 @@ fn main() {
             commands::get_full_sysinfo,
             // Temperatures
             commands::get_temperatures,
+            commands::ensure_lhm_running,
+            commands::get_lhm_status,
             // DISM / SFC
             commands::check_admin_status,
             commands::run_dism_scan,

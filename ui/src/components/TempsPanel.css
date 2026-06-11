@@ -149,3 +149,40 @@
   color: var(--text-muted);
   margin-top: 1px;
 }
+
+/* LHM status */
+.lhm-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.lhm-active {
+  background: rgba(76, 175, 80, 0.15);
+  color: var(--green);
+  border: 1px solid var(--green);
+}
+
+.lhm-start-btn {
+  background: var(--accent);
+  color: var(--bg-main);
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.lhm-start-btn:hover {
+  opacity: 0.85;
+}
+
+.lhm-start-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

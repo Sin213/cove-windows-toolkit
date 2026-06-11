@@ -7,3 +7,7 @@ edition.workspace = true
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true
 serde_json.workspace = true
+
+[target.'cfg(target_os = "windows")'.dependencies]
+wmi = "0.18"
+sysinfo = { version = "0.35", default-features = false, features = ["system"] }

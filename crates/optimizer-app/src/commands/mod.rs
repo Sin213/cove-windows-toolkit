@@ -860,6 +860,31 @@ pub async fn get_temperatures() -> serde_json::Value {
     serde_json::to_value(report).unwrap_or_default()
 }
 
+#[tauri::command]
+pub async fn ensure_lhm_running(app: tauri::AppHandle) -> serde_json::Value {
+    use tauri::Manager;
+    let resource_dir = app.path().resource_dir().unwrap_or_default();
+    let result = tokio::task::spawn_blocking(move || {
+        mod_temps::lhm_launcher::ensure_lhm_running(&resource_dir)
+    })
+    .await
+    .unwrap();
+    match result {
+        Ok(status) => serde_json::json!({ "status": status }),
+        Err(e) => serde_json::json!({ "status": "error", "message": e }),
+    }
+}
+
+#[tauri::command]
+pub async fn get_lhm_status() -> serde_json::Value {
+    let running = tokio::task::spawn_blocking(|| {
+        mod_temps::lhm_launcher::is_lhm_running()
+    })
+    .await
+    .unwrap();
+    serde_json::json!({ "running": running })
+}
+
 // ---------------------------------------------------------------------------
 // DISM / SFC scans
 // ---------------------------------------------------------------------------
