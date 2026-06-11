@@ -101,45 +101,73 @@ pub fn toggle(name: &str, enabled: bool) -> Result<String, String> {
     
 
     let action = if enabled { "enable" } else { "disable" };
-    let ps = format!(
-        r#"
+    // Inject name/action as PS variables once (avoids brittle positional format
+    // substitution and lets the body be a plain raw string).
+    let prefix = format!(
+        "$name = '{}'\n$action = '{}'\n",
+        name.replace('\'', "''"),
+        action
+    );
+    let body = r#"
 $paths = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run')
 $found = $false
-foreach ($p in $paths) {{
-    try {{
-        $val = (Get-ItemProperty $p -Name '{}' -ErrorAction Stop).'{}'
-        if ($val) {{
-            if ('{}' -eq 'disable') {{
-                # Move to a disabled subkey
+
+# Registry Run keys
+foreach ($p in $paths) {
+    try {
+        $val = (Get-ItemProperty $p -Name $name -ErrorAction Stop).$name
+        if ($val) {
+            if ($action -eq 'disable') {
                 $disabledPath = $p -replace 'Run$','Run_Disabled'
-                if (-not (Test-Path $disabledPath)) {{ New-Item $disabledPath -Force | Out-Null }}
-                Set-ItemProperty -Path $disabledPath -Name '{}' -Value $val
-                Remove-ItemProperty -Path $p -Name '{}' -Force
-            }}
+                if (-not (Test-Path $disabledPath)) { New-Item $disabledPath -Force | Out-Null }
+                Set-ItemProperty -Path $disabledPath -Name $name -Value $val
+                Remove-ItemProperty -Path $p -Name $name -Force
+            }
             $found = $true
             break
-        }}
-    }} catch {{}}
-}}
-# Check disabled keys for re-enable
-if (-not $found -and '{}' -eq 'enable') {{
-    foreach ($p in $paths) {{
+        }
+    } catch {}
+}
+if (-not $found -and $action -eq 'enable') {
+    foreach ($p in $paths) {
         $disabledPath = $p -replace 'Run$','Run_Disabled'
-        try {{
-            $val = (Get-ItemProperty $disabledPath -Name '{}' -ErrorAction Stop).'{}'
-            if ($val) {{
-                Set-ItemProperty -Path ($p) -Name '{}' -Value $val
-                Remove-ItemProperty -Path $disabledPath -Name '{}' -Force
+        try {
+            $val = (Get-ItemProperty $disabledPath -Name $name -ErrorAction Stop).$name
+            if ($val) {
+                Set-ItemProperty -Path $p -Name $name -Value $val
+                Remove-ItemProperty -Path $disabledPath -Name $name -Force
                 $found = $true
                 break
-            }}
-        }} catch {{}}
-    }}
-}}
-if ($found) {{ Write-Output 'OK' }} else {{ Write-Output 'NOTFOUND' }}
-"#,
-        name, name, action, name, name, action, name, name, name, name
-    );
+            }
+        } catch {}
+    }
+}
+
+# Startup folder (.lnk/.exe) items - disable by moving to a Disabled subfolder
+if (-not $found) {
+    $startupFolder = [Environment]::GetFolderPath('Startup')
+    $disabledFolder = Join-Path $startupFolder 'Disabled'
+    if ($action -eq 'disable') {
+        $file = Get-ChildItem $startupFolder -File -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -eq $name } | Select-Object -First 1
+        if ($file) {
+            if (-not (Test-Path $disabledFolder)) { New-Item $disabledFolder -ItemType Directory -Force | Out-Null }
+            Move-Item $file.FullName -Destination $disabledFolder -Force
+            $found = $true
+        }
+    } else {
+        if (Test-Path $disabledFolder) {
+            $file = Get-ChildItem $disabledFolder -File -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -eq $name } | Select-Object -First 1
+            if ($file) {
+                Move-Item $file.FullName -Destination $startupFolder -Force
+                $found = $true
+            }
+        }
+    }
+}
+
+if ($found) { Write-Output 'OK' } else { Write-Output 'NOTFOUND' }
+"#;
+    let ps = format!("{}{}", prefix, body);
 
     let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
         .map_err(|e| e.to_string())?;

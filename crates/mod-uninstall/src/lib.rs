@@ -119,27 +119,65 @@ pub fn scan_leftovers(name: &str, _publisher: &str, _install_location: &str, _re
 }
 
 #[cfg(target_os = "windows")]
+fn run_removal(script: &str) -> (bool, String) {
+    match optimizer_core::silent_cmd("powershell")
+        .args(["-NoProfile", "-Command", script]).output()
+    {
+        Ok(o) if o.status.success() => (true, "Removed".into()),
+        Ok(o) => {
+            let err = String::from_utf8_lossy(&o.stderr);
+            let msg = err.lines()
+                .map(str::trim)
+                .find(|s| !s.is_empty())
+                .unwrap_or("Removal failed")
+                .to_string();
+            (false, msg)
+        }
+        Err(e) => (false, e.to_string()),
+    }
+}
+
+#[cfg(target_os = "windows")]
 pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
     paths.iter().map(|p| {
-        if p.starts_with("HK") {
-            let result = optimizer_core::silent_cmd("powershell")
-                .args(["-NoProfile", "-Command", &format!("Remove-Item -Path 'Registry::{}' -Recurse -Force -ErrorAction Stop", p.replace('\'', "''"))])
-                .output();
-            match result {
-                Ok(o) if o.status.success() => (p.clone(), true, "Removed".into()),
-                Ok(o) => (p.clone(), false, String::from_utf8_lossy(&o.stderr).trim().to_string()),
-                Err(e) => (p.clone(), false, e.to_string()),
-            }
+        let q = p.replace('\'', "''");
+        let (ok, msg) = if let Some(svc) = p.strip_prefix("Service: ") {
+            // Encoded as "Service: <ServiceName> (<DisplayName>)" - stop then delete by name.
+            let name = svc.split(" (").next().unwrap_or(svc).trim().replace('\'', "''");
+            run_removal(&format!(
+                "Stop-Service -Name '{0}' -Force -ErrorAction SilentlyContinue; \
+                 $r = sc.exe delete '{0}'; \
+                 if ($LASTEXITCODE -ne 0) {{ Write-Error \"sc delete failed: $r\" }}",
+                name
+            ))
+        } else if let Some(task) = p.strip_prefix("Task: ") {
+            // Encoded as "Task: <TaskPath><TaskName>"; split on the final backslash.
+            let full = task.trim();
+            let (tp, tn) = match full.rfind('\\') {
+                Some(i) => (&full[..=i], &full[i + 1..]),
+                None => ("\\", full),
+            };
+            run_removal(&format!(
+                "Unregister-ScheduledTask -TaskName '{}' -TaskPath '{}' -Confirm:$false -ErrorAction Stop",
+                tn.replace('\'', "''"), tp.replace('\'', "''")
+            ))
+        } else if p.starts_with("HK") {
+            run_removal(&format!(
+                "Remove-Item -Path 'Registry::{}' -Recurse -Force -ErrorAction Stop", q
+            ))
         } else {
-            let result = optimizer_core::silent_cmd("powershell")
-                .args(["-NoProfile", "-Command", &format!("Remove-Item -Path '{}' -Recurse -Force -ErrorAction Stop", p.replace('\'', "''"))])
-                .output();
-            match result {
-                Ok(o) if o.status.success() => (p.clone(), true, "Removed".into()),
-                Ok(o) => (p.clone(), false, String::from_utf8_lossy(&o.stderr).trim().to_string()),
-                Err(e) => (p.clone(), false, e.to_string()),
-            }
-        }
+            // File/folder: kill any process running from inside it first (handles
+            // "access denied - file in use"), then remove.
+            run_removal(&format!(
+                "$t = '{0}'; \
+                 Get-Process -ErrorAction SilentlyContinue | \
+                   Where-Object {{ $_.Path -and $_.Path.StartsWith($t, [System.StringComparison]::OrdinalIgnoreCase) }} | \
+                   Stop-Process -Force -ErrorAction SilentlyContinue; \
+                 Remove-Item -LiteralPath $t -Recurse -Force -ErrorAction Stop",
+                q
+            ))
+        };
+        (p.clone(), ok, msg)
     }).collect()
 }
 
