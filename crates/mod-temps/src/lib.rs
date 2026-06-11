@@ -19,87 +19,112 @@ pub struct TempReport {
 #[cfg(target_os = "windows")]
 mod windows {
     use super::*;
-    use wmi::{COMLibrary, WMIConnection};
 
-    #[derive(Deserialize)]
-    #[serde(rename_all = "PascalCase")]
-    struct WmiSensor {
-        name: String,
-        parent: String,
-        value: f64,
+    const LHM_ZIP: &[u8] = include_bytes!("../resources/LibreHardwareMonitor.zip");
+
+    fn lhm_dir() -> Option<std::path::PathBuf> {
+        let local_app = std::env::var("LOCALAPPDATA").ok()?;
+        Some(std::path::PathBuf::from(local_app).join("CoveToolkit").join("lhm"))
     }
 
-    #[derive(Deserialize)]
-    #[serde(rename_all = "PascalCase")]
-    struct AcpiThermalZone {
-        current_temperature: u32,
+    fn extract_lhm_if_needed() -> Option<std::path::PathBuf> {
+        let dir = lhm_dir()?;
+        if dir.join("LibreHardwareMonitorLib.dll").exists() {
+            return Some(dir);
+        }
+
+        let zip_path = std::env::temp_dir().join("cove-lhm-bundle.zip");
+        std::fs::write(&zip_path, LHM_ZIP).ok()?;
+        std::fs::create_dir_all(&dir).ok()?;
+
+        let output = optimizer_core::silent_cmd("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                    zip_path.display(),
+                    dir.display()
+                ),
+            ])
+            .output()
+            .ok()?;
+
+        let _ = std::fs::remove_file(&zip_path);
+
+        if output.status.success() && dir.join("LibreHardwareMonitorLib.dll").exists() {
+            Some(dir)
+        } else {
+            None
+        }
+    }
+
+    // Load LibreHardwareMonitorLib.dll directly via PowerShell - no GUI, no tray icon
+    const LHM_SENSOR_SCRIPT: &str = r#"
+$ErrorActionPreference = 'Stop'
+$lhmDir = $args[0]
+Add-Type -Path "$lhmDir\LibreHardwareMonitorLib.dll"
+$computer = [LibreHardwareMonitor.Hardware.Computer]::new()
+$computer.IsCpuEnabled = $true
+$computer.IsGpuEnabled = $true
+$computer.IsMotherboardEnabled = $true
+$computer.IsStorageEnabled = $false
+$computer.Open()
+
+$readings = @()
+foreach ($hw in $computer.Hardware) {
+    $hw.Update()
+    foreach ($sub in $hw.SubHardware) { $sub.Update() }
+    foreach ($sensor in $hw.Sensors) {
+        if ($sensor.SensorType -ne [LibreHardwareMonitor.Hardware.SensorType]::Temperature) { continue }
+        if (-not $sensor.Value) { continue }
+        $val = [math]::Round($sensor.Value, 1)
+        if ($val -le 0 -or $val -ge 150) { continue }
+
+        $ht = $hw.HardwareType.ToString()
+        $cat = 'Other'
+        $maxC = $null; $critC = $null
+        if ($ht -match 'Cpu') { $cat = 'CPU'; $maxC = 95.0; $critC = 105.0 }
+        elseif ($ht -match 'Gpu') { $cat = 'GPU'; $maxC = 93.0; $critC = 100.0 }
+
+        $readings += @{
+            sensor = $sensor.Name
+            category = $cat
+            temperature_c = $val
+            max_c = $maxC
+            critical_c = $critC
+        }
+    }
+}
+$computer.Close()
+
+@{ readings = $readings; warnings = @(); lhm_status = 'active' } | ConvertTo-Json -Depth 3 -Compress
+"#;
+
+    fn probe_lhm_dll() -> Option<TempReport> {
+        let dir = extract_lhm_if_needed()?;
+
+        let output = optimizer_core::silent_cmd("powershell")
+            .args([
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
+                "-Command",
+                LHM_SENSOR_SCRIPT,
+                &dir.display().to_string(),
+            ])
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let json = String::from_utf8_lossy(&output.stdout);
+        serde_json::from_str::<TempReport>(json.trim()).ok()
     }
 
     fn round1(v: f64) -> f64 {
         (v * 10.0).round() / 10.0
-    }
-
-    fn classify(name: &str, parent: &str) -> &'static str {
-        let nl = name.to_lowercase();
-        let pl = parent.to_lowercase();
-
-        // GPU keywords checked BEFORE CPU to prevent AMD Radeon misclassification
-        let gpu_kw = ["radeon", "nvidia", "gpu", "video", "hot spot", "junction", "edge"];
-        if gpu_kw.iter().any(|k| pl.contains(k) || nl.contains(k)) {
-            return "GPU";
-        }
-
-        let cpu_kw = ["cpu", "processor", "amd", "intel", "core", "ccd", "tctl", "tdie", "package"];
-        if cpu_kw.iter().any(|k| pl.contains(k) || nl.contains(k)) {
-            return "CPU";
-        }
-
-        let disk_kw = ["hdd", "ssd", "nvme", "disk", "storage", "drive", "assembly"];
-        if disk_kw.iter().any(|k| pl.contains(k) || nl.contains(k)) {
-            return "Disk";
-        }
-
-        "Other"
-    }
-
-    fn default_thresholds(cat: &str) -> (Option<f64>, Option<f64>) {
-        match cat {
-            "CPU" => (Some(95.0), Some(105.0)),
-            "GPU" => (Some(93.0), Some(100.0)),
-            "Disk" => (Some(70.0), Some(75.0)),
-            _ => (None, None),
-        }
-    }
-
-    fn try_wmi_namespace(ns: &str) -> Option<Vec<WmiSensor>> {
-        let com = COMLibrary::new().ok()?;
-        let conn = WMIConnection::with_namespace_path(ns, com.into()).ok()?;
-        let sensors: Vec<WmiSensor> = conn.raw_query(
-            "SELECT Name, Parent, Value FROM Sensor WHERE SensorType = 'Temperature'"
-        ).ok()?;
-        if sensors.is_empty() { None } else { Some(sensors) }
-    }
-
-    fn probe_lhm() -> Option<Vec<TempReading>> {
-        let sensors = try_wmi_namespace("root\\LibreHardwareMonitor")
-            .or_else(|| try_wmi_namespace("root\\OpenHardwareMonitor"))?;
-
-        let mut readings = Vec::new();
-        for s in &sensors {
-            let cat = classify(&s.name, &s.parent);
-            if cat == "Disk" {
-                continue;
-            }
-            let (max_c, critical_c) = default_thresholds(cat);
-            readings.push(TempReading {
-                sensor: s.name.clone(),
-                category: cat.to_string(),
-                temperature_c: round1(s.value),
-                max_c,
-                critical_c,
-            });
-        }
-        Some(readings)
     }
 
     fn probe_nvidia_smi() -> Vec<TempReading> {
@@ -129,6 +154,14 @@ mod windows {
     }
 
     fn probe_acpi() -> Vec<TempReading> {
+        use wmi::{COMLibrary, WMIConnection};
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct AcpiThermalZone {
+            current_temperature: u32,
+        }
+
         let com = match COMLibrary::new() {
             Ok(c) => c,
             Err(_) => return Vec::new(),
@@ -163,41 +196,34 @@ mod windows {
     }
 
     pub fn collect_temps_impl() -> TempReport {
-        if let Some(readings) = probe_lhm() {
-            return TempReport {
-                readings,
-                warnings: Vec::new(),
-                lhm_status: "active".into(),
-            };
+        // Primary: load LHM DLL directly (no GUI, no tray icon)
+        if let Some(report) = probe_lhm_dll() {
+            if !report.readings.is_empty() {
+                return report;
+            }
         }
 
-        // LHM not available - fall back to individual probes
+        // Fallback: nvidia-smi + ACPI
         let mut readings = Vec::new();
-
         readings.extend(probe_nvidia_smi());
         readings.extend(probe_acpi());
 
         let mut warnings = Vec::new();
-
         let has_cpu = readings.iter().any(|r| r.category == "CPU");
         let has_gpu = readings.iter().any(|r| r.category == "GPU");
 
         if !has_cpu && !has_gpu {
             warnings.push(
-                "CPU and GPU temps require Libre Hardware Monitor (free, lightweight). \
-                 Disk temps are read directly from drive firmware.".into()
+                "CPU and GPU temps unavailable. Run as Administrator for full sensor access.".into()
             );
         } else if !has_cpu {
-            warnings.push("CPU temp requires Libre Hardware Monitor (free, lightweight).".into());
+            warnings.push("CPU temp unavailable. Run as Administrator for full sensor access.".into());
         } else if !has_gpu {
-            warnings.push("GPU temp requires Libre Hardware Monitor or manufacturer software.".into());
+            warnings.push("GPU temp unavailable via fallback probes.".into());
         }
 
         if readings.is_empty() {
-            warnings.push(
-                "No temperature sensors detected. Install Libre Hardware Monitor (free) \
-                 for CPU, GPU, and disk temps.".into()
-            );
+            warnings.push("No temperature sensors detected. Run as Administrator for full access.".into());
         }
 
         TempReport {
@@ -232,99 +258,10 @@ pub fn collect_temps() -> TempReport {
     }
 }
 
-// ---------------------------------------------------------------------------
-// LHM launcher - find, detect, and launch LibreHardwareMonitor
-// ---------------------------------------------------------------------------
-
-#[cfg(target_os = "windows")]
-pub mod lhm_launcher {
-    use std::path::PathBuf;
-
-    // Entire LHM portable ZIP embedded in the binary (~5MB)
-    const LHM_ZIP: &[u8] = include_bytes!("../resources/LibreHardwareMonitor.zip");
-
-    fn lhm_dir() -> Option<PathBuf> {
-        let local_app = std::env::var("LOCALAPPDATA").ok()?;
-        Some(PathBuf::from(local_app).join("CoveToolkit").join("lhm"))
-    }
-
-    fn extract_lhm_if_needed() -> Option<PathBuf> {
-        let dir = lhm_dir()?;
-        let exe = dir.join("LibreHardwareMonitor.exe");
-        if exe.exists() {
-            return Some(dir);
-        }
-
-        // Write embedded ZIP to temp, extract via PowerShell
-        let zip_path = std::env::temp_dir().join("cove-lhm-bundle.zip");
-        std::fs::write(&zip_path, LHM_ZIP).ok()?;
-        std::fs::create_dir_all(&dir).ok()?;
-
-        let output = optimizer_core::silent_cmd("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
-                    zip_path.display(),
-                    dir.display()
-                ),
-            ])
-            .output()
-            .ok()?;
-
-        let _ = std::fs::remove_file(&zip_path);
-
-        if output.status.success() && exe.exists() {
-            Some(dir)
-        } else {
-            None
-        }
-    }
-
-    pub fn is_lhm_running() -> bool {
-        use sysinfo::System;
-        let mut sys = System::new();
-        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-        sys.processes().values().any(|p| {
-            let name = p.name().to_string_lossy().to_lowercase();
-            name == "librehardwaremonitor.exe" || name == "librehardwaremonitor"
-        })
-    }
-
-    pub fn ensure_lhm_running() -> Result<String, String> {
-        if is_lhm_running() {
-            return Ok("active".into());
-        }
-
-        let dir = extract_lhm_if_needed()
-            .ok_or_else(|| "Failed to extract LHM bundle".to_string())?;
-
-        let exe = dir.join("LibreHardwareMonitor.exe");
-
-        optimizer_core::silent_cmd("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!("Start-Process '{}' -WindowStyle Hidden", exe.display()),
-            ])
-            .spawn()
-            .map_err(|e| format!("Failed to launch LHM: {}", e))?;
-
-        std::thread::sleep(std::time::Duration::from_secs(2));
-
-        if is_lhm_running() {
-            Ok("active".into())
-        } else {
-            Ok("starting".into())
-        }
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
+// No longer launches LHM GUI - the DLL is loaded directly in collect_temps
 pub mod lhm_launcher {
     pub fn is_lhm_running() -> bool {
-        true
+        false
     }
 
     pub fn ensure_lhm_running() -> Result<String, String> {

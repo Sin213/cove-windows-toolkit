@@ -856,10 +856,7 @@ pub async fn get_full_sysinfo() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_temperatures() -> serde_json::Value {
-    let report = tokio::task::spawn_blocking(|| {
-        let _ = mod_temps::lhm_launcher::ensure_lhm_running();
-        mod_temps::collect_temps()
-    }).await.unwrap();
+    let report = tokio::task::spawn_blocking(mod_temps::collect_temps).await.unwrap();
     serde_json::to_value(report).unwrap_or_default()
 }
 
