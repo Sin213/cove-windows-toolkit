@@ -74,7 +74,7 @@ jobs:
       - name: Download LibreHardwareMonitor
         shell: pwsh
         run: |
-          $lhmUrl = "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/latest/download/LibreHardwareMonitor-net472.zip"
+          $lhmUrl = "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/latest/download/LibreHardwareMonitor.zip"
           $zipPath = "$env:TEMP\lhm.zip"
           $extractPath = "$env:TEMP\lhm-extract"
           $destPath = "crates/optimizer-app/resources/lhm"
