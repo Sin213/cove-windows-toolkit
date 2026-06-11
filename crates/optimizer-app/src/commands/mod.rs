@@ -855,23 +855,18 @@ pub async fn get_full_sysinfo() -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn get_temperatures(app: tauri::AppHandle) -> serde_json::Value {
-    use tauri::Manager;
-    let resource_dir = app.path().resource_dir().unwrap_or_default();
-    let report = tokio::task::spawn_blocking(move || {
-        // Auto-launch LHM hidden if not already running
-        let _ = mod_temps::lhm_launcher::ensure_lhm_running(&resource_dir);
+pub async fn get_temperatures() -> serde_json::Value {
+    let report = tokio::task::spawn_blocking(|| {
+        let _ = mod_temps::lhm_launcher::ensure_lhm_running();
         mod_temps::collect_temps()
     }).await.unwrap();
     serde_json::to_value(report).unwrap_or_default()
 }
 
 #[tauri::command]
-pub async fn ensure_lhm_running(app: tauri::AppHandle) -> serde_json::Value {
-    use tauri::Manager;
-    let resource_dir = app.path().resource_dir().unwrap_or_default();
-    let result = tokio::task::spawn_blocking(move || {
-        mod_temps::lhm_launcher::ensure_lhm_running(&resource_dir)
+pub async fn ensure_lhm_running() -> serde_json::Value {
+    let result = tokio::task::spawn_blocking(|| {
+        mod_temps::lhm_launcher::ensure_lhm_running()
     })
     .await
     .unwrap();

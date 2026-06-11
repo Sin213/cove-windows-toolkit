@@ -238,7 +238,49 @@ pub fn collect_temps() -> TempReport {
 
 #[cfg(target_os = "windows")]
 pub mod lhm_launcher {
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
+
+    // Entire LHM portable ZIP embedded in the binary (~5MB)
+    const LHM_ZIP: &[u8] = include_bytes!("../resources/LibreHardwareMonitor.zip");
+
+    fn lhm_dir() -> Option<PathBuf> {
+        let local_app = std::env::var("LOCALAPPDATA").ok()?;
+        Some(PathBuf::from(local_app).join("CoveToolkit").join("lhm"))
+    }
+
+    fn extract_lhm_if_needed() -> Option<PathBuf> {
+        let dir = lhm_dir()?;
+        let exe = dir.join("LibreHardwareMonitor.exe");
+        if exe.exists() {
+            return Some(dir);
+        }
+
+        // Write embedded ZIP to temp, extract via PowerShell
+        let zip_path = std::env::temp_dir().join("cove-lhm-bundle.zip");
+        std::fs::write(&zip_path, LHM_ZIP).ok()?;
+        std::fs::create_dir_all(&dir).ok()?;
+
+        let output = optimizer_core::silent_cmd("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!(
+                    "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                    zip_path.display(),
+                    dir.display()
+                ),
+            ])
+            .output()
+            .ok()?;
+
+        let _ = std::fs::remove_file(&zip_path);
+
+        if output.status.success() && exe.exists() {
+            Some(dir)
+        } else {
+            None
+        }
+    }
 
     pub fn is_lhm_running() -> bool {
         use sysinfo::System;
@@ -250,60 +292,25 @@ pub mod lhm_launcher {
         })
     }
 
-    pub fn find_lhm_exe(resource_dir: &Path) -> Option<PathBuf> {
-        let bundled = resource_dir.join("lhm").join("LibreHardwareMonitor.exe");
-        if bundled.exists() {
-            return Some(bundled);
-        }
-
-        let program_files = std::env::var("ProgramFiles").unwrap_or_default();
-        if !program_files.is_empty() {
-            let pf = PathBuf::from(&program_files)
-                .join("LibreHardwareMonitor")
-                .join("LibreHardwareMonitor.exe");
-            if pf.exists() {
-                return Some(pf);
-            }
-        }
-
-        let program_files_x86 = std::env::var("ProgramFiles(x86)").unwrap_or_default();
-        if !program_files_x86.is_empty() {
-            let pf86 = PathBuf::from(&program_files_x86)
-                .join("LibreHardwareMonitor")
-                .join("LibreHardwareMonitor.exe");
-            if pf86.exists() {
-                return Some(pf86);
-            }
-        }
-
-        None
-    }
-
-    pub fn launch_lhm(exe_path: &Path) -> Result<(), String> {
-        // LHM is a WinForms GUI app - CREATE_NO_WINDOW only hides consoles.
-        // Use PowerShell Start-Process -WindowStyle Hidden to suppress the window.
-        optimizer_core::silent_cmd("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!("Start-Process '{}' -WindowStyle Hidden", exe_path.display()),
-            ])
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("Failed to launch LHM: {}", e))
-    }
-
-    pub fn ensure_lhm_running(resource_dir: &Path) -> Result<String, String> {
+    pub fn ensure_lhm_running() -> Result<String, String> {
         if is_lhm_running() {
             return Ok("active".into());
         }
 
-        let exe = match find_lhm_exe(resource_dir) {
-            Some(p) => p,
-            None => return Ok("not_found".into()),
-        };
+        let dir = extract_lhm_if_needed()
+            .ok_or_else(|| "Failed to extract LHM bundle".to_string())?;
 
-        launch_lhm(&exe)?;
+        let exe = dir.join("LibreHardwareMonitor.exe");
+
+        optimizer_core::silent_cmd("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("Start-Process '{}' -WindowStyle Hidden", exe.display()),
+            ])
+            .spawn()
+            .map_err(|e| format!("Failed to launch LHM: {}", e))?;
+
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         if is_lhm_running() {
@@ -316,21 +323,11 @@ pub mod lhm_launcher {
 
 #[cfg(not(target_os = "windows"))]
 pub mod lhm_launcher {
-    use std::path::{Path, PathBuf};
-
     pub fn is_lhm_running() -> bool {
         true
     }
 
-    pub fn find_lhm_exe(_resource_dir: &Path) -> Option<PathBuf> {
-        Some(PathBuf::from("/mock/LibreHardwareMonitor.exe"))
-    }
-
-    pub fn launch_lhm(_exe_path: &Path) -> Result<(), String> {
-        Ok(())
-    }
-
-    pub fn ensure_lhm_running(_resource_dir: &Path) -> Result<String, String> {
+    pub fn ensure_lhm_running() -> Result<String, String> {
         Ok("active".into())
     }
 }
