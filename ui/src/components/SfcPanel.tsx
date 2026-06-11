@@ -7,77 +7,77 @@ interface AdminStatus {
   message: string;
 }
 
-interface ScanResult {
-  tool: string;
+interface ScanProgress {
+  running: boolean;
+  started: boolean;
+  percent: number;
+  phase: string;
+  output_tail: string[];
+  done: boolean;
   success: boolean;
-  exit_code: number;
-  output: string;
   summary: string;
+  exit_code: number;
 }
+
+type Tool = "dism" | "sfc";
+
+const LABEL: Record<Tool, string> = { dism: "DISM", sfc: "SFC" };
+const CMDLINE: Record<Tool, string> = {
+  dism: "DISM /Online /Cleanup-Image /RestoreHealth",
+  sfc: "sfc /scannow",
+};
 
 export default function SfcPanel() {
   const [admin, setAdmin] = useState<AdminStatus | null>(null);
-  const [dismResult, setDismResult] = useState<ScanResult | null>(null);
-  const [sfcResult, setSfcResult] = useState<ScanResult | null>(null);
-  const [running, setRunning] = useState<"idle" | "dism" | "sfc" | "both">("idle");
+  const [scans, setScans] = useState<Record<Tool, ScanProgress | null>>({ dism: null, sfc: null });
   const [error, setError] = useState<string | null>(null);
 
+  const poll = async (tool: Tool) => {
+    try {
+      const p = await invoke<ScanProgress>("get_scan_progress", { tool });
+      setScans((s) => ({ ...s, [tool]: p }));
+    } catch {
+      /* ignore transient poll errors */
+    }
+  };
+
+  // On mount, resume whatever the backend is doing (scans outlive this panel).
   useEffect(() => {
-    invoke<AdminStatus>("check_admin_status")
-      .then(setAdmin)
-      .catch((e) => setError(String(e)));
+    invoke<AdminStatus>("check_admin_status").then(setAdmin).catch((e) => setError(String(e)));
+    poll("dism");
+    poll("sfc");
   }, []);
 
-  const runDism = async () => {
-    setRunning("dism");
-    setDismResult(null);
+  const anyRunning = !!scans.dism?.running || !!scans.sfc?.running;
+  useEffect(() => {
+    if (!anyRunning) return;
+    const id = setInterval(() => {
+      poll("dism");
+      poll("sfc");
+    }, 1000);
+    return () => clearInterval(id);
+  }, [anyRunning]);
+
+  const start = async (tool: Tool) => {
     setError(null);
     try {
-      const r = await invoke<ScanResult>("run_dism_scan");
-      setDismResult(r);
+      const res = await invoke<{ success: boolean; message?: string }>("start_scan", { tool });
+      if (!res.success) {
+        setError(res.message || "Could not start scan.");
+        return;
+      }
+      poll(tool);
     } catch (e) {
       setError(String(e));
-    } finally {
-      setRunning("idle");
     }
   };
 
-  const runSfc = async () => {
-    setRunning("sfc");
-    setSfcResult(null);
-    setError(null);
-    try {
-      const r = await invoke<ScanResult>("run_sfc_scan");
-      setSfcResult(r);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setRunning("idle");
-    }
+  const openCmd = (tool: Tool) => {
+    invoke("open_scan_in_terminal", { tool }).catch(() => {});
   };
-
-  const runBoth = async () => {
-    setRunning("both");
-    setDismResult(null);
-    setSfcResult(null);
-    setError(null);
-    try {
-      const dism = await invoke<ScanResult>("run_dism_scan");
-      setDismResult(dism);
-      const sfc = await invoke<ScanResult>("run_sfc_scan");
-      setSfcResult(sfc);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setRunning("idle");
-    }
-  };
-
-  const isRunning = running !== "idle";
 
   return (
     <div className="sfc-panel">
-      {/* Admin check */}
       {admin && !admin.is_admin && (
         <div className="sfc-admin-warning">
           <span className="admin-icon">⚠</span>
@@ -85,63 +85,94 @@ export default function SfcPanel() {
         </div>
       )}
 
-      {/* Info */}
       <div className="sfc-info">
         <p>
-          These tools scan and repair Windows system files. <strong>DISM</strong> repairs
-          the component store, then <strong>SFC</strong> verifies and fixes individual
-          system files. Run DISM first for best results.
+          These tools scan and repair Windows system files. <strong>DISM</strong> repairs the
+          component store, then <strong>SFC</strong> verifies and fixes individual system files.
+          Run DISM first for best results. Scans keep running in the background even if you switch
+          tabs.
         </p>
       </div>
 
-      {/* Action buttons */}
-      <div className="sfc-actions">
-        <button className="sfc-btn sfc-btn-primary" onClick={runBoth} disabled={isRunning}>
-          {running === "both" ? (dismResult ? "Running SFC..." : "Running DISM...") : "Run Full Scan (DISM + SFC)"}
-        </button>
-        <div className="sfc-btn-row">
-          <button className="sfc-btn sfc-btn-secondary" onClick={runDism} disabled={isRunning}>
-            {running === "dism" ? "Running DISM..." : "DISM Only"}
-          </button>
-          <button className="sfc-btn sfc-btn-secondary" onClick={runSfc} disabled={isRunning}>
-            {running === "sfc" ? "Running SFC..." : "SFC Only"}
-          </button>
-        </div>
-      </div>
-
-      {isRunning && (
-        <div className="sfc-progress">
-          <div className="sfc-spinner" />
-          <span>This can take 10-30 minutes. Do not close the app.</span>
-        </div>
-      )}
-
       {error && <div className="sfc-error">{error}</div>}
 
-      {/* Results */}
-      {dismResult && <ResultCard result={dismResult} />}
-      {sfcResult && <ResultCard result={sfcResult} />}
+      <ScanCard tool="dism" data={scans.dism} onStart={() => start("dism")} onCmd={() => openCmd("dism")} />
+      <ScanCard tool="sfc" data={scans.sfc} onStart={() => start("sfc")} onCmd={() => openCmd("sfc")} />
     </div>
   );
 }
 
-function ResultCard({ result }: { result: ScanResult }) {
-  const [expanded, setExpanded] = useState(false);
+function ScanCard({
+  tool,
+  data,
+  onStart,
+  onCmd,
+}: {
+  tool: Tool;
+  data: ScanProgress | null;
+  onStart: () => void;
+  onCmd: () => void;
+}) {
+  const [showFull, setShowFull] = useState(false);
+  const running = !!data?.running;
+  const done = !!data?.done && !running;
+  const pct = Math.max(0, Math.min(100, data?.percent ?? 0));
 
   return (
-    <div className={`sfc-result ${result.success ? "result-ok" : "result-fail"}`}>
-      <div className="result-header">
-        <div className="result-title">
-          <span className={`result-dot ${result.success ? "dot-ok" : "dot-fail"}`} />
-          <strong>{result.tool}</strong>
-          <span className="result-code">Exit code: {result.exit_code}</span>
+    <div className={`scan-card ${done ? (data?.success ? "scan-ok" : "scan-fail") : ""}`}>
+      <div className="scan-head">
+        <div className="scan-title">
+          <span
+            className={`scan-dot ${
+              running ? "dot-run" : done ? (data?.success ? "dot-ok" : "dot-fail") : "dot-idle"
+            }`}
+          />
+          <strong>{LABEL[tool]}</strong>
+          <span className="scan-cmd">{CMDLINE[tool]}</span>
         </div>
-        <button className="expand-btn" onClick={() => setExpanded(!expanded)}>
-          {expanded ? "Hide output" : "Show output"}
-        </button>
+        <div className="scan-actions">
+          <button className="scan-btn ghost" onClick={onCmd}>
+            Open in CMD
+          </button>
+          <button className="scan-btn primary" onClick={onStart} disabled={running}>
+            {running ? "Running…" : done ? "Run again" : "Run"}
+          </button>
+        </div>
       </div>
-      <div className="result-summary">{result.summary}</div>
-      {expanded && <pre className="result-output">{result.output}</pre>}
+
+      {running && (
+        <div className="scan-live">
+          <div className="scan-bar">
+            <div className="scan-bar-fill" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="scan-phase">
+            {pct > 0 ? `${pct.toFixed(0)}% · ` : ""}
+            {data?.phase || "Working…"}
+          </div>
+          {data && data.output_tail.length > 0 && (
+            <pre className="scan-console">{data.output_tail.join("\n")}</pre>
+          )}
+          <div className="scan-hint">
+            This can take 10–30 minutes. It keeps running if you switch tabs.
+          </div>
+        </div>
+      )}
+
+      {done && (
+        <div className="scan-done">
+          <div className="scan-summary">
+            {data?.summary} <span className="scan-exit">(exit {data?.exit_code})</span>
+          </div>
+          {data && data.output_tail.length > 0 && (
+            <>
+              <button className="scan-expand" onClick={() => setShowFull(!showFull)}>
+                {showFull ? "Hide output" : "Show output"}
+              </button>
+              {showFull && <pre className="scan-console">{data.output_tail.join("\n")}</pre>}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

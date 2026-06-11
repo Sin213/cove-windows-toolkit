@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod scan;
 
 // Custom window-control commands for the frameless titlebar. Defined as plain
 // app commands (like everything else in this app) so they need no capability
@@ -126,6 +127,10 @@ fn main() {
             commands::check_admin_status,
             commands::run_dism_scan,
             commands::run_sfc_scan,
+            // Live, tab-persistent scans
+            scan::start_scan,
+            scan::get_scan_progress,
+            scan::open_scan_in_terminal,
             // Undo
             commands::undo_change,
             // Performance tweaks
