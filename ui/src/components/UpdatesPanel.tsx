@@ -120,7 +120,7 @@ export default function UpdatesPanel() {
         <h3>Actions</h3>
         <div className="wu-actions">
           <button className="wu-btn wu-btn-primary" onClick={handleCheckUpdates}>
-            Check for Updates
+            Check for Windows Updates
           </button>
           <button className="wu-btn wu-btn-secondary" onClick={() => invoke("open_url", { url: "ms-settings:windowsupdate-optionalupdates" })}>
             Check for Driver Updates

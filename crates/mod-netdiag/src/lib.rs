@@ -65,9 +65,11 @@ pub fn run_speed_test() -> SpeedTestResult {
 $url = 'http://speedtest.tele2.net/10MB.zip'
 $tmp = "$env:TEMP\cove_speedtest.tmp"
 try {
+    $wc = New-Object System.Net.WebClient
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing -ErrorAction Stop
+    $wc.DownloadFile($url, $tmp)
     $sw.Stop()
+    $wc.Dispose()
     $size = (Get-Item $tmp -ErrorAction SilentlyContinue).Length
     Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     if ($null -eq $size) { $size = 0 }
