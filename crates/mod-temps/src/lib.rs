@@ -59,11 +59,11 @@ mod windows {
         }
     }
 
-    const LHM_SENSOR_SCRIPT: &str = r#"
+    fn build_sensor_script(lhm_dir: &str) -> String {
+        format!(r#"
 $ErrorActionPreference = 'Stop'
-$lhmDir = $args[0]
+$lhmDir = '{lhm_dir}'
 
-# LoadFrom probes same directory for dependencies automatically
 [System.Reflection.Assembly]::LoadFrom("$lhmDir\LibreHardwareMonitorLib.dll") | Out-Null
 
 $computer = [LibreHardwareMonitor.Hardware.Computer]::new()
@@ -74,47 +74,44 @@ $computer.IsStorageEnabled = $false
 $computer.Open()
 
 $readings = @()
-foreach ($hw in $computer.Hardware) {
+foreach ($hw in $computer.Hardware) {{
     $hw.Update()
-    foreach ($sub in $hw.SubHardware) { $sub.Update() }
-    foreach ($sensor in $hw.Sensors) {
-        if ($sensor.SensorType -ne [LibreHardwareMonitor.Hardware.SensorType]::Temperature) { continue }
-        if (-not $sensor.Value) { continue }
+    foreach ($sub in $hw.SubHardware) {{ $sub.Update() }}
+    foreach ($sensor in $hw.Sensors) {{
+        if ($sensor.SensorType -ne [LibreHardwareMonitor.Hardware.SensorType]::Temperature) {{ continue }}
+        if (-not $sensor.Value) {{ continue }}
         $val = [math]::Round($sensor.Value, 1)
-        if ($val -le 0 -or $val -ge 150) { continue }
+        if ($val -le 0 -or $val -ge 150) {{ continue }}
 
         $ht = $hw.HardwareType.ToString()
         $cat = 'Other'
         $maxC = $null; $critC = $null
-        if ($ht -match 'Cpu') { $cat = 'CPU'; $maxC = 95.0; $critC = 105.0 }
-        elseif ($ht -match 'Gpu') { $cat = 'GPU'; $maxC = 93.0; $critC = 100.0 }
+        if ($ht -match 'Cpu') {{ $cat = 'CPU'; $maxC = 95.0; $critC = 105.0 }}
+        elseif ($ht -match 'Gpu') {{ $cat = 'GPU'; $maxC = 93.0; $critC = 100.0 }}
 
-        $readings += @{
+        $readings += @{{
             sensor = $sensor.Name
             category = $cat
             temperature_c = $val
             max_c = $maxC
             critical_c = $critC
-        }
-    }
-}
+        }}
+    }}
+}}
 $computer.Close()
 
-@{ readings = $readings; warnings = @(); lhm_status = 'active' } | ConvertTo-Json -Depth 3 -Compress
-"#;
+@{{ readings = $readings; warnings = @(); lhm_status = 'active' }} | ConvertTo-Json -Depth 3 -Compress
+"#, lhm_dir = lhm_dir)
+    }
 
     fn probe_lhm_dll() -> Result<TempReport, String> {
         let dir = extract_lhm_if_needed()
             .ok_or_else(|| "Failed to extract sensor library".to_string())?;
 
+        let script = build_sensor_script(&dir.display().to_string());
+
         let output = optimizer_core::silent_cmd("powershell")
-            .args([
-                "-NoProfile",
-                "-ExecutionPolicy", "Bypass",
-                "-Command",
-                LHM_SENSOR_SCRIPT,
-                &dir.display().to_string(),
-            ])
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
             .output()
             .map_err(|e| format!("PowerShell failed: {}", e))?;
 
