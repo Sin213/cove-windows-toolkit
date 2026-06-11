@@ -63,16 +63,7 @@ mod windows {
 $ErrorActionPreference = 'Stop'
 $lhmDir = $args[0]
 
-# Register assembly resolver so .NET finds LHM's dependencies in the same folder
-[System.AppDomain]::CurrentDomain.add_AssemblyResolve({
-    param($sender, $resolveArgs)
-    $name = $resolveArgs.Name.Split(',')[0]
-    $path = Join-Path $lhmDir "$name.dll"
-    if (Test-Path $path) {
-        [System.Reflection.Assembly]::LoadFrom($path)
-    } else { $null }
-})
-
+# LoadFrom probes same directory for dependencies automatically
 [System.Reflection.Assembly]::LoadFrom("$lhmDir\LibreHardwareMonitorLib.dll") | Out-Null
 
 $computer = [LibreHardwareMonitor.Hardware.Computer]::new()
