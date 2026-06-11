@@ -13,21 +13,214 @@ pub struct TempReading {
 pub struct TempReport {
     pub readings: Vec<TempReading>,
     pub warnings: Vec<String>,
+    pub lhm_status: String,
+}
+
+#[cfg(target_os = "windows")]
+mod windows {
+    use super::*;
+    use wmi::{COMLibrary, WMIConnection};
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "PascalCase")]
+    struct WmiSensor {
+        name: String,
+        parent: String,
+        value: f64,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "PascalCase")]
+    struct AcpiThermalZone {
+        current_temperature: u32,
+    }
+
+    fn round1(v: f64) -> f64 {
+        (v * 10.0).round() / 10.0
+    }
+
+    fn classify(name: &str, parent: &str) -> &'static str {
+        let nl = name.to_lowercase();
+        let pl = parent.to_lowercase();
+
+        // GPU keywords checked BEFORE CPU to prevent AMD Radeon misclassification
+        let gpu_kw = ["radeon", "nvidia", "gpu", "video", "hot spot", "junction", "edge"];
+        if gpu_kw.iter().any(|k| pl.contains(k) || nl.contains(k)) {
+            return "GPU";
+        }
+
+        let cpu_kw = ["cpu", "processor", "amd", "intel", "core", "ccd", "tctl", "tdie", "package"];
+        if cpu_kw.iter().any(|k| pl.contains(k) || nl.contains(k)) {
+            return "CPU";
+        }
+
+        let disk_kw = ["hdd", "ssd", "nvme", "disk", "storage", "drive", "assembly"];
+        if disk_kw.iter().any(|k| pl.contains(k) || nl.contains(k)) {
+            return "Disk";
+        }
+
+        "Other"
+    }
+
+    fn default_thresholds(cat: &str) -> (Option<f64>, Option<f64>) {
+        match cat {
+            "CPU" => (Some(95.0), Some(105.0)),
+            "GPU" => (Some(93.0), Some(100.0)),
+            "Disk" => (Some(70.0), Some(75.0)),
+            _ => (None, None),
+        }
+    }
+
+    fn probe_lhm(com: &COMLibrary) -> Option<Vec<TempReading>> {
+        for ns in ["root\\LibreHardwareMonitor", "root\\OpenHardwareMonitor"] {
+            let conn = match WMIConnection::with_namespace_path(ns, com.into()) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            let sensors: Vec<WmiSensor> = match conn.raw_query(
+                "SELECT Name, Parent, Value FROM Sensor WHERE SensorType = 'Temperature'"
+            ) {
+                Ok(s) if !s.is_empty() => s,
+                _ => continue,
+            };
+
+            let mut readings = Vec::new();
+            for s in &sensors {
+                let cat = classify(&s.name, &s.parent);
+                if cat == "Disk" {
+                    continue;
+                }
+                let (max_c, critical_c) = default_thresholds(cat);
+                readings.push(TempReading {
+                    sensor: s.name.clone(),
+                    category: cat.to_string(),
+                    temperature_c: round1(s.value),
+                    max_c,
+                    critical_c,
+                });
+            }
+            return Some(readings);
+        }
+        None
+    }
+
+    fn probe_nvidia_smi() -> Vec<TempReading> {
+        let out = optimizer_core::silent_cmd("nvidia-smi")
+            .args(["--query-gpu=temperature.gpu,name", "--format=csv,noheader,nounits"])
+            .output();
+        let output = match out {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            _ => return Vec::new(),
+        };
+        let mut readings = Vec::new();
+        for line in output.lines() {
+            let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+            if parts.len() >= 2 {
+                if let Ok(temp) = parts[0].parse::<f64>() {
+                    readings.push(TempReading {
+                        sensor: parts[1].to_string(),
+                        category: "GPU".into(),
+                        temperature_c: round1(temp),
+                        max_c: Some(93.0),
+                        critical_c: Some(100.0),
+                    });
+                }
+            }
+        }
+        readings
+    }
+
+    fn probe_acpi(com: &COMLibrary) -> Vec<TempReading> {
+        let conn = match WMIConnection::with_namespace_path("root\\wmi", com.into()) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let zones: Vec<AcpiThermalZone> = match conn.raw_query(
+            "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"
+        ) {
+            Ok(z) => z,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut readings = Vec::new();
+        for z in &zones {
+            if z.current_temperature > 0 {
+                let temp_c = round1((z.current_temperature as f64 - 2732.0) / 10.0);
+                if temp_c > 0.0 && temp_c < 150.0 {
+                    readings.push(TempReading {
+                        sensor: "CPU (ACPI)".into(),
+                        category: "CPU".into(),
+                        temperature_c: temp_c,
+                        max_c: Some(95.0),
+                        critical_c: Some(105.0),
+                    });
+                }
+            }
+        }
+        readings
+    }
+
+    pub fn collect_temps_impl() -> TempReport {
+        let com = match COMLibrary::new() {
+            Ok(c) => c,
+            Err(e) => {
+                return TempReport {
+                    readings: Vec::new(),
+                    warnings: vec![format!("COM init failed: {}", e)],
+                    lhm_status: "not_found".into(),
+                };
+            }
+        };
+
+        if let Some(readings) = probe_lhm(&com) {
+            let warnings = Vec::new();
+            return TempReport {
+                readings,
+                warnings,
+                lhm_status: "active".into(),
+            };
+        }
+
+        // LHM not available - fall back to individual probes
+        let mut readings = Vec::new();
+
+        readings.extend(probe_nvidia_smi());
+        readings.extend(probe_acpi(&com));
+
+        let mut warnings = Vec::new();
+
+        let has_cpu = readings.iter().any(|r| r.category == "CPU");
+        let has_gpu = readings.iter().any(|r| r.category == "GPU");
+
+        if !has_cpu && !has_gpu {
+            warnings.push(
+                "CPU and GPU temps require Libre Hardware Monitor (free, lightweight). \
+                 Disk temps are read directly from drive firmware.".into()
+            );
+        } else if !has_cpu {
+            warnings.push("CPU temp requires Libre Hardware Monitor (free, lightweight).".into());
+        } else if !has_gpu {
+            warnings.push("GPU temp requires Libre Hardware Monitor or manufacturer software.".into());
+        }
+
+        if readings.is_empty() {
+            warnings.push(
+                "No temperature sensors detected. Install Libre Hardware Monitor (free) \
+                 for CPU, GPU, and disk temps.".into()
+            );
+        }
+
+        TempReport {
+            readings,
+            warnings,
+            lhm_status: "not_found".into(),
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
 pub fn collect_temps() -> TempReport {
-    let json = run_ps(include_str!("temps.ps1"));
-    match serde_json::from_str::<TempReport>(&json) {
-        Ok(report) => report,
-        Err(e) => {
-            eprintln!("temps parse error: {e}\n{json}");
-            TempReport {
-                readings: Vec::new(),
-                warnings: vec![format!("Failed to parse temperature data: {}", e)],
-            }
-        }
-    }
+    windows::collect_temps_impl()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -45,17 +238,6 @@ pub fn collect_temps() -> TempReport {
             TempReading { sensor: "WD Blue SN570".into(), category: "Disk".into(), temperature_c: 35.0, max_c: Some(70.0), critical_c: Some(75.0) },
         ],
         warnings: Vec::new(),
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn run_ps(script: &str) -> String {
-    
-    let out = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", script])
-        .output();
-    match out {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-        Err(e) => format!("{{\"readings\":[],\"warnings\":[\"{}\"]}}", e),
+        lhm_status: "active".into(),
     }
 }
