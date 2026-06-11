@@ -59,11 +59,22 @@ mod windows {
         }
     }
 
-    // Load LibreHardwareMonitorLib.dll directly via PowerShell - no GUI, no tray icon
     const LHM_SENSOR_SCRIPT: &str = r#"
 $ErrorActionPreference = 'Stop'
 $lhmDir = $args[0]
-Add-Type -Path "$lhmDir\LibreHardwareMonitorLib.dll"
+
+# Register assembly resolver so .NET finds LHM's dependencies in the same folder
+[System.AppDomain]::CurrentDomain.add_AssemblyResolve({
+    param($sender, $resolveArgs)
+    $name = $resolveArgs.Name.Split(',')[0]
+    $path = Join-Path $lhmDir "$name.dll"
+    if (Test-Path $path) {
+        [System.Reflection.Assembly]::LoadFrom($path)
+    } else { $null }
+})
+
+[System.Reflection.Assembly]::LoadFrom("$lhmDir\LibreHardwareMonitorLib.dll") | Out-Null
+
 $computer = [LibreHardwareMonitor.Hardware.Computer]::new()
 $computer.IsCpuEnabled = $true
 $computer.IsGpuEnabled = $true
@@ -101,8 +112,9 @@ $computer.Close()
 @{ readings = $readings; warnings = @(); lhm_status = 'active' } | ConvertTo-Json -Depth 3 -Compress
 "#;
 
-    fn probe_lhm_dll() -> Option<TempReport> {
-        let dir = extract_lhm_if_needed()?;
+    fn probe_lhm_dll() -> Result<TempReport, String> {
+        let dir = extract_lhm_if_needed()
+            .ok_or_else(|| "Failed to extract sensor library".to_string())?;
 
         let output = optimizer_core::silent_cmd("powershell")
             .args([
@@ -113,14 +125,16 @@ $computer.Close()
                 &dir.display().to_string(),
             ])
             .output()
-            .ok()?;
+            .map_err(|e| format!("PowerShell failed: {}", e))?;
 
         if !output.status.success() {
-            return None;
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Sensor query failed: {}", stderr.trim()));
         }
 
         let json = String::from_utf8_lossy(&output.stdout);
-        serde_json::from_str::<TempReport>(json.trim()).ok()
+        serde_json::from_str::<TempReport>(json.trim())
+            .map_err(|e| format!("JSON parse error: {} - raw: {}", e, json.trim()))
     }
 
     fn round1(v: f64) -> f64 {
@@ -196,40 +210,40 @@ $computer.Close()
     }
 
     pub fn collect_temps_impl() -> TempReport {
-        // Primary: load LHM DLL directly (no GUI, no tray icon)
-        if let Some(report) = probe_lhm_dll() {
-            if !report.readings.is_empty() {
-                return report;
+        match probe_lhm_dll() {
+            Ok(report) if !report.readings.is_empty() => return report,
+            Ok(_) => {
+                // DLL loaded but no sensors - fall through to fallbacks
+            }
+            Err(e) => {
+                eprintln!("LHM DLL probe failed: {}", e);
+                // Try fallbacks, but include the error so user can report it
+                let mut fallback = try_fallback_probes();
+                if fallback.readings.is_empty() {
+                    fallback.warnings.push(format!("Sensor library error: {}", e));
+                }
+                return fallback;
             }
         }
 
-        // Fallback: nvidia-smi + ACPI
+        try_fallback_probes()
+    }
+
+    fn try_fallback_probes() -> TempReport {
         let mut readings = Vec::new();
         readings.extend(probe_nvidia_smi());
         readings.extend(probe_acpi());
 
-        let mut warnings = Vec::new();
-        let has_cpu = readings.iter().any(|r| r.category == "CPU");
-        let has_gpu = readings.iter().any(|r| r.category == "GPU");
-
-        if !has_cpu && !has_gpu {
-            warnings.push(
-                "CPU and GPU temps unavailable. Run as Administrator for full sensor access.".into()
-            );
-        } else if !has_cpu {
-            warnings.push("CPU temp unavailable. Run as Administrator for full sensor access.".into());
-        } else if !has_gpu {
-            warnings.push("GPU temp unavailable via fallback probes.".into());
-        }
-
-        if readings.is_empty() {
-            warnings.push("No temperature sensors detected. Run as Administrator for full access.".into());
-        }
+        let warnings = if readings.is_empty() {
+            vec!["No temperature sensors detected.".into()]
+        } else {
+            Vec::new()
+        };
 
         TempReport {
             readings,
             warnings,
-            lhm_status: "not_found".into(),
+            lhm_status: "fallback".into(),
         }
     }
 }
