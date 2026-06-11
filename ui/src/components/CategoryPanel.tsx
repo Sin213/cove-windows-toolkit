@@ -11,7 +11,6 @@ import PowerPanel from "./PowerPanel";
 import HealthPanel from "./HealthPanel";
 import EventLogPanel from "./EventLogPanel";
 import BsodPanel from "./BsodPanel";
-import DriversPanel from "./DriversPanel";
 import NetDiagPanel from "./NetDiagPanel";
 import UpdatesPanel from "./UpdatesPanel";
 import UninstallPanel from "./UninstallPanel";
@@ -77,10 +76,6 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     title: "BSOD Analyzer",
     description:
       "Read minidump files and decode blue screen bug check codes.",
-  },
-  drivers: {
-    title: "Driver Auditor",
-    description: "List all drivers, flag outdated or unsigned ones.",
   },
   netdiag: {
     title: "Network Diagnostics",
@@ -150,7 +145,6 @@ const PANELS: Record<string, React.ComponentType> = {
   health: HealthPanel,
   eventlog: EventLogPanel,
   bsod: BsodPanel,
-  drivers: DriversPanel,
   netdiag: NetDiagPanel,
   updates: UpdatesPanel,
   uninstall: UninstallPanel,

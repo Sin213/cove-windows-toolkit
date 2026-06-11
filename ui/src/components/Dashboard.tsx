@@ -54,8 +54,6 @@ const OPTIMIZER_CARDS: CategoryCard[] = [
     title: "Performance Tweaks",
     description: "NTFS, prefetch, CPU scheduling, boot, and gaming optimizations",
     icon: "⚡",
-    badge: "8 tweaks",
-    badgeColor: "green",
     section: "optimize",
   },
   {
@@ -63,8 +61,6 @@ const OPTIMIZER_CARDS: CategoryCard[] = [
     title: "Visual Effects",
     description: "Disable transparency, animations, and cosmetic effects",
     icon: "◑",
-    badge: "6 tweaks",
-    badgeColor: "green",
     section: "optimize",
   },
   {
@@ -72,8 +68,6 @@ const OPTIMIZER_CARDS: CategoryCard[] = [
     title: "Privacy & Telemetry",
     description: "Control data collection, ads, and tracking",
     icon: "◉",
-    badge: "11 tweaks",
-    badgeColor: "green",
     section: "optimize",
   },
   {
@@ -81,8 +75,6 @@ const OPTIMIZER_CARDS: CategoryCard[] = [
     title: "Service Optimizer",
     description: "Disable unnecessary background services",
     icon: "⚙",
-    badge: "8 services",
-    badgeColor: "green",
     section: "optimize",
   },
   {
@@ -90,8 +82,6 @@ const OPTIMIZER_CARDS: CategoryCard[] = [
     title: "Startup Manager",
     description: "Control what runs at boot",
     icon: "▶",
-    badge: "8 items",
-    badgeColor: "green",
     section: "optimize",
   },
   {
@@ -99,8 +89,6 @@ const OPTIMIZER_CARDS: CategoryCard[] = [
     title: "Disk Cleanup",
     description: "Remove temp files, caches, and Windows bloat",
     icon: "⊘",
-    badge: "8 targets",
-    badgeColor: "green",
     section: "optimize",
   },
   {
@@ -108,8 +96,6 @@ const OPTIMIZER_CARDS: CategoryCard[] = [
     title: "Power Plan",
     description: "Switch to High Performance, adjust sleep settings",
     icon: "⚡",
-    badge: "3 plans",
-    badgeColor: "green",
     section: "optimize",
   },
 ];
@@ -127,8 +113,6 @@ const DIAGNOSTIC_CARDS: CategoryCard[] = [
     title: "Event Log Analyzer",
     description: "Critical errors, warnings, crash patterns",
     icon: "☰",
-    badge: "Errors found",
-    badgeColor: "yellow",
     section: "diagnose",
   },
   {
@@ -136,17 +120,6 @@ const DIAGNOSTIC_CARDS: CategoryCard[] = [
     title: "BSOD Analyzer",
     description: "Read minidumps, decode bug check codes",
     icon: "⬛",
-    badge: "3 dumps",
-    badgeColor: "red",
-    section: "diagnose",
-  },
-  {
-    id: "drivers",
-    title: "Driver Auditor",
-    description: "Outdated, unsigned, or problematic drivers",
-    icon: "⊞",
-    badge: "8 issues",
-    badgeColor: "yellow",
     section: "diagnose",
   },
   {
@@ -154,8 +127,6 @@ const DIAGNOSTIC_CARDS: CategoryCard[] = [
     title: "Network Diagnostics",
     description: "DNS, ping, traceroute, Wi-Fi, adapter health",
     icon: "⇆",
-    badge: "6 tests",
-    badgeColor: "green",
     section: "diagnose",
   },
   {
@@ -163,8 +134,6 @@ const DIAGNOSTIC_CARDS: CategoryCard[] = [
     title: "Windows Update",
     description: "Pending updates, CBS errors, component health",
     icon: "↻",
-    badge: "3 pending",
-    badgeColor: "yellow",
     section: "diagnose",
   },
   {

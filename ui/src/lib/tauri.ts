@@ -627,25 +627,6 @@ const MOCKS: Record<string, unknown> = {
     },
   ],
 
-  // ── Drivers ──────────────────────────────────────────────────────────
-  get_driver_audit: {
-    total: 142,
-    unsigned: 3,
-    outdated: 2,
-    problematic: [
-      { name: "Realtek PCIe GbE Family Controller", device: "Network adapters", version: "10.45.928.2020", date: "2022-03-15", signed: true, status: "outdated" },
-      { name: "NVIDIA GeForce RTX 3070", device: "Display adapters", version: "537.70", date: "2023-01-10", signed: true, status: "outdated" },
-      { name: "VirtualBox Host-Only Ethernet Adapter", device: "Network adapters", version: "6.1.40", date: "2022-10-20", signed: false, status: "unsigned" },
-      { name: "Razer Synapse Driver", device: "Human Interface Devices", version: "1.0.18.2", date: "2023-06-14", signed: false, status: "unsigned" },
-      { name: "WinPcap Packet Driver", device: "Network adapters", version: "4.1.3.0", date: "2019-11-08", signed: false, status: "unsigned" },
-    ],
-    healthy: [
-      { name: "Intel(R) UHD Graphics 770", device: "Display adapters", version: "31.0.101.5186", date: "2025-12-01", signed: true, status: "ok" },
-      { name: "High Definition Audio Device", device: "Sound, video and game controllers", version: "10.0.22621.1", date: "2024-06-21", signed: true, status: "ok" },
-      { name: "Microsoft ACPI-Compliant System", device: "System devices", version: "10.0.22621.3155", date: "2024-08-14", signed: true, status: "ok" },
-    ],
-  },
-
   // ── Network Diagnostics ──────────────────────────────────────────────
   get_network_diagnostics: {
     adapter: {
@@ -977,7 +958,6 @@ const MOCKS: Record<string, unknown> = {
       { id: "health", name: "System Health", severity: "Warning" },
       { id: "eventlog", name: "Event Logs", severity: "Critical" },
       { id: "bsod", name: "BSOD Dumps", severity: "Warning" },
-      { id: "drivers", name: "Drivers", severity: "Warning" },
       { id: "netdiag", name: "Network", severity: "Ok" },
       { id: "updates", name: "Windows Update", severity: "Warning" },
       { id: "sysinfo", name: "System Info", severity: "Ok" },

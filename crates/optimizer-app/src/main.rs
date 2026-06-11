@@ -2,6 +2,33 @@
 
 mod commands;
 
+// Custom window-control commands for the frameless titlebar. Defined as plain
+// app commands (like everything else in this app) so they need no capability
+// permissions.
+#[tauri::command]
+fn win_minimize(window: tauri::Window) {
+    let _ = window.minimize();
+}
+
+#[tauri::command]
+fn win_toggle_maximize(window: tauri::Window) {
+    if window.is_maximized().unwrap_or(false) {
+        let _ = window.unmaximize();
+    } else {
+        let _ = window.maximize();
+    }
+}
+
+#[tauri::command]
+fn win_close(window: tauri::Window) {
+    let _ = window.close();
+}
+
+#[tauri::command]
+fn win_start_drag(window: tauri::Window) {
+    let _ = window.start_dragging();
+}
+
 fn init_logging() {
     use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -51,8 +78,6 @@ fn main() {
             commands::get_event_log_summary,
             // BSOD
             commands::get_bsod_dumps,
-            // Drivers
-            commands::get_driver_audit,
             // Network diagnostics & tools
             commands::get_network_diagnostics,
             commands::set_dns,
@@ -134,6 +159,11 @@ fn main() {
             commands::get_disk_space,
             commands::run_chkdsk,
             commands::get_last_chkdsk,
+            // Window controls (frameless titlebar)
+            win_minimize,
+            win_toggle_maximize,
+            win_close,
+            win_start_drag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

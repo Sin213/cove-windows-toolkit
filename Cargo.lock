@@ -1850,7 +1850,7 @@ dependencies = [
 
 [[package]]
 name = "mod-bloatware"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "mod-bsod"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1868,7 +1868,7 @@ dependencies = [
 
 [[package]]
 name = "mod-cleanup"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1877,7 +1877,7 @@ dependencies = [
 
 [[package]]
 name = "mod-diskhealth"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1886,7 +1886,7 @@ dependencies = [
 
 [[package]]
 name = "mod-drivers"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1895,7 +1895,7 @@ dependencies = [
 
 [[package]]
 name = "mod-eventlog"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1904,7 +1904,7 @@ dependencies = [
 
 [[package]]
 name = "mod-health"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1913,7 +1913,7 @@ dependencies = [
 
 [[package]]
 name = "mod-netdiag"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1922,7 +1922,7 @@ dependencies = [
 
 [[package]]
 name = "mod-network"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1931,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "mod-performance"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1940,7 +1940,7 @@ dependencies = [
 
 [[package]]
 name = "mod-power"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1949,7 +1949,7 @@ dependencies = [
 
 [[package]]
 name = "mod-privacy"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1958,7 +1958,7 @@ dependencies = [
 
 [[package]]
 name = "mod-report"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -1968,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "mod-restore"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -1978,7 +1978,7 @@ dependencies = [
 
 [[package]]
 name = "mod-runtimes"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1987,7 +1987,7 @@ dependencies = [
 
 [[package]]
 name = "mod-security"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1996,7 +1996,7 @@ dependencies = [
 
 [[package]]
 name = "mod-services"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2005,7 +2005,7 @@ dependencies = [
 
 [[package]]
 name = "mod-sfc"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "mod-startup"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2023,7 +2023,7 @@ dependencies = [
 
 [[package]]
 name = "mod-sysinfo"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2032,18 +2032,17 @@ dependencies = [
 
 [[package]]
 name = "mod-temps"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
  "serde_json",
- "sysinfo",
  "wmi",
 ]
 
 [[package]]
 name = "mod-uninstall"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2052,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "mod-updates"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -2062,7 +2061,7 @@ dependencies = [
 
 [[package]]
 name = "mod-visual"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2119,15 +2118,6 @@ name = "new_debug_unreachable"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
-
-[[package]]
-name = "ntapi"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3b335231dfd352ffb0f8017f3b6027a4917f7df785ea2143d8af2adc66980ae"
-dependencies = [
- "winapi",
-]
 
 [[package]]
 name = "nu-ansi-term"
@@ -2303,16 +2293,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "objc2-io-kit"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33fafba39597d6dc1fb709123dfa8289d39406734be322956a69f0931c73bb15"
-dependencies = [
- "libc",
- "objc2-core-foundation",
-]
-
-[[package]]
 name = "objc2-io-surface"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2388,7 +2368,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "optimizer-app"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "directories",
@@ -2430,7 +2410,7 @@ dependencies = [
 
 [[package]]
 name = "optimizer-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "chrono",
  "rusqlite",
@@ -2444,7 +2424,7 @@ dependencies = [
 
 [[package]]
 name = "optimizer-helper"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -3347,20 +3327,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "sysinfo"
-version = "0.35.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c3ffa3e4ff2b324a57f7aeb3c349656c7b127c3c189520251a648102a92496e"
-dependencies = [
- "libc",
- "memchr",
- "ntapi",
- "objc2-core-foundation",
- "objc2-io-kit",
- "windows 0.61.3",
 ]
 
 [[package]]

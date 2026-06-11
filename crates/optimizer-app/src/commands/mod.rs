@@ -156,16 +156,6 @@ pub async fn get_bsod_dumps() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
-// Driver audit
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-pub async fn get_driver_audit() -> serde_json::Value {
-    let report = tokio::task::spawn_blocking(|| mod_drivers::audit_drivers()).await.unwrap();
-    serde_json::to_value(report).unwrap_or_default()
-}
-
-// ---------------------------------------------------------------------------
 // Network diagnostics
 // ---------------------------------------------------------------------------
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./App.css";
+import TitleBar from "./components/TitleBar";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
 import CategoryPanel from "./components/CategoryPanel";
@@ -15,7 +16,6 @@ export type View =
   | "health"
   | "eventlog"
   | "bsod"
-  | "drivers"
   | "netdiag"
   | "updates"
   | "uninstall"
@@ -35,14 +35,17 @@ function App() {
 
   return (
     <>
-      <Sidebar current={view} onNavigate={setView} />
-      <main className="main-content">
-        {view === "dashboard" ? (
-          <Dashboard onNavigate={setView} />
-        ) : (
-          <CategoryPanel view={view} onBack={() => setView("dashboard")} />
-        )}
-      </main>
+      <TitleBar />
+      <div className="app-body">
+        <Sidebar current={view} onNavigate={setView} />
+        <main className="main-content">
+          {view === "dashboard" ? (
+            <Dashboard onNavigate={setView} />
+          ) : (
+            <CategoryPanel view={view} onBack={() => setView("dashboard")} />
+          )}
+        </main>
+      </div>
     </>
   );
 }
