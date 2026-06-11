@@ -71,6 +71,26 @@ jobs:
           $conf.version = $env:VERSION
           $conf | ConvertTo-Json -Depth 10 | Set-Content crates/optimizer-app/tauri.conf.json
 
+      - name: Download LibreHardwareMonitor
+        shell: pwsh
+        run: |
+          $lhmUrl = "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/latest/download/LibreHardwareMonitor-net472.zip"
+          $zipPath = "$env:TEMP\lhm.zip"
+          $extractPath = "$env:TEMP\lhm-extract"
+          $destPath = "crates/optimizer-app/resources/lhm"
+
+          Write-Host "Downloading LHM from $lhmUrl"
+          Invoke-WebRequest -Uri $lhmUrl -OutFile $zipPath -UseBasicParsing
+
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+
+          Copy-Item "$extractPath\LibreHardwareMonitor.exe" $destPath
+          Copy-Item "$extractPath\LibreHardwareMonitorLib.dll" $destPath
+          Copy-Item "$extractPath\HidSharp.dll" $destPath
+
+          Write-Host "LHM files:"
+          Get-ChildItem $destPath
+
       - name: Build frontend
         run: pnpm --prefix ui build
 
@@ -93,11 +113,19 @@ jobs:
             Copy-Item $nsis.FullName "release/Cove-Windows-Toolkit-$env:VERSION-Setup.exe"
           }
 
-          # Portable exe
+          # Portable ZIP (exe + lhm/ folder)
+          $portableDir = "release/portable-staging"
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
           $exe = "target/release/optimizer-app.exe"
           if (Test-Path $exe) {
-            Copy-Item $exe "release/Cove-Windows-Toolkit-$env:VERSION-Portable.exe"
+            Copy-Item $exe "$portableDir/Cove-Windows-Toolkit.exe"
           }
+          New-Item -ItemType Directory -Force -Path "$portableDir/lhm" | Out-Null
+          Copy-Item "crates/optimizer-app/resources/lhm/LibreHardwareMonitor.exe" "$portableDir/lhm/"
+          Copy-Item "crates/optimizer-app/resources/lhm/LibreHardwareMonitorLib.dll" "$portableDir/lhm/"
+          Copy-Item "crates/optimizer-app/resources/lhm/HidSharp.dll" "$portableDir/lhm/"
+          Compress-Archive -Path "$portableDir/*" -DestinationPath "release/Cove-Windows-Toolkit-$env:VERSION-Portable.zip"
+          Remove-Item -Recurse -Force $portableDir
 
           Get-ChildItem release/
 
@@ -108,11 +136,11 @@ jobs:
           path: release/*-Setup.exe
           if-no-files-found: error
 
-      - name: Upload Portable exe
+      - name: Upload Portable ZIP
         uses: actions/upload-artifact@v4
         with:
           name: windows-portable
-          path: release/*-Portable.exe
+          path: release/*-Portable.zip
           if-no-files-found: error
 
   publish-release:
@@ -130,7 +158,7 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*-Setup.exe' -o -name '*-Portable.exe' \) -exec cp {} release/ \;
+          find artifacts -type f \( -name '*-Setup.exe' -o -name '*-Portable.zip' \) -exec cp {} release/ \;
           cd release
           sha256sum * > checksums-sha256.txt
           cat checksums-sha256.txt
@@ -148,7 +176,7 @@ jobs:
             | File | Type |
             |------|------|
             | `Cove-Windows-Toolkit-${{ env.VERSION }}-Setup.exe` | Windows Installer |
-            | `Cove-Windows-Toolkit-${{ env.VERSION }}-Portable.exe` | Portable (no install) |
+            | `Cove-Windows-Toolkit-${{ env.VERSION }}-Portable.zip` | Portable (extract and run) |
 
             Verify downloads with `checksums-sha256.txt`:
             ```
