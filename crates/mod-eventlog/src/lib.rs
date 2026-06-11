@@ -41,18 +41,17 @@ pub fn get_summary() -> EventLogReport {
 
 #[cfg(target_os = "windows")]
 fn query_log(log_name: &str) -> LogSummary {
+    // Bound everything to a recent window (last 7 days) and derive the counts
+    // from the events we actually retrieve, so the summary numbers always match
+    // the list shown. Previously the counts were all-time totals while the list
+    // was capped, so "257 errors" could display only a handful of entries.
     let ps = format!(
         r#"
-try {{ $c = @(Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=1}} -ErrorAction Stop).Count }} catch {{ $c = 0 }}
-try {{ $e = @(Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=2}} -ErrorAction Stop).Count }} catch {{ $e = 0 }}
-try {{ $w = @(Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=3}} -ErrorAction Stop).Count }} catch {{ $w = 0 }}
-Write-Output "COUNTS|$c|$e|$w"
-
+$cutoff = (Get-Date).AddDays(-7)
 foreach ($lvl in @(1,2,3)) {{
     $label = switch ($lvl) {{ 1 {{'Critical'}} 2 {{'Error'}} 3 {{'Warning'}} }}
-    $max = switch ($lvl) {{ 1 {{20}} 2 {{30}} 3 {{20}} }}
     try {{
-        Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=$lvl}} -MaxEvents $max -ErrorAction Stop | ForEach-Object {{
+        Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=$lvl; StartTime=$cutoff}} -MaxEvents 200 -ErrorAction Stop | ForEach-Object {{
             $msg = if ($_.Message) {{ ($_.Message -replace '[\r\n]+',' ').Substring(0, [Math]::Min($_.Message.Length, 200)) }} else {{ 'No message' }}
             Write-Output "EVT|$($_.Id)|$($_.ProviderName)|$label|$($_.TimeCreated.ToString('o'))|$msg"
         }}
@@ -66,22 +65,22 @@ foreach ($lvl in @(1,2,3)) {{
     if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
-            if line.starts_with("COUNTS|") {
-                let p: Vec<&str> = line.split('|').collect();
-                if p.len() >= 4 {
-                    summary.critical = p[1].trim().parse().unwrap_or(0);
-                    summary.error = p[2].trim().parse().unwrap_or(0);
-                    summary.warning = p[3].trim().parse().unwrap_or(0);
-                }
-            } else if line.starts_with("EVT|") {
-                let p: Vec<&str> = line.splitn(6, '|').collect();
-                if p.len() >= 6 {
+            if let Some(rest) = line.strip_prefix("EVT|") {
+                let p: Vec<&str> = rest.splitn(5, '|').collect();
+                if p.len() >= 5 {
+                    let level = p[2].trim().to_string();
+                    match level.as_str() {
+                        "Critical" => summary.critical += 1,
+                        "Error" => summary.error += 1,
+                        "Warning" => summary.warning += 1,
+                        _ => {}
+                    }
                     summary.recent_events.push(EventEntry {
-                        id: p[1].trim().parse().unwrap_or(0),
-                        source: p[2].trim().to_string(),
-                        level: p[3].trim().to_string(),
-                        time: p[4].trim().to_string(),
-                        message: p[5].trim().to_string(),
+                        id: p[0].trim().parse().unwrap_or(0),
+                        source: p[1].trim().to_string(),
+                        level,
+                        time: p[3].trim().to_string(),
+                        message: p[4].trim().to_string(),
                     });
                 }
             }

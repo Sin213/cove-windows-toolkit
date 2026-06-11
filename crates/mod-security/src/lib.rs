@@ -65,20 +65,22 @@ try {
         }
     }
 
-    stub_defender()
+    // No fabricated fallback: report an honest "unknown" status if the query failed.
+    DefenderStatus {
+        real_time_enabled: false,
+        definitions_age_days: 0,
+        last_scan: "Unknown".into(),
+        last_scan_type: "Unknown".into(),
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn get_defender_status() -> DefenderStatus {
-    stub_defender()
-}
-
-fn stub_defender() -> DefenderStatus {
     DefenderStatus {
-        real_time_enabled: true,
-        definitions_age_days: 1,
-        last_scan: "2026-06-08T14:30:00Z".into(),
-        last_scan_type: "Quick".into(),
+        real_time_enabled: false,
+        definitions_age_days: 0,
+        last_scan: "Unknown".into(),
+        last_scan_type: "Unknown".into(),
     }
 }
 

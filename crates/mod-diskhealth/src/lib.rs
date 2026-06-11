@@ -126,9 +126,7 @@ foreach ($d in $disks) {
         }
     }
 
-    if drives.is_empty() {
-        return stub_drives();
-    }
+    // No fabricated fallback: if the query returns nothing, report nothing.
     drives
 }
 
@@ -225,9 +223,7 @@ Get-ChildItem -Path '{}\Users' -Recurse -File -Force -ErrorAction SilentlyContin
         }
     }
 
-    if report.total_bytes == 0 {
-        return stub_disk_space(&drive);
-    }
+    // No fabricated fallback: return whatever the real query produced.
     report
 }
 
@@ -428,6 +424,7 @@ fn parse_opt_u64(s: &str) -> Option<u64> {
 // Stubs
 // ---------------------------------------------------------------------------
 
+#[cfg(not(target_os = "windows"))]
 fn stub_drives() -> Vec<DriveHealth> {
     vec![
         DriveHealth {
@@ -463,6 +460,7 @@ fn stub_drives() -> Vec<DriveHealth> {
     ]
 }
 
+#[cfg(not(target_os = "windows"))]
 fn stub_disk_space(drive: &str) -> DiskSpaceReport {
     DiskSpaceReport {
         drive: drive.to_string(),

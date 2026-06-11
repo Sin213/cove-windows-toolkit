@@ -25,20 +25,47 @@ pub fn quick_scan() -> HealthReport {
     HealthReport { score, findings }
 }
 
+/// An honest "couldn't read this metric" finding (no score deduction, no fake data).
+fn unknown_finding(id: &str, title: &str, detail: &str) -> (Finding, i32) {
+    (Finding {
+        id: id.to_string(),
+        severity: Severity::Info,
+        title: title.to_string(),
+        detail: detail.to_string(),
+        metric: None,
+        remediation: None,
+    }, 0)
+}
+
 #[cfg(target_os = "windows")]
 fn check_disk_space() -> (Finding, i32) {
-    // TODO: Use GetDiskFreeSpaceExW
-    stub_disk_check()
+    let ps = r#"$sd = $env:SystemDrive
+$d = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sd'" -ErrorAction SilentlyContinue
+Write-Output "$($d.FreeSpace)|$($d.Size)""#;
+    if let Ok(o) = optimizer_core::silent_cmd("powershell")
+        .args(["-NoProfile", "-Command", ps]).output()
+    {
+        let s = String::from_utf8_lossy(&o.stdout);
+        let p: Vec<&str> = s.trim().split('|').collect();
+        if p.len() == 2 {
+            if let (Ok(free), Ok(total)) =
+                (p[0].trim().parse::<u64>(), p[1].trim().parse::<u64>())
+            {
+                if total > 0 {
+                    return disk_finding(free, total);
+                }
+            }
+        }
+    }
+    unknown_finding("disk.free_space", "System Drive Free Space", "Could not read disk free space")
 }
 
 #[cfg(not(target_os = "windows"))]
 fn check_disk_space() -> (Finding, i32) {
-    stub_disk_check()
+    disk_finding(45_000_000_000, 500_000_000_000)
 }
 
-fn stub_disk_check() -> (Finding, i32) {
-    let total: u64 = 500_000_000_000;
-    let free: u64 = 45_000_000_000;
+fn disk_finding(free: u64, total: u64) -> (Finding, i32) {
     let pct_free = (free as f32 / total as f32) * 100.0;
 
     let (severity, deduction) = if pct_free < 5.0 {
@@ -66,18 +93,33 @@ fn stub_disk_check() -> (Finding, i32) {
 
 #[cfg(target_os = "windows")]
 fn check_ram() -> (Finding, i32) {
-    // TODO: Use GlobalMemoryStatusEx
-    stub_ram_check()
+    let ps = r#"$os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+Write-Output "$($os.FreePhysicalMemory)|$($os.TotalVisibleMemorySize)""#;
+    if let Ok(o) = optimizer_core::silent_cmd("powershell")
+        .args(["-NoProfile", "-Command", ps]).output()
+    {
+        let s = String::from_utf8_lossy(&o.stdout);
+        let p: Vec<&str> = s.trim().split('|').collect();
+        if p.len() == 2 {
+            // Win32_OperatingSystem reports memory in kilobytes.
+            if let (Ok(free_kb), Ok(total_kb)) =
+                (p[0].trim().parse::<u64>(), p[1].trim().parse::<u64>())
+            {
+                if total_kb > 0 {
+                    return ram_finding(free_kb * 1024, total_kb * 1024);
+                }
+            }
+        }
+    }
+    unknown_finding("ram.available", "Available RAM", "Could not read memory status")
 }
 
 #[cfg(not(target_os = "windows"))]
 fn check_ram() -> (Finding, i32) {
-    stub_ram_check()
+    ram_finding(8_500_000_000, 16_000_000_000)
 }
 
-fn stub_ram_check() -> (Finding, i32) {
-    let total: u64 = 16_000_000_000;
-    let available: u64 = 8_500_000_000;
+fn ram_finding(available: u64, total: u64) -> (Finding, i32) {
     let pct_available = (available as f32 / total as f32) * 100.0;
 
     let (severity, deduction) = if available < 200_000_000 {

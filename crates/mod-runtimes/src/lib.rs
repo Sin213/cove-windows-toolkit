@@ -139,9 +139,7 @@ try {
         }
     }
 
-    if entries.is_empty() {
-        return stub_dotnet();
-    }
+    // No fabricated fallback: report only what was actually detected.
     entries
 }
 
@@ -181,12 +179,11 @@ Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','
             }
         }).collect();
 
-        if !entries.is_empty() {
-            return entries;
-        }
+        return entries;
     }
 
-    stub_vcredist()
+    // No fabricated fallback.
+    Vec::new()
 }
 
 #[cfg(target_os = "windows")]
@@ -268,6 +265,7 @@ else { $found | ForEach-Object { Write-Output $_ } }
     Vec::new()
 }
 
+#[cfg(not(target_os = "windows"))]
 fn stub_dotnet() -> Vec<RuntimeEntry> {
     vec![
         RuntimeEntry { name: ".NET Framework 4.8".into(), version: "4.8".into(), runtime_type: None, path: Some(r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319".into()), installed: true, arch: None, outdated: true, download_url: Some(DOTNET_FW_URL.into()) },
@@ -276,6 +274,7 @@ fn stub_dotnet() -> Vec<RuntimeEntry> {
     ]
 }
 
+#[cfg(not(target_os = "windows"))]
 fn stub_vcredist() -> Vec<RuntimeEntry> {
     vec![
         RuntimeEntry { name: "Visual C++ 2015-2022 (x64)".into(), version: "14.38.33135".into(), runtime_type: None, path: None, installed: true, arch: Some("x64".into()), outdated: true, download_url: Some(VCREDIST_X64_URL.into()) },
@@ -284,7 +283,7 @@ fn stub_vcredist() -> Vec<RuntimeEntry> {
     ]
 }
 
-#[allow(dead_code)]
+#[cfg(not(target_os = "windows"))]
 fn stub_runtimes() -> RuntimesReport {
     RuntimesReport {
         dotnet: stub_dotnet(),
