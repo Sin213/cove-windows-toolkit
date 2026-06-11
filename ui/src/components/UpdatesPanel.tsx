@@ -122,6 +122,9 @@ export default function UpdatesPanel() {
           <button className="wu-btn wu-btn-primary" onClick={handleCheckUpdates}>
             Check for Updates
           </button>
+          <button className="wu-btn wu-btn-secondary" onClick={() => invoke("open_url", { url: "ms-settings:windowsupdate-optionalupdates" })}>
+            Check for Driver Updates
+          </button>
           <button className="wu-btn wu-btn-warning" onClick={handleReset} disabled={resetting}>
             {resetting ? "Resetting..." : "Reset Windows Update"}
           </button>

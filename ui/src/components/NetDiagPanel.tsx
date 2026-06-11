@@ -290,7 +290,7 @@ export default function NetDiagPanel() {
           {data.tests.map((test, i) => (
             <div key={i} className="test-row">
               <span className={`test-indicator indicator-${test.status}`}>
-                {test.status === "pass" ? "✔" : test.status === "warn" ? "⚠" : "✖"}
+                {test.status === "ok" ? "✔" : test.status === "warn" ? "⚠" : "✖"}
               </span>
               <div className="test-info">
                 <span className="test-name">{test.name}</span>

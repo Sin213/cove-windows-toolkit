@@ -194,6 +194,12 @@
   color: #fff;
 }
 
+.wu-btn-secondary {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+
 .wu-btn-warning {
   background: var(--yellow);
   color: #000;

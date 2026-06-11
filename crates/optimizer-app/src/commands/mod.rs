@@ -818,8 +818,8 @@ pub fn check_admin_status() -> serde_json::Value {
 }
 
 #[tauri::command]
-pub fn run_dism_scan() -> serde_json::Value {
-    let result = mod_sfc::run_dism();
+pub async fn run_dism_scan() -> serde_json::Value {
+    let result = tokio::task::spawn_blocking(mod_sfc::run_dism).await.unwrap();
     serde_json::json!({
         "tool": result.tool, "success": result.success, "exit_code": result.exit_code,
         "output": result.output, "summary": result.summary,
@@ -827,8 +827,8 @@ pub fn run_dism_scan() -> serde_json::Value {
 }
 
 #[tauri::command]
-pub fn run_sfc_scan() -> serde_json::Value {
-    let result = mod_sfc::run_sfc();
+pub async fn run_sfc_scan() -> serde_json::Value {
+    let result = tokio::task::spawn_blocking(mod_sfc::run_sfc).await.unwrap();
     serde_json::json!({
         "tool": result.tool, "success": result.success, "exit_code": result.exit_code,
         "output": result.output, "summary": result.summary,
@@ -1044,8 +1044,8 @@ pub fn get_security_status() -> serde_json::Value {
 }
 
 #[tauri::command]
-pub fn run_defender_scan(scan_type: String) -> serde_json::Value {
-    let result = mod_security::run_scan(&scan_type);
+pub async fn run_defender_scan(scan_type: String) -> serde_json::Value {
+    let result = tokio::task::spawn_blocking(move || mod_security::run_scan(&scan_type)).await.unwrap();
     serde_json::to_value(result).unwrap_or_default()
 }
 

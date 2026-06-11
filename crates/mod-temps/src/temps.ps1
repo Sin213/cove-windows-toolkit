@@ -98,16 +98,17 @@ if ($ohmSensors.Count -gt 0) {
     $hasCpu = ($readings | Where-Object { $_.category -eq 'CPU' }).Count -gt 0
     $hasGpu = ($readings | Where-Object { $_.category -eq 'GPU' }).Count -gt 0
 
-    if (-not $hasCpu) {
-        $warnings += 'CPU temperature not available. AMD Ryzen desktop CPUs require Libre Hardware Monitor for sensor access.'
-    }
-    if (-not $hasGpu) {
-        $warnings += 'GPU temperature not available. Install Libre Hardware Monitor or use manufacturer tools.'
+    if (-not $hasCpu -and -not $hasGpu) {
+        $warnings += 'CPU and GPU temps require Libre Hardware Monitor (free, lightweight). Disk temps are read directly from drive firmware.'
+    } elseif (-not $hasCpu) {
+        $warnings += 'CPU temp requires Libre Hardware Monitor (free, lightweight).'
+    } elseif (-not $hasGpu) {
+        $warnings += 'GPU temp requires Libre Hardware Monitor or manufacturer software.'
     }
 }
 
 if ($readings.Count -eq 0) {
-    $warnings += 'No temperature sensors detected. Install Libre Hardware Monitor (free) for full CPU, GPU, and disk temps.'
+    $warnings += 'No temperature sensors detected. Install Libre Hardware Monitor (free) for CPU, GPU, and disk temps.'
 }
 
 $result = @{

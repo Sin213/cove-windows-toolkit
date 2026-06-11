@@ -117,7 +117,7 @@
   flex-shrink: 0;
 }
 
-.indicator-pass {
+.indicator-pass, .indicator-ok {
   color: var(--green);
 }
 

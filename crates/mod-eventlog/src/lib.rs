@@ -48,13 +48,16 @@ try {{ $e = @(Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=2}} -Error
 try {{ $w = @(Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=3}} -ErrorAction Stop).Count }} catch {{ $w = 0 }}
 Write-Output "COUNTS|$c|$e|$w"
 
-try {{
-    Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=1,2,3}} -MaxEvents 50 -ErrorAction Stop | ForEach-Object {{
-        $lvl = switch ($_.Level) {{ 1 {{'Critical'}} 2 {{'Error'}} 3 {{'Warning'}} default {{'Info'}} }}
-        $msg = if ($_.Message) {{ ($_.Message -replace '[\r\n]+',' ').Substring(0, [Math]::Min($_.Message.Length, 200)) }} else {{ 'No message' }}
-        Write-Output "EVT|$($_.Id)|$($_.ProviderName)|$lvl|$($_.TimeCreated.ToString('o'))|$msg"
-    }}
-}} catch {{}}"#,
+foreach ($lvl in @(1,2,3)) {{
+    $label = switch ($lvl) {{ 1 {{'Critical'}} 2 {{'Error'}} 3 {{'Warning'}} }}
+    $max = switch ($lvl) {{ 1 {{20}} 2 {{30}} 3 {{20}} }}
+    try {{
+        Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=$lvl}} -MaxEvents $max -ErrorAction Stop | ForEach-Object {{
+            $msg = if ($_.Message) {{ ($_.Message -replace '[\r\n]+',' ').Substring(0, [Math]::Min($_.Message.Length, 200)) }} else {{ 'No message' }}
+            Write-Output "EVT|$($_.Id)|$($_.ProviderName)|$label|$($_.TimeCreated.ToString('o'))|$msg"
+        }}
+    }} catch {{}}
+}}"#,
         log = log_name
     );
 

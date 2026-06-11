@@ -27,7 +27,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: "health", label: "System Health", icon: "♥", section: "diagnose" },
   { id: "eventlog", label: "Event Logs", icon: "☰", section: "diagnose" },
   { id: "bsod", label: "BSOD Analyzer", icon: "⬛", section: "diagnose" },
-  { id: "drivers", label: "Drivers", icon: "⊞", section: "diagnose" },
   { id: "netdiag", label: "Net Diagnostics", icon: "⇆", section: "diagnose" },
   { id: "updates", label: "Windows Update", icon: "↻", section: "diagnose" },
   { id: "security", label: "Security Scan", icon: "🔒", section: "diagnose" },

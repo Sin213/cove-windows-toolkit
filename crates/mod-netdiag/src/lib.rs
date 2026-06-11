@@ -102,7 +102,6 @@ pub fn run_speed_test() -> SpeedTestResult {
 
 #[cfg(target_os = "windows")]
 fn get_primary_adapter() -> Option<AdapterInfo> {
-    use std::process::Command;
     let ps = r#"
 $a = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
 if (-not $a) { exit 0 }
@@ -112,7 +111,7 @@ $ip = if ($cfg.IPv4Address) { $cfg.IPv4Address.IPAddress } else { '' }
 $gw = if ($cfg.IPv4DefaultGateway) { $cfg.IPv4DefaultGateway.NextHop } else { '' }
 Write-Output "$($a.Name)|$($a.InterfaceDescription)|$($a.LinkSpeed)|$ip|$gw|$dns|$($a.Status)"
 "#;
-    if let Ok(o) = Command::new("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let p: Vec<&str> = line.split('|').collect();
         if p.len() >= 7 {
@@ -135,18 +134,16 @@ Write-Output "$($a.Name)|$($a.InterfaceDescription)|$($a.LinkSpeed)|$ip|$gw|$dns
 #[cfg(target_os = "windows")]
 fn run_connectivity_tests() -> Vec<TestResult> {
     let ps = r#"
-# Gateway ping
+# Gateway ping - use .NET to avoid console popup
 $gw = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1).IPv4DefaultGateway.NextHop
 if ($gw) {
     try {
-        $ping = ping.exe -n 1 -w 2000 $gw 2>$null
-        $ms = 0
-        $pingStr = $ping -join ' '
-        if ($pingStr -match 'time[=<](\d+)') { $ms = $Matches[1] }
-        if ($pingStr -match 'TTL=') {
-            Write-Output "TEST|Gateway Ping|ok|$ms|$gw reachable"
+        $pinger = New-Object System.Net.NetworkInformation.Ping
+        $reply = $pinger.Send($gw, 2000)
+        if ($reply.Status -eq 'Success') {
+            Write-Output "TEST|Gateway Ping|ok|$($reply.RoundtripTime)|$gw reachable"
         } else {
-            Write-Output "TEST|Gateway Ping|fail|0|$gw unreachable"
+            Write-Output "TEST|Gateway Ping|fail|0|$gw unreachable ($($reply.Status))"
         }
     } catch { Write-Output "TEST|Gateway Ping|fail|0|$gw unreachable" }
 } else { Write-Output "TEST|Gateway Ping|fail|0|No default gateway" }
