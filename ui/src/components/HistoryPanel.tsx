@@ -81,7 +81,7 @@ export default function HistoryPanel() {
                 </div>
                 <div className="history-meta">
                   <span className="history-module">{entry.module}</span>
-                  <span className={`tier-badge tier-${entry.tier}`}>{entry.tier}</span>
+                  <span className={`tier-badge tier-${entry.tier.toLowerCase()}`}>{entry.tier}</span>
                   <span className="history-time">{timeAgo(entry.timestamp)}</span>
                 </div>
               </div>

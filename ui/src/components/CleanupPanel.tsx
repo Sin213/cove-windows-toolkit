@@ -62,11 +62,14 @@ export default function CleanupPanel() {
     setCleaning(true);
     try {
       const ids = selectedTargets.map((t) => t.id);
-      const res = await invoke<{ success: boolean }>("run_cleanup", { ids });
-      if (res.success) {
-        for (const t of selectedTargets) {
-          setCleaned((s) => ({ ...s, [t.id]: true }));
-        }
+      const res = await invoke<{ success: boolean; results: { id: string; success: boolean }[] }>(
+        "run_cleanup",
+        { ids }
+      );
+      // Mark only the targets that actually succeeded, per-result.
+      const ok = new Set((res.results || []).filter((r) => r.success).map((r) => r.id));
+      for (const t of selectedTargets) {
+        if (ok.has(t.id)) setCleaned((s) => ({ ...s, [t.id]: true }));
       }
     } catch (e) {
       console.error("Cleanup failed:", e);

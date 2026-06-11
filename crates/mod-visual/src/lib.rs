@@ -74,10 +74,15 @@ fn read_registry_value(_path: &str, _name: &str) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 pub fn apply_tweak(path: &str, name: &str, value: &str) -> Result<String, String> {
-    
+    // MinAnimate and SmoothScroll are conventionally REG_SZ; the rest are DWORD.
+    let (ty, val) = if name == "MinAnimate" || name == "SmoothScroll" {
+        ("String", format!("'{}'", value.replace('\'', "''")))
+    } else {
+        ("DWord", value.to_string())
+    };
     let ps = format!(
-        "try {{ Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force; Write-Output 'OK' }}",
-        path, name, value, path, path, name, value
+        "try {{ Set-ItemProperty -Path 'Registry::{path}' -Name '{name}' -Value {val} -Type {ty} -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ New-Item -Path 'Registry::{path}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{path}' -Name '{name}' -Value {val} -Type {ty} -Force -ErrorAction Stop; Write-Output 'OK' }}",
+        path = path, name = name, val = val, ty = ty
     );
     let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
         .map_err(|e| e.to_string())?;

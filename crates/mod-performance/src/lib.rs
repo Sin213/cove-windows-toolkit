@@ -20,7 +20,9 @@ pub fn get_tweaks() -> Vec<PerformanceTweak> {
         ("perf.ntfs_last_access", "Disable NTFS Last Access Timestamp",
          "Skip updating the last-access time on every file read -reduces disk I/O, especially on HDDs",
          "Filesystem", SafetyTier::Yellow,
-         "SYSTEM\\CurrentControlSet\\Control\\FileSystem", "NtfsDisableLastAccessUpdate", "80000003", None),
+         // 2147483651 == 0x80000003 (System Managed, Last Access Updates Disabled).
+         // Must be written as decimal: PowerShell -Value would read a bare "80000003" as decimal.
+         "SYSTEM\\CurrentControlSet\\Control\\FileSystem", "NtfsDisableLastAccessUpdate", "2147483651", None),
         ("perf.ntfs_8dot3", "Disable 8.3 Short Name Creation",
          "Stop generating legacy DOS-compatible short filenames -speeds up directory operations",
          "Filesystem", SafetyTier::Yellow,
@@ -97,7 +99,7 @@ fn read_registry_value(_path: &str, _name: &str) -> Option<String> {
 pub fn apply_tweak(path: &str, name: &str, value: &str) -> Result<String, String> {
     
     let ps = format!(
-        "try {{ Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force; Write-Output 'OK' }}",
+        "try {{ Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force -ErrorAction Stop; Write-Output 'OK' }}",
         path, name, value, path, path, name, value
     );
     let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
