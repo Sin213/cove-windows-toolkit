@@ -92,6 +92,13 @@ const OPTIMIZER_CARDS: CategoryCard[] = [
     section: "optimize",
   },
   {
+    id: "bloatware",
+    title: "Bloatware Remover",
+    description: "Uninstall preinstalled Microsoft, OEM, and sponsored apps",
+    icon: "🗑",
+    section: "optimize",
+  },
+  {
     id: "power",
     title: "Power Plan",
     description: "Switch to High Performance, adjust sleep settings",

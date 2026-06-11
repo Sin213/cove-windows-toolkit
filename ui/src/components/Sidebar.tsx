@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "services", label: "Services", icon: "⚙", section: "optimize" },
   { id: "startup", label: "Startup", icon: "▶", section: "optimize" },
   { id: "cleanup", label: "Disk Cleanup", icon: "⊘", section: "optimize" },
+  { id: "bloatware", label: "Bloatware", icon: "🗑", section: "optimize" },
   { id: "power", label: "Power Plan", icon: "⚡", section: "optimize" },
   { id: "health", label: "System Health", icon: "♥", section: "diagnose" },
   { id: "temps", label: "Temperatures", icon: "🌡", section: "diagnose" },

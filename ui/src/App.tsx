@@ -12,6 +12,7 @@ export type View =
   | "services"
   | "startup"
   | "cleanup"
+  | "bloatware"
   | "power"
   | "health"
   | "eventlog"

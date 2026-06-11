@@ -7,6 +7,7 @@ import PrivacyPanel from "./PrivacyPanel";
 import ServicesPanel from "./ServicesPanel";
 import StartupPanel from "./StartupPanel";
 import CleanupPanel from "./CleanupPanel";
+import BloatwarePanel from "./BloatwarePanel";
 import PowerPanel from "./PowerPanel";
 import HealthPanel from "./HealthPanel";
 import EventLogPanel from "./EventLogPanel";
@@ -58,6 +59,11 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     title: "Disk Cleanup",
     description:
       "Remove temp files, caches, and Windows bloat to free disk space.",
+  },
+  bloatware: {
+    title: "Bloatware Remover",
+    description:
+      "Uninstall preinstalled Microsoft, OEM, and sponsored apps you don't use.",
   },
   power: {
     title: "Power Plan",
@@ -141,6 +147,7 @@ const PANELS: Record<string, React.ComponentType> = {
   services: ServicesPanel,
   startup: StartupPanel,
   cleanup: CleanupPanel,
+  bloatware: BloatwarePanel,
   power: PowerPanel,
   health: HealthPanel,
   eventlog: EventLogPanel,
