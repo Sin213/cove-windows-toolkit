@@ -52,10 +52,61 @@ fn init_logging() {
     tracing::info!("Cove Windows Toolkit starting -log directory: {}", log_dir.display());
 }
 
+/// Tauri sets the Windows window icon from a single flattened RGBA image, which
+/// the shell then rescales for the taskbar/title bar - that on-the-fly downscale
+/// is what makes the icon look soft even when icon.ico ships crisp dedicated
+/// frames (those only drive the Explorer/installer file icon). Pull the proper
+/// system-sized HICONs straight from our own exe's icon resource (ExtractIconExW
+/// picks the correct 32px/16px frame) and assign them to the window directly.
+#[cfg(target_os = "windows")]
+fn apply_crisp_window_icon(window: &tauri::WebviewWindow) {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ExtractIconExW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SendMessageW, ICON_BIG, ICON_SMALL, WM_SETICON,
+    };
+
+    let hwnd = match window.hwnd() {
+        Ok(h) => h.0 as *mut core::ffi::c_void,
+        Err(_) => return,
+    };
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let mut path: Vec<u16> = exe.as_os_str().encode_wide().collect();
+    path.push(0);
+
+    let mut h_large: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut h_small: *mut core::ffi::c_void = core::ptr::null_mut();
+    unsafe {
+        let n = ExtractIconExW(path.as_ptr(), 0, &mut h_large, &mut h_small, 1);
+        if n == 0 || n == u32::MAX {
+            return;
+        }
+        if !h_large.is_null() {
+            SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, h_large as isize);
+        }
+        if !h_small.is_null() {
+            SendMessageW(hwnd, WM_SETICON, ICON_SMALL as usize, h_small as isize);
+        }
+    }
+}
+
 fn main() {
     init_logging();
 
     tauri::Builder::default()
+        .setup(|_app| {
+            #[cfg(target_os = "windows")]
+            {
+                use tauri::Manager;
+                if let Some(win) = _app.get_webview_window("main") {
+                    apply_crisp_window_icon(&win);
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             // System
             commands::get_system_info,
