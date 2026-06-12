@@ -120,34 +120,52 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
         Ok(r) => r,
         Err(e) => return (false, -1, format!("PTY reader error: {}", e), Vec::new()),
     };
-    drop(pair.slave); // so the reader sees EOF when the child exits
+    drop(pair.slave); // so the pty can close once the child and master are gone
 
+    // IMPORTANT: with a ConPTY the master reader does NOT EOF when the child
+    // exits - it only EOFs once the master (PseudoConsole) is dropped. So read on
+    // a separate thread, wait for the child, then drop the master to unblock and
+    // join the reader. Otherwise this scan thread blocks forever, finish() never
+    // runs, and the buttons stay disabled until the app is restarted.
     // ConPTY output is UTF-8 with VT escapes; keep a bounded window of the most
     // recent output (enough for the current progress line and the final result).
-    let mut acc: Vec<u8> = Vec::new();
-    let mut buf = [0u8; 4096];
-    loop {
-        match reader.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                acc.extend_from_slice(&buf[..n]);
-                if acc.len() > 16384 {
-                    let cut = acc.len() - 16384;
-                    acc.drain(0..cut);
+    let acc = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
+    let key_t = key.to_string();
+    let label_t = label.to_string();
+    let acc_t = acc.clone();
+    let reader_thread = std::thread::spawn(move || {
+        let mut reader = reader;
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let text = {
+                        let mut a = acc_t.lock().unwrap();
+                        a.extend_from_slice(&buf[..n]);
+                        if a.len() > 16384 {
+                            let cut = a.len() - 16384;
+                            a.drain(0..cut);
+                        }
+                        strip_vt(&String::from_utf8_lossy(&a))
+                    };
+                    update(&key_t, &text, base, scale, &label_t);
                 }
-                let text = strip_vt(&String::from_utf8_lossy(&acc));
-                update(key, &text, base, scale, label);
+                Err(_) => break,
             }
-            Err(_) => break,
         }
-    }
+    });
 
     let status = child.wait();
     let code = status.as_ref().map(|s| s.exit_code() as i32).unwrap_or(-1);
     let success = status.as_ref().map(|s| s.success()).unwrap_or(false);
-    drop(pair.master);
+    drop(pair.master); // closes the ConPTY -> the reader thread sees EOF
+    let _ = reader_thread.join();
 
-    let final_text = strip_vt(&String::from_utf8_lossy(&acc));
+    let final_text = {
+        let a = acc.lock().unwrap();
+        strip_vt(&String::from_utf8_lossy(&a))
+    };
     let lines = split_lines(&final_text);
     let summary = summarize(tool, &final_text, code);
     (success, code, summary, lines)
