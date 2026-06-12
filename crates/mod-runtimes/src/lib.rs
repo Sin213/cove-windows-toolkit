@@ -161,9 +161,9 @@ Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','
             if parts.len() == 2 {
                 let name = parts[0].trim();
                 let ver = parts[1].trim().to_string();
-                let arch = if name.contains("x64") { "x64" } else if name.contains("x86") { "x86" } else { "x64" };
+                let arch = if name.contains("x64") { "x64" } else if name.contains("x86") { "x86" } else { "Unknown" };
                 let outdated = is_vcredist_outdated(&ver);
-                let url = if arch == "x64" { VCREDIST_X64_URL } else { VCREDIST_X86_URL };
+                let url = if arch == "x86" { VCREDIST_X86_URL } else { VCREDIST_X64_URL };
                 Some(RuntimeEntry {
                     name: name.to_string(),
                     version: ver,

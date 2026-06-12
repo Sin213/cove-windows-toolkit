@@ -42,12 +42,14 @@ export default function ServicesPanel() {
 
   const handleApply = async (svc: ServiceItem) => {
     try {
-      const res = await invoke<{ success: boolean }>("apply_service_change", { id: svc.id });
+      const res = await invoke<{ success: boolean; message?: string }>("apply_service_change", { id: svc.id });
       if (res.success) {
         setApplied((s) => ({ ...s, [svc.id]: true }));
+      } else {
+        setError(res.message || "Service change failed.");
       }
     } catch (e) {
-      console.error("Service change failed:", e);
+      setError(String(e));
     }
   };
 

@@ -34,7 +34,7 @@ try {
     $count = $searcher.GetTotalHistoryCount()
     if ($count -gt 0) {
         $last = $searcher.QueryHistory(0, 1) | Select-Object -First 1
-        $lastInstall = $last.Date.ToString('o')
+        $lastInstall = [DateTime]::SpecifyKind($last.Date, [DateTimeKind]::Utc).ToString('o')
     } else { $lastInstall = 'Never' }
 } catch { $lastInstall = 'Unknown' }
 

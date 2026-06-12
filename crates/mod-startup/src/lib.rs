@@ -15,37 +15,38 @@ pub fn list_items() -> Vec<StartupItem> {
     
 
     let ps = r#"
-# Registry Run keys (enabled) and our Run_Disabled keys (disabled)
-$runPairs = @(
-    @{ Enabled='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'; Disabled='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run_Disabled' },
-    @{ Enabled='HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'; Disabled='HKLM:\Software\Microsoft\Windows\CurrentVersion\Run_Disabled' }
-)
-foreach ($pair in $runPairs) {
-    if (Test-Path $pair.Enabled) {
-        $props = Get-ItemProperty $pair.Enabled -ErrorAction SilentlyContinue
-        $props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
-            Write-Output "ITEM|$($_.Name)|$($pair.Enabled)|$($_.Value)|true"
-        }
-    }
-    if (Test-Path $pair.Disabled) {
-        $props = Get-ItemProperty $pair.Disabled -ErrorAction SilentlyContinue
-        $props.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
-            Write-Output "ITEM|$($_.Name)|$($pair.Disabled)|$($_.Value)|false"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$enabledKeys = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run','HKLM:\Software\Microsoft\Windows\CurrentVersion\Run')
+$disabledKeys = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run_Disabled','HKLM:\Software\Microsoft\Windows\CurrentVersion\Run_Disabled')
+$startupFolder = [Environment]::GetFolderPath('Startup')
+
+# Emit ENABLED sources first so the Rust first-seen dedup prefers the enabled
+# entry when the same name exists enabled in one hive and disabled in another.
+foreach ($k in $enabledKeys) {
+    if (Test-Path $k) {
+        (Get-ItemProperty $k -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
+            Write-Output "ITEM|$($_.Name)|$k|$($_.Value)|true"
         }
     }
 }
-
-# Startup folder (enabled) and its Disabled subfolder (disabled)
-$startupFolder = [Environment]::GetFolderPath('Startup')
 if (Test-Path $startupFolder) {
     Get-ChildItem $startupFolder -File -ErrorAction SilentlyContinue | ForEach-Object {
         Write-Output "ITEM|$($_.BaseName)|Shell:Startup|$($_.FullName)|true"
     }
-    $disabledFolder = Join-Path $startupFolder 'Disabled'
-    if (Test-Path $disabledFolder) {
-        Get-ChildItem $disabledFolder -File -ErrorAction SilentlyContinue | ForEach-Object {
-            Write-Output "ITEM|$($_.BaseName)|Shell:Startup\Disabled|$($_.FullName)|false"
+}
+
+# Then disabled sources.
+foreach ($k in $disabledKeys) {
+    if (Test-Path $k) {
+        (Get-ItemProperty $k -ErrorAction SilentlyContinue).PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' } | ForEach-Object {
+            Write-Output "ITEM|$($_.Name)|$k|$($_.Value)|false"
         }
+    }
+}
+$disabledFolder = Join-Path $startupFolder 'Disabled'
+if (Test-Path $disabledFolder) {
+    Get-ChildItem $disabledFolder -File -ErrorAction SilentlyContinue | ForEach-Object {
+        Write-Output "ITEM|$($_.BaseName)|Shell:Startup\Disabled|$($_.FullName)|false"
     }
 }
 "#;

@@ -130,8 +130,9 @@ export default function UpdatesPanel() {
           </button>
         </div>
         <p className="wu-hint">
-          Reset stops WU services, clears the update cache (SoftwareDistribution &amp; catroot2),
-          re-registers DLLs, and restarts services. A reboot is recommended after.
+          Reset stops the Windows Update services, renames the update cache
+          (SoftwareDistribution &amp; catroot2) so it rebuilds, and restarts the services.
+          A reboot is recommended after.
         </p>
         {feedback && (
           <div className={`wu-feedback wu-feedback-${feedback.type}`}>

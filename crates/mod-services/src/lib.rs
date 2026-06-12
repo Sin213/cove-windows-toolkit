@@ -70,7 +70,7 @@ fn query_service_start_type(service: &str) -> String {
     
 
     let ps = format!(
-        "try {{ $s = Get-Service '{}' -ErrorAction Stop; $st = (Get-WmiObject Win32_Service -Filter \"Name='{}'\").StartMode; Write-Output $st }} catch {{ Write-Output 'NotFound' }}",
+        "try {{ $s = Get-Service '{}' -ErrorAction Stop; $st = (Get-WmiObject Win32_Service -Filter \"Name='{}'\").StartMode; if ($st -eq 'Auto') {{ $st = 'Automatic' }}; Write-Output $st }} catch {{ Write-Output 'NotFound' }}",
         service, service
     );
 

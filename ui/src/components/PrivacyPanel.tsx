@@ -51,10 +51,17 @@ export default function PrivacyPanel() {
 
   const handleApply = async (tweak: PrivacyTweak) => {
     try {
-      await invoke("apply_tweak", { module: "privacy", id: tweak.id });
-      setApplied((s) => ({ ...s, [tweak.id]: true }));
+      const res = await invoke<{ success: boolean; message?: string }>("apply_tweak", {
+        module: "privacy",
+        id: tweak.id,
+      });
+      if (res.success) {
+        setApplied((s) => ({ ...s, [tweak.id]: true }));
+      } else {
+        setError(res.message || "Failed to apply tweak.");
+      }
     } catch (e) {
-      console.error("Apply failed:", e);
+      setError(String(e));
     }
   };
 

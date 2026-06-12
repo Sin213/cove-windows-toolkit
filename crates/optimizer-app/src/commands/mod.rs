@@ -184,25 +184,38 @@ pub async fn set_dns(preset: String) -> serde_json::Value {
         return serde_json::json!({ "success": true, "stub": true, "message": format!("[stub] Would set DNS to {} ({}, {})", preset, primary, secondary) });
     }
 
-    let script = if preset == "auto" {
-        r#"Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses }; Write-Output 'ok'"#.to_string()
+    // Set-DnsClientServerAddress raises NON-terminating errors that don't set a
+    // non-zero exit code, so trap them and emit an explicit OK/FAIL marker.
+    let inner = if preset == "auto" {
+        "Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ResetServerAddresses".to_string()
     } else {
         format!(
-            r#"Get-NetAdapter | Where-Object {{$_.Status -eq 'Up'}} | ForEach-Object {{ Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('{}','{}') }}; Write-Output 'ok'"#,
+            "Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses @('{}','{}')",
             primary, secondary
         )
     };
+    let script = format!(
+        "$ErrorActionPreference='Stop'; try {{ Get-NetAdapter | Where-Object {{$_.Status -eq 'Up'}} | ForEach-Object {{ {} }}; Write-Output 'OK' }} catch {{ Write-Output ('FAIL|' + $_.Exception.Message) }}",
+        inner
+    );
 
     let output = optimizer_core::silent_cmd("powershell")
         .args(["-NoProfile", "-Command", &script])
         .output();
 
     match output {
-        Ok(o) if o.status.success() => {
-            let label = if preset == "auto" { "Automatic (DHCP)".to_string() } else { format!("{} ({}, {})", preset, primary, secondary) };
-            serde_json::json!({ "success": true, "message": format!("DNS set to {}", label) })
+        Ok(o) => {
+            let out = String::from_utf8_lossy(&o.stdout);
+            let last = out.lines().map(str::trim).filter(|l| !l.is_empty()).last().unwrap_or("");
+            if last == "OK" {
+                let label = if preset == "auto" { "Automatic (DHCP)".to_string() } else { format!("{} ({}, {})", preset, primary, secondary) };
+                serde_json::json!({ "success": true, "message": format!("DNS set to {}", label) })
+            } else if let Some(m) = last.strip_prefix("FAIL|") {
+                serde_json::json!({ "success": false, "message": m.to_string() })
+            } else {
+                serde_json::json!({ "success": false, "message": String::from_utf8_lossy(&o.stderr).trim().to_string() })
+            }
         }
-        Ok(o) => serde_json::json!({ "success": false, "message": String::from_utf8_lossy(&o.stderr).trim().to_string() }),
         Err(e) => serde_json::json!({ "success": false, "message": format!("Failed: {}", e) }),
     }
 }
@@ -265,7 +278,6 @@ $sd = "$env:SystemRoot\SoftwareDistribution"
 $cr = "$env:SystemRoot\System32\catroot2"
 if (Test-Path $sd) { Rename-Item $sd "$sd.bak.$(Get-Date -Format yyyyMMddHHmmss)" -Force -ErrorAction SilentlyContinue; $log += "Renamed SoftwareDistribution" }
 if (Test-Path $cr) { Rename-Item $cr "$cr.bak.$(Get-Date -Format yyyyMMddHHmmss)" -Force -ErrorAction SilentlyContinue; $log += "Renamed catroot2" }
-netsh winsock reset 2>$null | Out-Null; $log += "Reset Winsock"
 foreach ($s in $services) { Start-Service -Name $s -ErrorAction SilentlyContinue; $log += "Started $s" }
 $log -join "`n"
 "#;
@@ -530,7 +542,10 @@ fn apply_visual_tweak_sync(id: &str) -> serde_json::Value {
         // Snapshot the original value before changing it, so undo can restore it.
         save_snapshot(id, t.current_value.as_deref());
         match mod_visual::apply_tweak(&t.registry_path, &t.registry_name, &t.optimized_value) {
-            Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+            Ok(msg) => {
+                append_history("visual", &t.name, &format!("{:?}", t.safety_tier), "committed");
+                serde_json::json!({ "success": true, "message": msg })
+            }
             Err(msg) => serde_json::json!({ "success": false, "message": msg }),
         }
     } else {
@@ -550,7 +565,10 @@ fn undo_visual_tweak_sync(id: &str) -> serde_json::Value {
             ),
         };
         match result {
-            Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+            Ok(msg) => {
+                append_history("visual", &t.name, &format!("{:?}", t.safety_tier), "undone");
+                serde_json::json!({ "success": true, "message": msg })
+            }
             Err(msg) => serde_json::json!({ "success": false, "message": msg }),
         }
     } else {
@@ -706,7 +724,7 @@ fn load_snapshot(id: &str) -> Option<Option<String>> {
 #[cfg(target_os = "windows")]
 fn delete_registry_value(path: &str, name: &str) -> Result<String, String> {
     let ps = format!(
-        "try {{ Remove-ItemProperty -Path 'Registry::{}' -Name '{}' -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ Write-Output $_.Exception.Message }}",
+        "try {{ Remove-ItemProperty -Path 'Registry::{}' -Name '{}' -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ if ($_.Exception.Message -match 'does not exist|cannot find|was not found') {{ Write-Output 'OK' }} else {{ Write-Output $_.Exception.Message }} }}",
         path, name
     );
     let o = optimizer_core::silent_cmd("powershell")
@@ -1252,7 +1270,8 @@ pub async fn get_disk_health() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_disk_space(drive: String) -> serde_json::Value {
-    let report = mod_diskhealth::get_largest_files(&drive);
+    // get_largest_files does a recursive C:\Users scan; keep it off the async runtime thread.
+    let report = tokio::task::spawn_blocking(move || mod_diskhealth::get_largest_files(&drive)).await.unwrap();
     serde_json::to_value(report).unwrap_or_default()
 }
 
@@ -1381,10 +1400,15 @@ fn undo_change_sync(id: i64) -> serde_json::Value {
             Some(t) => undo_visual_tweak_sync(&t.id),
             None => serde_json::json!({ "success": false, "message": format!("Tweak '{}' not found.", name) }),
         },
-        "startup" => match mod_startup::toggle(&name, true) {
-            Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
-            Err(msg) => serde_json::json!({ "success": false, "message": msg }),
-        },
+        "startup" => {
+            // Undo = flip to the opposite of the item's current state (which is the
+            // state the change set it to), rather than always re-enabling.
+            let cur = mod_startup::list_items().into_iter().find(|i| i.name == name).map(|i| i.enabled).unwrap_or(false);
+            match mod_startup::toggle(&name, !cur) {
+                Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+                Err(msg) => serde_json::json!({ "success": false, "message": msg }),
+            }
+        }
         other => serde_json::json!({
             "success": false,
             "message": format!("'{}' changes can't be undone automatically; revert it from its own panel.", other)

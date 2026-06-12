@@ -62,8 +62,8 @@ pub fn get_info() -> PowerInfo {
         info.sleep_minutes = parse_powercfg_timeout(&String::from_utf8_lossy(&o.stdout));
     }
 
-    // Turn-off-hard-disk timeout (disk subgroup)
-    if let Ok(o) = optimizer_core::silent_cmd("powercfg").args(["/query", "SCHEME_CURRENT", "0012ee47-9041-4b5d-9b77-535fba8b1442", "6738e2c4-88ba-4115-9b53-c79b04976b04"]).output() {
+    // Turn-off-hard-disk timeout (disk subgroup, DISKIDLE setting)
+    if let Ok(o) = optimizer_core::silent_cmd("powercfg").args(["/query", "SCHEME_CURRENT", "0012ee47-9041-4b5d-9b77-535fba8b1442", "6738e2c4-e8a5-4a42-b16a-e040e769756e"]).output() {
         info.hdd_sleep_minutes = parse_powercfg_timeout(&String::from_utf8_lossy(&o.stdout));
     }
 

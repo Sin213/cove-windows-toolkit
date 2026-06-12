@@ -65,11 +65,18 @@ pub fn run_speed_test() -> SpeedTestResult {
 $url = 'http://speedtest.tele2.net/10MB.zip'
 $tmp = "$env:TEMP\cove_speedtest.tmp"
 try {
-    $wc = New-Object System.Net.WebClient
+    # HttpWebRequest enforces a connect + read/write timeout so a dead/slow link
+    # can't hang the test (WebClient.DownloadFile has no timeout).
+    $req = [System.Net.HttpWebRequest]::Create($url)
+    $req.Timeout = 15000
+    $req.ReadWriteTimeout = 15000
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $wc.DownloadFile($url, $tmp)
+    $resp = $req.GetResponse()
+    $in = $resp.GetResponseStream()
+    $out = [System.IO.File]::Create($tmp)
+    $in.CopyTo($out)
+    $out.Close(); $in.Close(); $resp.Close()
     $sw.Stop()
-    $wc.Dispose()
     $size = (Get-Item $tmp -ErrorAction SilentlyContinue).Length
     Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     if ($null -eq $size) { $size = 0 }

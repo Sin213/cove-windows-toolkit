@@ -138,7 +138,7 @@ pub fn create_restore_point(description: &str) -> Result<String, String> {
         Ok(format!("Restore point '{}' created successfully.", description))
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("frequency") || stderr.contains("1400") {
+        if stderr.contains("1440") || stderr.contains("frequency") || stderr.to_lowercase().contains("within the past") {
             Err("Windows limits restore point creation to once every 24 hours. A restore point was already created recently.".to_string())
         } else if stderr.contains("disabled") || stderr.contains("ServiceDisabled") {
             Err("System Protection is disabled for this drive. Enable it in System Properties > System Protection, then try again.".to_string())
