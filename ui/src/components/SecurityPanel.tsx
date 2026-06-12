@@ -173,8 +173,8 @@ export default function SecurityPanel() {
             <div className="scan-bar-indet" />
           </div>
           <div className="scan-hint">
-            Windows Defender doesn't report a live percentage — use “Open Windows Security” for its native
-            progress bar. This keeps running if you switch tabs.
+            Windows Defender doesn't report a live percentage, so this shows elapsed time. The scan keeps
+            running even if you switch tabs, and the result appears here when it finishes.
           </div>
         </div>
       )}
