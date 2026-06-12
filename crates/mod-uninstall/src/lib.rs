@@ -137,6 +137,54 @@ fn run_removal(script: &str) -> (bool, String) {
     }
 }
 
+/// Delete a file/folder. After killing any process running from inside it, try a
+/// normal recursive delete; if something is locked (e.g. a shell-extension DLL
+/// loaded by Explorer), schedule it for deletion on the next reboot.
+#[cfg(target_os = "windows")]
+fn remove_file_or_folder(quoted: &str) -> (bool, String) {
+    let script = format!(
+        r#"$t = '{0}'
+Get-Process -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -and $_.Path.StartsWith($t, [System.StringComparison]::OrdinalIgnoreCase) }} | Stop-Process -Force -ErrorAction SilentlyContinue
+try {{
+    Remove-Item -LiteralPath $t -Recurse -Force -ErrorAction Stop
+    Write-Output 'OK'
+}} catch {{
+    try {{
+        $sig = '[DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] public static extern bool MoveFileEx(string a, string b, int f);'
+        $api = Add-Type -MemberDefinition $sig -Name MFE -Namespace CoveWin32 -PassThru
+        $DELAY = 4
+        if (Test-Path -LiteralPath $t -PathType Container) {{
+            Get-ChildItem -LiteralPath $t -Recurse -Force -File -ErrorAction SilentlyContinue | Sort-Object {{ $_.FullName.Length }} -Descending | ForEach-Object {{ [void]$api::MoveFileEx($_.FullName, $null, $DELAY) }}
+            Get-ChildItem -LiteralPath $t -Recurse -Force -Directory -ErrorAction SilentlyContinue | Sort-Object {{ $_.FullName.Length }} -Descending | ForEach-Object {{ [void]$api::MoveFileEx($_.FullName, $null, $DELAY) }}
+        }}
+        [void]$api::MoveFileEx($t, $null, $DELAY)
+        Write-Output 'SCHEDULED'
+    }} catch {{
+        Write-Output ('ERR|' + $_.Exception.Message)
+    }}
+}}"#,
+        quoted
+    );
+    match optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &script]).output() {
+        Ok(o) => {
+            let out = String::from_utf8_lossy(&o.stdout);
+            let last = out.lines().map(str::trim).filter(|s| !s.is_empty()).last().unwrap_or("");
+            if last == "OK" {
+                (true, "Removed".into())
+            } else if last == "SCHEDULED" {
+                (true, "In use — will be removed after you restart Windows.".into())
+            } else if let Some(m) = last.strip_prefix("ERR|") {
+                (false, m.to_string())
+            } else {
+                let err = String::from_utf8_lossy(&o.stderr);
+                let msg = err.lines().map(str::trim).find(|s| !s.is_empty()).unwrap_or("Removal failed").to_string();
+                (false, msg)
+            }
+        }
+        Err(e) => (false, e.to_string()),
+    }
+}
+
 #[cfg(target_os = "windows")]
 pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
     paths.iter().map(|p| {
@@ -166,16 +214,8 @@ pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
                 "Remove-Item -Path 'Registry::{}' -Recurse -Force -ErrorAction Stop", q
             ))
         } else {
-            // File/folder: kill any process running from inside it first (handles
-            // "access denied - file in use"), then remove.
-            run_removal(&format!(
-                "$t = '{0}'; \
-                 Get-Process -ErrorAction SilentlyContinue | \
-                   Where-Object {{ $_.Path -and $_.Path.StartsWith($t, [System.StringComparison]::OrdinalIgnoreCase) }} | \
-                   Stop-Process -Force -ErrorAction SilentlyContinue; \
-                 Remove-Item -LiteralPath $t -Recurse -Force -ErrorAction Stop",
-                q
-            ))
+            // File/folder: remove now, or schedule locked files for reboot.
+            remove_file_or_folder(&q)
         };
         (p.clone(), ok, msg)
     }).collect()

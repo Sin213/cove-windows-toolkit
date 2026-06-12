@@ -300,10 +300,17 @@ export default function UninstallPanel() {
                 <div key={i} className={`result-row ${r.success ? "result-ok" : "result-fail"}`}>
                   <span className="result-icon">{r.success ? "✔" : "✖"}</span>
                   <span className="result-path">{r.path}</span>
-                  {!r.success && <span className="result-msg">{r.message}</span>}
+                  {r.message && r.message !== "Removed" && (
+                    <span className="result-msg">{r.message}</span>
+                  )}
                 </div>
               ))}
             </div>
+            {removeResults.results.some((r) => r.message.toLowerCase().includes("restart")) && (
+              <div className="restart-note">
+                ⟳ Some items were in use and will be removed after you restart Windows.
+              </div>
+            )}
             <div className="done-summary">
               {removeResults.results.filter((r) => r.success).length} of {removeResults.results.length} items removed.
             </div>
