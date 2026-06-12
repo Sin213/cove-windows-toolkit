@@ -55,7 +55,7 @@ export default function SfcPanel() {
   const anyRunning = KEYS.some((k) => scans[k]?.running);
   useEffect(() => {
     if (!anyRunning) return;
-    const id = setInterval(() => KEYS.forEach(poll), 1000);
+    const id = setInterval(() => KEYS.forEach(poll), 250);
     return () => clearInterval(id);
   }, [anyRunning]);
 

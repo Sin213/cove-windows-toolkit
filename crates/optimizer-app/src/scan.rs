@@ -87,10 +87,13 @@ fn run_scan_thread(key: &str) {
     }
 }
 
-/// Run a single tool, updating the shared progress under `key`. `base`/`scale`
-/// map the tool's 0-100% onto a slice of the bar (for the combined run).
+/// Run a single tool inside a pseudo-console, updating the shared progress under
+/// `key`. `base`/`scale` map the tool's 0-100% onto a slice of the bar (combined
+/// run). Using a ConPTY makes SFC/DISM emit their normal smooth console progress
+/// (they suppress it when stdout is a plain redirected pipe).
 #[cfg(target_os = "windows")]
 fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, i32, String, Vec<String>) {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
     use std::io::Read;
 
     let (program, args): (&str, &[&str]) = match tool {
@@ -99,33 +102,40 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
         _ => return (false, -1, "Unknown tool".into(), Vec::new()),
     };
 
-    let spawned = optimizer_core::silent_cmd(program)
-        .args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
+    let sys = native_pty_system();
+    let pair = match sys.openpty(PtySize { rows: 50, cols: 220, pixel_width: 0, pixel_height: 0 }) {
+        Ok(p) => p,
+        Err(e) => return (false, -1, format!("PTY error: {}", e), Vec::new()),
+    };
 
-    let mut child = match spawned {
+    let mut cmd = CommandBuilder::new(program);
+    for a in args {
+        cmd.arg(a);
+    }
+    let mut child = match pair.slave.spawn_command(cmd) {
         Ok(c) => c,
         Err(e) => return (false, -1, format!("Failed to start {}: {}", program, e), Vec::new()),
     };
-
-    let mut out = match child.stdout.take() {
-        Some(o) => o,
-        None => return (false, -1, "No output handle.".into(), Vec::new()),
+    let mut reader = match pair.master.try_clone_reader() {
+        Ok(r) => r,
+        Err(e) => return (false, -1, format!("PTY reader error: {}", e), Vec::new()),
     };
+    drop(pair.slave); // so the reader sees EOF when the child exits
 
-    // sfc.exe emits UTF-16LE; dism is single-byte. Accumulate raw bytes and
-    // re-decode so multi-byte units that straddle reads aren't corrupted.
-    let is_sfc = tool == "sfc";
+    // ConPTY output is UTF-8 with VT escapes; keep a bounded window of the most
+    // recent output (enough for the current progress line and the final result).
     let mut acc: Vec<u8> = Vec::new();
-    let mut buf = [0u8; 8192];
+    let mut buf = [0u8; 4096];
     loop {
-        match out.read(&mut buf) {
+        match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => {
                 acc.extend_from_slice(&buf[..n]);
-                let text = decode(&acc, is_sfc);
+                if acc.len() > 16384 {
+                    let cut = acc.len() - 16384;
+                    acc.drain(0..cut);
+                }
+                let text = strip_vt(&String::from_utf8_lossy(&acc));
                 update(key, &text, base, scale, label);
             }
             Err(_) => break,
@@ -133,9 +143,11 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
     }
 
     let status = child.wait();
-    let code = status.as_ref().ok().and_then(|s| s.code()).unwrap_or(-1);
+    let code = status.as_ref().map(|s| s.exit_code() as i32).unwrap_or(-1);
     let success = status.as_ref().map(|s| s.success()).unwrap_or(false);
-    let final_text = decode(&acc, is_sfc);
+    drop(pair.master);
+
+    let final_text = strip_vt(&String::from_utf8_lossy(&acc));
     let lines = split_lines(&final_text);
     let summary = summarize(tool, &final_text, code);
     (success, code, summary, lines)
@@ -146,17 +158,43 @@ fn run_scan_thread(key: &str) {
     finish(key, true, 0, "[stub] scan completed (not on Windows).", vec!["[stub] scan output".into()]);
 }
 
-fn decode(bytes: &[u8], utf16: bool) -> String {
-    if utf16 {
-        let even = bytes.len() & !1;
-        let units: Vec<u16> = bytes[..even]
-            .chunks_exact(2)
-            .map(|c| u16::from_le_bytes([c[0], c[1]]))
-            .collect();
-        String::from_utf16_lossy(&units)
-    } else {
-        String::from_utf8_lossy(bytes).to_string()
+/// Strip ANSI/VT escape sequences (cursor moves, colors, OSC) and NULs, leaving
+/// the plain text so percent/phrase parsing works on ConPTY output.
+#[cfg(target_os = "windows")]
+fn strip_vt(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(chars.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\u{1b}' {
+            i += 1;
+            if i < chars.len() && chars[i] == '[' {
+                i += 1;
+                while i < chars.len() && !chars[i].is_ascii_alphabetic() {
+                    i += 1;
+                }
+                if i < chars.len() {
+                    i += 1; // consume the final command letter
+                }
+            } else if i < chars.len() && chars[i] == ']' {
+                while i < chars.len() && chars[i] != '\u{7}' {
+                    i += 1;
+                }
+                if i < chars.len() {
+                    i += 1;
+                }
+            } else if i < chars.len() {
+                i += 1;
+            }
+        } else if c == '\u{0}' {
+            i += 1;
+        } else {
+            out.push(c);
+            i += 1;
+        }
     }
+    out
 }
 
 fn split_lines(text: &str) -> Vec<String> {

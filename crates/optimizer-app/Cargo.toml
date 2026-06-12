@@ -41,5 +41,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 directories = "6"
 
+# Run SFC/DISM through a pseudo-console so they emit their normal smooth
+# console progress (which they suppress when stdout is a plain pipe).
+[target.'cfg(windows)'.dependencies]
+portable-pty = "0.8"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
