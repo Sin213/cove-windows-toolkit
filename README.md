@@ -6,10 +6,10 @@ A desktop toolkit built for tech support teams to diagnose and optimize Windows 
 
 Grab the latest build from the [Releases page](https://github.com/Sin213/cove-windows-toolkit/releases/latest):
 
-- **`Cove-Windows-Toolkit-{version}-Setup.exe`** — guided installer with a Start-menu shortcut and uninstaller.
-- **`Cove-Windows-Toolkit-{version}-Portable.exe`** — single file, no install; just run it.
+- **`Cove-Windows-Toolkit-{version}-Setup.exe`** - guided installer with a Start-menu shortcut and uninstaller.
+- **`Cove-Windows-Toolkit-{version}-Portable.exe`** - single file, no install; just run it.
 
-Requires Windows 10/11. The app runs elevated (administrator) — accept the UAC prompt so diagnostics and repairs can reach system data. Optionally verify your download against `checksums-sha256.txt`.
+Requires Windows 10/11. The app runs elevated (administrator) - accept the UAC prompt so diagnostics and repairs can reach system data. Optionally verify your download against `checksums-sha256.txt`.
 
 ## What It Does
 
