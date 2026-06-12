@@ -2,6 +2,15 @@
 
 A desktop toolkit built for tech support teams to diagnose and optimize Windows machines. Built with Tauri v2 (Rust backend + React frontend).
 
+## Download
+
+Grab the latest build from the [Releases page](https://github.com/Sin213/cove-windows-toolkit/releases/latest):
+
+- **`Cove-Windows-Toolkit-{version}-Setup.exe`** — guided installer with a Start-menu shortcut and uninstaller.
+- **`Cove-Windows-Toolkit-{version}-Portable.exe`** — single file, no install; just run it.
+
+Requires Windows 10/11. The app runs elevated (administrator) — accept the UAC prompt so diagnostics and repairs can reach system data. Optionally verify your download against `checksums-sha256.txt`.
+
 ## What It Does
 
 **Optimize** - Apply safe, reversible tweaks to improve performance:
@@ -71,9 +80,9 @@ The app opens with a browser-based mock backend for UI development. When running
 cargo tauri build
 ```
 
-Output:
-- `crates/optimizer-app/target/release/bundle/nsis/*.exe` - NSIS installer
-- `crates/optimizer-app/target/release/optimizer-app.exe` - Standalone portable exe
+Output (the workspace target lives at the repo root):
+- `target/release/bundle/nsis/*.exe` - NSIS installer
+- `target/release/optimizer-app.exe` - Standalone portable exe
 
 ## Project Structure
 
@@ -114,11 +123,11 @@ cove-windows-toolkit/
 
 ## Releases
 
-Releases are built via GitHub Actions. Push a tag to trigger:
+Releases are built via GitHub Actions. Push a `v*` tag to trigger:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 Or run manually from the Actions tab with a version number.
