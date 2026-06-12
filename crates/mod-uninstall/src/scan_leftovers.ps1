@@ -1,11 +1,14 @@
 
 $leftovers = @()
 
-# Build search terms from the program name + publisher.
+# Build search terms from the program name + publisher. Generic vendor/OS words
+# (e.g. "Microsoft", "Windows", "Intel") must NOT become search terms - they would
+# match core OS folders/keys/services and offer them for deletion.
+$generic = @('microsoft','windows','intel','google','nvidia','amd','realtek','common','program','programs','corporation','corp','inc','llc','ltd','gmbh','system','systems','update','updater','app','apps','data','user','default','driver','drivers','software','technologies','technology','solutions','x64','x86','win32','win64','the')
 $terms = @($name)
-if ($publisher -and $publisher -ne $name) { $terms += $publisher }
+if ($publisher -and $publisher -ne $name -and ($generic -notcontains $publisher.ToLower())) { $terms += $publisher }
 $firstWord = ($name -split '\s')[0]
-if ($firstWord.Length -ge 4 -and $firstWord -ne $name) { $terms += $firstWord }
+if ($firstWord.Length -ge 4 -and $firstWord -ne $name -and ($generic -notcontains $firstWord.ToLower())) { $terms += $firstWord }
 
 # Match on WORD BOUNDARIES so a term like "Cove" matches "cove-nexus" but not
 # unrelated words like "Auto-Discovery" (dis-COVE-ry) - matching that loosely
@@ -107,6 +110,27 @@ foreach ($l in $leftovers) {
         $deduped += $l
     }
 }
+
+# --- Safety net: never offer to remove protected Windows components, even if a
+# term happened to match one (e.g. Defender services run from ProgramData, so the
+# %SystemRoot% guard alone misses them). ---
+$protSvc = @('windefend','wdnissvc','mdcoresvc','sense','wscsvc','securityhealthservice','wdfilter','wdboot','webthreatdefsvc','mpssvc','wuauserv','bits','cryptsvc','trustedinstaller','msiserver','winmgmt','eventlog','schedule','dnscache','nsi','dcomlaunch','rpcss','lanmanserver','lanmanworkstation','wlansvc','dhcp','dot3svc','winhttpautoproxysvc','sysmain','spooler','samss','netlogon','gpsvc','profsvc')
+$protDir = @("$env:ProgramData\Microsoft","$env:LOCALAPPDATA\Microsoft","$env:APPDATA\Microsoft","$env:ProgramFiles\Common Files","${env:ProgramFiles(x86)}\Common Files","$env:ProgramFiles\Windows Defender","$env:ProgramFiles\WindowsApps","$env:ProgramData\Package Cache","$env:SystemRoot","$env:ProgramData\Microsoft\Windows Defender","$env:ProgramData\Microsoft\Windows","$env:LOCALAPPDATA\Packages") | ForEach-Object { $_.TrimEnd('\').ToLower() }
+$protReg = @('hklm\software\microsoft','hklm\software\wow6432node\microsoft','hkcu\software\microsoft','hklm\software\windows','hklm\software\wow6432node\windows','hklm\software\policies','hkcu\software\policies','hklm\software\classes','hkcu\software\classes')
+function Test-Protected($l) {
+    switch ($l.category) {
+        'Service' {
+            $svc = (($l.path -replace '^Service: ','') -replace ' \(.*$','').Trim().ToLower()
+            return ($protSvc -contains $svc)
+        }
+        'Registry' { return ($protReg -contains $l.path.TrimEnd('\').ToLower()) }
+        default {
+            $pl = $l.path.TrimEnd('\').ToLower()
+            return ($protDir -contains $pl)
+        }
+    }
+}
+$deduped = @($deduped | Where-Object { -not (Test-Protected $_) })
 
 # $deduped holds hashtables, whose keys Measure-Object can't sum; total manually.
 $totalSize = [long]0

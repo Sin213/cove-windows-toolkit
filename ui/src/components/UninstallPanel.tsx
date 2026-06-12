@@ -107,7 +107,15 @@ export default function UninstallPanel() {
         registryKey: selected.registry_key,
       });
       setScan(result);
-      setCheckedLeftovers(new Set(result.leftovers.map((l) => l.path)));
+      // Pre-check only files/registry; require a conscious choice to remove
+      // services and scheduled tasks.
+      setCheckedLeftovers(
+        new Set(
+          result.leftovers
+            .filter((l) => l.category === "Folder" || l.category === "Registry")
+            .map((l) => l.path)
+        )
+      );
       setStep("leftovers");
     } catch (e) {
       setFeedback(`Scan error: ${e}`);

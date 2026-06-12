@@ -7,6 +7,7 @@ interface DefenderStatus {
   definitions_age_days: number;
   last_scan: string;
   last_scan_type: string;
+  known: boolean;
 }
 
 interface Finding {
@@ -130,14 +131,26 @@ export default function SecurityPanel() {
       <div className="defender-status">
         <div className="defender-stat">
           <span className="defender-stat-label">Real-time Protection</span>
-          <span className={`defender-stat-value ${d.real_time_enabled ? "status-good" : "status-bad"}`}>
-            {d.real_time_enabled ? "ON" : "OFF"}
+          <span
+            className={`defender-stat-value ${
+              !d.known ? "status-warn" : d.real_time_enabled ? "status-good" : "status-bad"
+            }`}
+          >
+            {!d.known ? "Unknown" : d.real_time_enabled ? "ON" : "OFF"}
           </span>
         </div>
         <div className="defender-stat">
           <span className="defender-stat-label">Definitions</span>
-          <span className={`defender-stat-value ${d.definitions_age_days > 3 ? "status-warn" : "status-good"}`}>
-            {d.definitions_age_days === 0 ? "Up to date" : `${d.definitions_age_days} day${d.definitions_age_days !== 1 ? "s" : ""} old`}
+          <span
+            className={`defender-stat-value ${
+              !d.known ? "status-warn" : d.definitions_age_days > 3 ? "status-warn" : "status-good"
+            }`}
+          >
+            {!d.known
+              ? "Unknown"
+              : d.definitions_age_days === 0
+                ? "Up to date"
+                : `${d.definitions_age_days} day${d.definitions_age_days !== 1 ? "s" : ""} old`}
           </span>
         </div>
         <div className="defender-stat">

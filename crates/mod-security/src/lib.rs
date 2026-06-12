@@ -6,6 +6,9 @@ pub struct DefenderStatus {
     pub definitions_age_days: u32,
     pub last_scan: String,
     pub last_scan_type: String,
+    /// False when the Defender query failed, so the UI shows "Unknown" instead of
+    /// fabricating a reassuring "Protection ON / Up to date".
+    pub known: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -46,21 +49,22 @@ try {
     $age = ((Get-Date) - $s.AntivirusSignatureLastUpdated).Days
     $scanTime = if ($s.LastQuickScanEndTime) { $s.LastQuickScanEndTime.ToString('o') } else { 'Never' }
     $scanType = if (-not $s.LastQuickScanEndTime -and -not $s.LastFullScanEndTime) { 'None' } elseif ($s.LastQuickScanEndTime -gt $s.LastFullScanEndTime) { 'Quick' } else { 'Full' }
-    Write-Output "$($s.RealTimeProtectionEnabled)|$age|$scanTime|$scanType"
+    Write-Output "OK|$($s.RealTimeProtectionEnabled)|$age|$scanTime|$scanType"
 } catch {
-    Write-Output 'True|0|Unknown|Unknown'
+    Write-Output 'ERR'
 }
 "#;
 
     if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.split('|').collect();
-        if parts.len() >= 4 {
+        if parts.len() >= 5 && parts[0] == "OK" {
             return DefenderStatus {
-                real_time_enabled: parts[0].eq_ignore_ascii_case("true"),
-                definitions_age_days: parts[1].parse().unwrap_or(0),
-                last_scan: parts[2].to_string(),
-                last_scan_type: parts[3].to_string(),
+                real_time_enabled: parts[1].eq_ignore_ascii_case("true"),
+                definitions_age_days: parts[2].parse().unwrap_or(0),
+                last_scan: parts[3].to_string(),
+                last_scan_type: parts[4].to_string(),
+                known: true,
             };
         }
     }
@@ -71,6 +75,7 @@ try {
         definitions_age_days: 0,
         last_scan: "Unknown".into(),
         last_scan_type: "Unknown".into(),
+        known: false,
     }
 }
 
@@ -81,6 +86,7 @@ pub fn get_defender_status() -> DefenderStatus {
         definitions_age_days: 0,
         last_scan: "Unknown".into(),
         last_scan_type: "Unknown".into(),
+        known: false,
     }
 }
 

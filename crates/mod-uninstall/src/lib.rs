@@ -137,6 +137,49 @@ fn run_removal(script: &str) -> (bool, String) {
     }
 }
 
+/// Hard denylist so the remover can never delete a core Windows component, even
+/// if the scanner regresses or a path is passed directly.
+#[cfg(target_os = "windows")]
+fn is_protected_leftover(p: &str) -> bool {
+    if let Some(svc) = p.strip_prefix("Service: ") {
+        let name = svc.split(" (").next().unwrap_or(svc).trim().to_lowercase();
+        const PROT: &[&str] = &[
+            "windefend", "wdnissvc", "mdcoresvc", "sense", "wscsvc", "securityhealthservice",
+            "wdfilter", "wdboot", "webthreatdefsvc", "mpssvc", "wuauserv", "bits", "cryptsvc",
+            "trustedinstaller", "msiserver", "winmgmt", "eventlog", "schedule", "dnscache", "nsi",
+            "dcomlaunch", "rpcss", "lanmanserver", "lanmanworkstation", "wlansvc", "dhcp", "dot3svc",
+            "winhttpautoproxysvc", "sysmain", "spooler", "samss", "netlogon", "gpsvc", "profsvc",
+        ];
+        return PROT.contains(&name.as_str());
+    }
+    let norm = p.trim_end_matches('\\').to_lowercase();
+    if p.starts_with("HK") {
+        const PROT_REG: &[&str] = &[
+            "hklm\\software\\microsoft", "hklm\\software\\wow6432node\\microsoft",
+            "hkcu\\software\\microsoft", "hklm\\software\\windows",
+            "hklm\\software\\wow6432node\\windows", "hklm\\software\\policies",
+            "hkcu\\software\\policies", "hklm\\software\\classes", "hkcu\\software\\classes",
+        ];
+        return PROT_REG.contains(&norm.as_str());
+    }
+    let env = |k: &str| std::env::var(k).unwrap_or_default().to_lowercase();
+    let (pf, pd, lad, ad, sysroot) = (
+        env("ProgramFiles"), env("ProgramData"), env("LOCALAPPDATA"), env("APPDATA"), env("SystemRoot"),
+    );
+    let protected = [
+        format!("{}\\microsoft", pd),
+        format!("{}\\microsoft", lad),
+        format!("{}\\microsoft", ad),
+        format!("{}\\common files", pf),
+        format!("{}\\windows defender", pf),
+        format!("{}\\windowsapps", pf),
+        format!("{}\\package cache", pd),
+        format!("{}\\packages", lad),
+        sysroot,
+    ];
+    protected.iter().any(|d| !d.is_empty() && norm == d.trim_end_matches('\\'))
+}
+
 /// Delete a file/folder. After killing any process running from inside it, try a
 /// normal recursive delete; if something is locked (e.g. a shell-extension DLL
 /// loaded by Explorer), schedule it for deletion on the next reboot.
@@ -188,6 +231,11 @@ try {{
 #[cfg(target_os = "windows")]
 pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
     paths.iter().map(|p| {
+        // Final backstop: refuse to touch protected Windows components even if the
+        // scanner (or a caller) hands us one.
+        if is_protected_leftover(p) {
+            return (p.clone(), false, "Refused: this is a protected Windows component.".to_string());
+        }
         let q = p.replace('\'', "''");
         let (ok, msg) = if let Some(svc) = p.strip_prefix("Service: ") {
             // Encoded as "Service: <ServiceName> (<DisplayName>)" - stop then delete by name.
