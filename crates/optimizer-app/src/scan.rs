@@ -28,9 +28,29 @@ fn scans() -> &'static Mutex<HashMap<String, ScanProgress>> {
     SCANS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Guarantees a scan is marked finished even if the worker panics, so `running`
+/// never stays stuck true (which would disable the buttons until app restart).
+struct FinishGuard<'a>(&'a str);
+impl Drop for FinishGuard<'_> {
+    fn drop(&mut self) {
+        let mut g = scans().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(p) = g.get_mut(self.0) {
+            if p.running {
+                p.running = false;
+                p.done = true;
+                p.success = false;
+                p.phase = "Failed (internal error)".into();
+                if p.summary.is_empty() {
+                    p.summary = "The scan ended unexpectedly.".into();
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub fn get_scan_progress(tool: String) -> ScanProgress {
-    scans().lock().unwrap().get(&tool).cloned().unwrap_or_default()
+    scans().lock().unwrap_or_else(|e| e.into_inner()).get(&tool).cloned().unwrap_or_default()
 }
 
 #[tauri::command]
@@ -39,7 +59,7 @@ pub fn start_scan(tool: String) -> serde_json::Value {
         return serde_json::json!({ "success": false, "message": "Unknown tool" });
     }
     {
-        let mut g = scans().lock().unwrap();
+        let mut g = scans().lock().unwrap_or_else(|e| e.into_inner());
         if let Some(p) = g.get(&tool) {
             if p.running {
                 return serde_json::json!({ "success": false, "message": "A scan is already running." });
@@ -66,6 +86,7 @@ pub fn start_scan(tool: String) -> serde_json::Value {
 
 #[cfg(target_os = "windows")]
 fn run_scan_thread(key: &str) {
+    let _guard = FinishGuard(key); // force-finish on panic
     match key {
         "dism" => {
             let r = run_one("dism", key, 0.0, 1.0, "");
@@ -140,12 +161,14 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
     let reader_thread = std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
+        let mut errs = 0u32;
         loop {
             match reader.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) => break, // true EOF (master dropped)
                 Ok(n) => {
+                    errs = 0;
                     let text = {
-                        let mut a = acc_t.lock().unwrap();
+                        let mut a = acc_t.lock().unwrap_or_else(|e| e.into_inner());
                         a.extend_from_slice(&buf[..n]);
                         if a.len() > 16384 {
                             let cut = a.len() - 16384;
@@ -155,7 +178,15 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
                     };
                     update(&key_t, &text, base, scale, &label_t);
                 }
-                Err(_) => break,
+                // Keep draining through transient errors so the child never blocks
+                // on a full pipe (which would hang child.wait() forever).
+                Err(_) => {
+                    errs += 1;
+                    if errs > 200 {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
             }
         }
     });
@@ -167,7 +198,7 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
     let _ = reader_thread.join();
 
     let final_text = {
-        let a = acc.lock().unwrap();
+        let a = acc.lock().unwrap_or_else(|e| e.into_inner());
         strip_vt(&String::from_utf8_lossy(&a))
     };
     let lines = split_lines(&final_text);
@@ -261,11 +292,18 @@ fn update(key: &str, text: &str, base: f32, scale: f32, label: &str) {
     let segs = split_lines(text);
     let tail: Vec<String> = segs.iter().rev().take(14).rev().cloned().collect();
     let line = segs.last().cloned().unwrap_or_default();
-    let pct = last_percent(text);
-    let mut g = scans().lock().unwrap();
+    // Parse the percent from only the most recent lines, not the whole 16 KB
+    // window, so a stale higher percentage can't make the bar jump/stick.
+    let recent = segs.iter().rev().take(3).rev().cloned().collect::<Vec<_>>().join("\n");
+    let pct = last_percent(&recent);
+    let mut g = scans().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(p) = g.get_mut(key) {
         if let Some(v) = pct {
-            p.percent = base + v * scale;
+            // never let the per-tool bar segment go backwards within a phase
+            let target = base + v * scale;
+            if target >= p.percent || target < base {
+                p.percent = target;
+            }
         }
         if !line.is_empty() {
             p.phase = if label.is_empty() { line } else { format!("{} · {}", label, line) };
@@ -276,7 +314,7 @@ fn update(key: &str, text: &str, base: f32, scale: f32, label: &str) {
 
 fn finish(tool: &str, success: bool, code: i32, summary: &str, lines: Vec<String>) {
     let tail: Vec<String> = lines.iter().rev().take(14).rev().cloned().collect();
-    let mut g = scans().lock().unwrap();
+    let mut g = scans().lock().unwrap_or_else(|e| e.into_inner());
     let p = g.entry(tool.to_string()).or_default();
     p.running = false;
     p.done = true;
@@ -307,12 +345,14 @@ fn summarize(tool: &str, output: &str, code: i32) -> String {
         } else {
             "SFC scan completed.".into()
         }
+    } else if lower.contains("the component store has been repaired") {
+        // Check repaired BEFORE the generic "completed successfully" - repaired
+        // output contains both lines.
+        "Corruption was found and successfully repaired.".into()
     } else if lower.contains("no component store corruption")
         || lower.contains("the restore operation completed successfully")
     {
         "Component store is healthy. No repairs needed.".into()
-    } else if lower.contains("the component store has been repaired") {
-        "Corruption was found and successfully repaired.".into()
     } else if lower.contains("source files could not be found") {
         "Corruption found but repair files are unavailable. Run Windows Update first, then retry.".into()
     } else if code != 0 {

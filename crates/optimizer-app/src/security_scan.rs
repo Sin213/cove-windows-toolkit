@@ -38,9 +38,28 @@ fn slot_for(kind: &str) -> &'static str {
     if kind == "heuristic" { "heuristic" } else { "defender" }
 }
 
+/// Force-finish a security scan on worker panic so `running` never sticks true.
+struct SecFinishGuard(String);
+impl Drop for SecFinishGuard {
+    fn drop(&mut self) {
+        let mut g = states().lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(st) = g.get_mut(&self.0) {
+            if st.running {
+                st.running = false;
+                st.done = true;
+                st.success = false;
+                st.phase = "Failed (internal error)".into();
+                if st.message.is_empty() {
+                    st.message = "The scan ended unexpectedly.".into();
+                }
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub fn get_security_scan(slot: String) -> SecScanState {
-    let g = states().lock().unwrap();
+    let g = states().lock().unwrap_or_else(|e| e.into_inner());
     let mut s = g.get(&slot).cloned().unwrap_or_default();
     if s.running {
         if let Some(start) = s.start {
@@ -54,7 +73,7 @@ pub fn get_security_scan(slot: String) -> SecScanState {
 pub fn start_security_scan(kind: String) -> serde_json::Value {
     let slot = slot_for(&kind);
     {
-        let mut g = states().lock().unwrap();
+        let mut g = states().lock().unwrap_or_else(|e| e.into_inner());
         if let Some(s) = g.get(slot) {
             if s.running {
                 return serde_json::json!({ "success": false, "message": "A scan is already running." });
@@ -73,6 +92,7 @@ pub fn start_security_scan(kind: String) -> serde_json::Value {
         g.insert(slot.to_string(), st);
     }
     std::thread::spawn(move || {
+        let _guard = SecFinishGuard(slot_for(&kind).to_string());
         if slot_for(&kind) == "heuristic" {
             run_heuristic_thread();
         } else {
@@ -149,7 +169,7 @@ fn run_defender_thread(_kind: &str) {
 }
 
 fn finish_defender(success: bool, threats: u32, message: &str) {
-    let mut g = states().lock().unwrap();
+    let mut g = states().lock().unwrap_or_else(|e| e.into_inner());
     let st = g.entry("defender".to_string()).or_default();
     if let Some(start) = st.start {
         st.elapsed_secs = start.elapsed().as_secs();
@@ -164,7 +184,7 @@ fn finish_defender(success: bool, threats: u32, message: &str) {
 
 fn run_heuristic_thread() {
     let result = mod_security::run_heuristics_with_progress(|step, total, label| {
-        let mut g = states().lock().unwrap();
+        let mut g = states().lock().unwrap_or_else(|e| e.into_inner());
         if let Some(st) = g.get_mut("heuristic") {
             st.step = step;
             st.total = total;
@@ -176,7 +196,7 @@ fn run_heuristic_thread() {
     let count = result.findings.len() as u32;
     let findings = serde_json::to_value(&result.findings).unwrap_or_else(|_| serde_json::json!([]));
 
-    let mut g = states().lock().unwrap();
+    let mut g = states().lock().unwrap_or_else(|e| e.into_inner());
     let st = g.entry("heuristic".to_string()).or_default();
     if let Some(start) = st.start {
         st.elapsed_secs = start.elapsed().as_secs();
