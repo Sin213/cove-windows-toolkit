@@ -1,6 +1,21 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./NetDiagPanel.css";
+
+// Commands that change system network state and require a reboot — gate behind a confirm.
+const CONFIRM_COMMANDS: Record<string, { title: string; message: string }> = {
+  reset_winsock: {
+    title: "Reset Winsock catalog",
+    message:
+      "This resets the Windows socket catalog to defaults, removing any layered service providers. A reboot is required afterward, and some VPN or proxy software may need to be reinstalled. Continue?",
+  },
+  reset_tcp: {
+    title: "Reset TCP/IP stack",
+    message:
+      "This rewrites the TCP/IP stack to its default configuration. A reboot is required afterward and current network settings may be reset. Continue?",
+  },
+};
 
 interface Adapter {
   name: string;
@@ -75,6 +90,7 @@ export default function NetDiagPanel() {
   const [cmdOutput, setCmdOutput] = useState<string | null>(null);
   const [speedTesting, setSpeedTesting] = useState(false);
   const [speedResult, setSpeedResult] = useState<SpeedTestResult | null>(null);
+  const [pendingCmd, setPendingCmd] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -255,7 +271,9 @@ export default function NetDiagPanel() {
             <button
               key={c.id}
               className="net-cmd-btn"
-              onClick={() => handleCommand(c.id)}
+              onClick={() =>
+                CONFIRM_COMMANDS[c.id] ? setPendingCmd(c.id) : handleCommand(c.id)
+              }
               disabled={runningCmd !== null}
             >
               <span className="cmd-icon">{c.icon}</span>
@@ -304,6 +322,18 @@ export default function NetDiagPanel() {
         </div>
       </div>
 
+      <ConfirmDialog
+        open={pendingCmd !== null}
+        safetyTier="Yellow"
+        title={pendingCmd ? CONFIRM_COMMANDS[pendingCmd]?.title ?? "" : ""}
+        message={pendingCmd ? CONFIRM_COMMANDS[pendingCmd]?.message ?? "" : ""}
+        onCancel={() => setPendingCmd(null)}
+        onConfirm={() => {
+          const cmd = pendingCmd;
+          setPendingCmd(null);
+          if (cmd) handleCommand(cmd);
+        }}
+      />
     </div>
   );
 }

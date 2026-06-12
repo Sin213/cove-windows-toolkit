@@ -11,4 +11,3 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
-rusqlite = { version = "0.34", features = ["bundled"] }

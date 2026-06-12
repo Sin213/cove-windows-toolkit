@@ -209,15 +209,6 @@ const MOCKS: Record<string, unknown> = {
       current_value: "1",
       optimized_value: "0",
     },
-    {
-      id: "visual.smooth_scroll",
-      name: "Disable Smooth Scrolling",
-      description: "Turn off smooth scrolling in lists",
-      category: "Visual Effects",
-      safety_tier: "Green",
-      current_value: "1",
-      optimized_value: "0",
-    },
   ],
 
   // ── Privacy Tweaks ───────────────────────────────────────────────────

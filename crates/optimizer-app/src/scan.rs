@@ -141,7 +141,7 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
         Ok(c) => c,
         Err(e) => return (false, -1, format!("Failed to start {}: {}", program, e), Vec::new()),
     };
-    let mut reader = match pair.master.try_clone_reader() {
+    let reader = match pair.master.try_clone_reader() {
         Ok(r) => r,
         Err(e) => return (false, -1, format!("PTY reader error: {}", e), Vec::new()),
     };

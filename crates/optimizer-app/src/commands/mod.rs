@@ -26,6 +26,16 @@ pub fn get_system_info() -> SystemInfo {
     }
 }
 
+/// Graceful fallback when a `spawn_blocking` task panics: instead of `.unwrap()`
+/// poisoning the invoke (which surfaces to the UI as an unhandled rejection with
+/// no message), log it and return a structured error the panels already render.
+fn join_fallback() -> serde_json::Value {
+    serde_json::json!({
+        "success": false,
+        "message": "The operation failed unexpectedly (internal error). Please try again."
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Visual effects
 // ---------------------------------------------------------------------------
@@ -50,26 +60,12 @@ pub async fn get_visual_tweaks() -> Vec<serde_json::Value> {
 
 #[tauri::command]
 pub async fn apply_visual_tweak(id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || apply_visual_tweak_sync(&id)).await.unwrap()
-}
-
-#[tauri::command]
-pub async fn apply_all_visual_tweaks() -> serde_json::Value {
-    tokio::task::spawn_blocking(|| {
-        let tweaks = mod_visual::get_tweaks();
-        let mut applied = 0;
-        for t in &tweaks {
-            if mod_visual::apply_tweak(&t.registry_path, &t.registry_name, &t.optimized_value).is_ok() {
-                applied += 1;
-            }
-        }
-        serde_json::json!({ "success": true, "message": format!("Applied {} visual tweaks", applied), "count": applied })
-    }).await.unwrap()
+    tokio::task::spawn_blocking(move || apply_visual_tweak_sync(&id)).await.unwrap_or_else(|_| join_fallback())
 }
 
 #[tauri::command]
 pub async fn undo_visual_tweak(id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || undo_visual_tweak_sync(&id)).await.unwrap()
+    tokio::task::spawn_blocking(move || undo_visual_tweak_sync(&id)).await.unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -78,11 +74,15 @@ pub async fn undo_visual_tweak(id: String) -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_health_report() -> serde_json::Value {
-    let report = tokio::task::spawn_blocking(|| mod_health::quick_scan()).await.unwrap();
-    serde_json::json!({
-        "score": report.score,
-        "findings": report.findings,
+    tokio::task::spawn_blocking(|| {
+        let report = mod_health::quick_scan();
+        serde_json::json!({
+            "score": report.score,
+            "findings": report.findings,
+        })
     })
+    .await
+    .unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -91,8 +91,9 @@ pub async fn get_health_report() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_privacy_tweaks() -> serde_json::Value {
-    let tweaks = tokio::task::spawn_blocking(|| mod_privacy::get_tweaks()).await.unwrap();
-    serde_json::to_value(tweaks).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_privacy::get_tweaks()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -101,8 +102,9 @@ pub async fn get_privacy_tweaks() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_services_tweaks() -> serde_json::Value {
-    let tweaks = tokio::task::spawn_blocking(|| mod_services::get_tweaks()).await.unwrap();
-    serde_json::to_value(tweaks).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_services::get_tweaks()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -111,8 +113,9 @@ pub async fn get_services_tweaks() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_startup_items() -> serde_json::Value {
-    let items = tokio::task::spawn_blocking(|| mod_startup::list_items()).await.unwrap();
-    serde_json::to_value(items).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_startup::list_items()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -121,8 +124,9 @@ pub async fn get_startup_items() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_cleanup_targets() -> serde_json::Value {
-    let targets = tokio::task::spawn_blocking(|| mod_cleanup::scan_targets()).await.unwrap();
-    serde_json::to_value(targets).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_cleanup::scan_targets()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -131,8 +135,9 @@ pub async fn get_cleanup_targets() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_power_info() -> serde_json::Value {
-    let info = tokio::task::spawn_blocking(|| mod_power::get_info()).await.unwrap();
-    serde_json::to_value(info).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_power::get_info()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -141,8 +146,9 @@ pub async fn get_power_info() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_event_log_summary() -> serde_json::Value {
-    let report = tokio::task::spawn_blocking(|| mod_eventlog::get_summary()).await.unwrap();
-    serde_json::to_value(report).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_eventlog::get_summary()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -151,8 +157,9 @@ pub async fn get_event_log_summary() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_bsod_dumps() -> serde_json::Value {
-    let dumps = tokio::task::spawn_blocking(|| mod_bsod::scan_dumps()).await.unwrap();
-    serde_json::to_value(dumps).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_bsod::scan_dumps()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -161,8 +168,9 @@ pub async fn get_bsod_dumps() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_network_diagnostics() -> serde_json::Value {
-    let report = tokio::task::spawn_blocking(|| mod_netdiag::run_diagnostics()).await.unwrap();
-    serde_json::to_value(report).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_netdiag::run_diagnostics()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -260,8 +268,9 @@ pub async fn run_network_command(command: String) -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_update_status() -> serde_json::Value {
-    let status = tokio::task::spawn_blocking(|| mod_updates::get_status()).await.unwrap();
-    serde_json::to_value(status).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_updates::get_status()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -338,7 +347,7 @@ pub async fn generate_report() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn export_report() -> serde_json::Value {
-    tokio::task::spawn_blocking(|| export_report_sync()).await.unwrap()
+    tokio::task::spawn_blocking(export_report_sync).await.unwrap_or_else(|_| join_fallback())
 }
 
 fn export_report_sync() -> serde_json::Value {
@@ -469,8 +478,9 @@ fn export_report_sync() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn run_speed_test() -> serde_json::Value {
-    let result = tokio::task::spawn_blocking(mod_netdiag::run_speed_test).await.unwrap();
-    serde_json::to_value(result).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_netdiag::run_speed_test()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -479,12 +489,12 @@ pub async fn run_speed_test() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn apply_tweak(module: String, id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || apply_tweak_sync(&module, &id)).await.unwrap()
+    tokio::task::spawn_blocking(move || apply_tweak_sync(&module, &id)).await.unwrap_or_else(|_| join_fallback())
 }
 
 #[tauri::command]
 pub async fn undo_tweak(module: String, id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || undo_tweak_sync(&module, &id)).await.unwrap()
+    tokio::task::spawn_blocking(move || undo_tweak_sync(&module, &id)).await.unwrap_or_else(|_| join_fallback())
 }
 
 fn apply_tweak_sync(module: &str, id: &str) -> serde_json::Value {
@@ -496,13 +506,26 @@ fn apply_tweak_sync(module: &str, id: &str) -> serde_json::Value {
             let all: Vec<_> = [tweaks.basic, tweaks.standard, tweaks.advanced].concat();
             if let Some(t) = all.iter().find(|t| t.id == id) {
                 if t.path.starts_with("Service:") {
+                    // Service-based privacy tweaks can't be auto-reverted (no prior
+                    // start-type snapshot), so log them but don't promise an undo.
                     let svc = t.path.trim_start_matches("Service: ").trim();
                     match mod_services::apply_change(svc, &t.optimized) {
-                        Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+                        Ok(msg) => {
+                            append_history("services", &t.name, &t.tier, "committed");
+                            serde_json::json!({ "success": true, "message": msg })
+                        }
                         Err(msg) => serde_json::json!({ "success": false, "message": msg }),
                     }
                 } else {
-                    apply_registry_tweak(&t.path, &t.value_name, &t.optimized)
+                    // Snapshot the pre-apply value (None => value was absent) so the
+                    // change can be reverted from history later.
+                    let current = if t.current == "NotSet" { None } else { Some(t.current.as_str()) };
+                    save_snapshot(id, current);
+                    let result = apply_registry_tweak(&t.path, &t.value_name, &t.optimized);
+                    if result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        append_history("privacy", &t.name, &t.tier, "committed");
+                    }
+                    result
                 }
             } else {
                 serde_json::json!({ "success": false, "message": format!("Unknown privacy tweak: {}", id) })
@@ -513,7 +536,10 @@ fn apply_tweak_sync(module: &str, id: &str) -> serde_json::Value {
             let all: Vec<_> = [tweaks.conservative, tweaks.advanced].concat();
             if let Some(t) = all.iter().find(|t| t.id == id) {
                 match mod_services::apply_change(&t.service, &t.optimized) {
-                    Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+                    Ok(msg) => {
+                        append_history("services", &t.name, &t.tier, "committed");
+                        serde_json::json!({ "success": true, "message": msg })
+                    }
                     Err(msg) => serde_json::json!({ "success": false, "message": msg }),
                 }
             } else {
@@ -524,11 +550,40 @@ fn apply_tweak_sync(module: &str, id: &str) -> serde_json::Value {
     }
 }
 
+/// Revert a registry-based privacy tweak using its pre-apply snapshot.
+/// Service-based privacy tweaks have no prior-state snapshot and can't be auto-reverted.
+fn undo_privacy_tweak_sync(id: &str) -> serde_json::Value {
+    let tweaks = mod_privacy::get_tweaks();
+    let all: Vec<_> = [tweaks.basic, tweaks.standard, tweaks.advanced].concat();
+    let Some(t) = all.iter().find(|t| t.id == id) else {
+        return serde_json::json!({ "success": false, "message": format!("Unknown privacy tweak: {}", id) });
+    };
+    if t.path.starts_with("Service:") {
+        return serde_json::json!({
+            "success": false,
+            "message": "Service changes can't be reverted automatically; re-enable the service from the Services panel."
+        });
+    }
+    let result = match load_snapshot(id) {
+        Some(Some(v)) => apply_registry_tweak(&t.path, &t.value_name, &v),
+        Some(None) => match delete_registry_value(&t.path, &t.value_name) {
+            Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
+            Err(msg) => serde_json::json!({ "success": false, "message": msg }),
+        },
+        None => serde_json::json!({ "success": false, "message": "No saved original value to restore." }),
+    };
+    if result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        append_history("privacy", &t.name, &t.tier, "undone");
+    }
+    result
+}
+
 fn undo_tweak_sync(module: &str, id: &str) -> serde_json::Value {
     match module {
         "visual" => undo_visual_tweak_sync(id),
         "performance" => undo_perf_tweak_sync(id),
-        // Don't claim success for modules whose undo isn't implemented (e.g. privacy).
+        "privacy" => undo_privacy_tweak_sync(id),
+        // Don't claim success for modules whose undo isn't implemented (e.g. services).
         _ => serde_json::json!({
             "success": false,
             "message": format!("Undo is not supported for '{}' changes.", module)
@@ -618,9 +673,17 @@ fn undo_perf_tweak_sync(id: &str) -> serde_json::Value {
 fn apply_registry_tweak(path: &str, name: &str, value: &str) -> serde_json::Value {
     #[cfg(target_os = "windows")]
     {
+        // Infer the registry type from the value: a plain unsigned integer is
+        // written as REG_DWORD (unquoted), anything else as REG_SZ (quoted +
+        // single-quote-escaped). Hardcoding DWord corrupts string-valued tweaks.
+        let (ty, val) = if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+            ("DWord", value.to_string())
+        } else {
+            ("String", format!("'{}'", value.replace('\'', "''")))
+        };
         let ps = format!(
-            "try {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type DWord -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ Write-Output $_.Exception.Message }}",
-            path, path, name, value
+            "try {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type {} -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ Write-Output $_.Exception.Message }}",
+            path, path, name, val, ty
         );
         if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
             let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
@@ -746,7 +809,7 @@ fn delete_registry_value(_path: &str, _name: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn toggle_startup(id: String, enabled: bool) -> serde_json::Value {
     let name = id.strip_prefix("startup.").unwrap_or(&id);
-    let items = tokio::task::spawn_blocking(|| mod_startup::list_items()).await.unwrap();
+    let items = tokio::task::spawn_blocking(|| mod_startup::list_items()).await.unwrap_or_default();
     let item_name = items.iter().find(|i| i.id == id).map(|i| i.name.clone()).unwrap_or_else(|| name.to_string());
     match mod_startup::toggle(&item_name, enabled) {
         Ok(msg) => {
@@ -763,7 +826,10 @@ pub async fn toggle_startup(id: String, enabled: bool) -> serde_json::Value {
 
 #[tauri::command]
 pub async fn apply_service_change(id: String) -> serde_json::Value {
-    let tweaks = tokio::task::spawn_blocking(|| mod_services::get_tweaks()).await.unwrap();
+    let tweaks = match tokio::task::spawn_blocking(|| mod_services::get_tweaks()).await {
+        Ok(t) => t,
+        Err(_) => return join_fallback(),
+    };
     let all: Vec<_> = [tweaks.conservative, tweaks.advanced].concat();
     if let Some(t) = all.iter().find(|t| t.id == id) {
         match mod_services::apply_change(&t.service, &t.optimized) {
@@ -892,8 +958,9 @@ pub async fn launch_system_restore() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_bloatware() -> serde_json::Value {
-    let apps = tokio::task::spawn_blocking(|| mod_bloatware::scan_installed()).await.unwrap();
-    serde_json::to_value(apps).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_bloatware::scan_installed()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -908,8 +975,9 @@ pub async fn remove_bloatware(packages: Vec<String>) -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_installed_programs() -> serde_json::Value {
-    let programs = tokio::task::spawn_blocking(|| mod_uninstall::list_programs()).await.unwrap();
-    serde_json::to_value(programs).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_uninstall::list_programs()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -939,8 +1007,9 @@ pub async fn remove_leftovers(paths: Vec<String>) -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_full_sysinfo() -> serde_json::Value {
-    let info = tokio::task::spawn_blocking(|| mod_sysinfo::collect()).await.unwrap();
-    serde_json::to_value(info).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_sysinfo::collect()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -949,31 +1018,9 @@ pub async fn get_full_sysinfo() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_temperatures() -> serde_json::Value {
-    let report = tokio::task::spawn_blocking(mod_temps::collect_temps).await.unwrap();
-    serde_json::to_value(report).unwrap_or_default()
-}
-
-#[tauri::command]
-pub async fn ensure_lhm_running() -> serde_json::Value {
-    let result = tokio::task::spawn_blocking(|| {
-        mod_temps::lhm_launcher::ensure_lhm_running()
-    })
-    .await
-    .unwrap();
-    match result {
-        Ok(status) => serde_json::json!({ "status": status }),
-        Err(e) => serde_json::json!({ "status": "error", "message": e }),
-    }
-}
-
-#[tauri::command]
-pub async fn get_lhm_status() -> serde_json::Value {
-    let running = tokio::task::spawn_blocking(|| {
-        mod_temps::lhm_launcher::is_lhm_running()
-    })
-    .await
-    .unwrap();
-    serde_json::json!({ "running": running })
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_temps::collect_temps()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -984,24 +1031,6 @@ pub async fn get_lhm_status() -> serde_json::Value {
 pub fn check_admin_status() -> serde_json::Value {
     let status = mod_sfc::check_admin();
     serde_json::json!({ "is_admin": status.is_admin, "message": status.message })
-}
-
-#[tauri::command]
-pub async fn run_dism_scan() -> serde_json::Value {
-    let result = tokio::task::spawn_blocking(mod_sfc::run_dism).await.unwrap();
-    serde_json::json!({
-        "tool": result.tool, "success": result.success, "exit_code": result.exit_code,
-        "output": result.output, "summary": result.summary,
-    })
-}
-
-#[tauri::command]
-pub async fn run_sfc_scan() -> serde_json::Value {
-    let result = tokio::task::spawn_blocking(mod_sfc::run_sfc).await.unwrap();
-    serde_json::json!({
-        "tool": result.tool, "success": result.success, "exit_code": result.exit_code,
-        "output": result.output, "summary": result.summary,
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1024,8 +1053,9 @@ pub async fn run_all_diagnostics() -> serde_json::Value {
             { "id": "updates", "name": "Windows Update", "severity": if updates.get("pending_updates").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) > 0 { "Warning" } else { "Ok" } },
         ]);
 
-        let has_critical = modules.as_array().unwrap().iter().any(|m| m.get("severity").and_then(|s| s.as_str()) == Some("Critical"));
-        let has_warning = modules.as_array().unwrap().iter().any(|m| m.get("severity").and_then(|s| s.as_str()) == Some("Warning"));
+        let module_list = modules.as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+        let has_critical = module_list.iter().any(|m| m.get("severity").and_then(|s| s.as_str()) == Some("Critical"));
+        let has_warning = module_list.iter().any(|m| m.get("severity").and_then(|s| s.as_str()) == Some("Warning"));
         let overall = if has_critical { "Critical" } else if has_warning { "Warning" } else { "Ok" };
 
         serde_json::json!({
@@ -1033,7 +1063,7 @@ pub async fn run_all_diagnostics() -> serde_json::Value {
             "modules": modules,
             "activated": activation.get("activated").and_then(|v| v.as_bool()).unwrap_or(false),
         })
-    }).await.unwrap()
+    }).await.unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -1079,11 +1109,12 @@ pub async fn run_preset(id: String) -> serde_json::Value {
                     let action_id = action.get("action_id").and_then(|v| v.as_str()).unwrap_or("");
                     let display = action.get("display_name").and_then(|v| v.as_str()).unwrap_or(action_id);
 
+                    // apply_tweak_sync logs history per-module with the tweak's real
+                    // name + tier, so don't append a second (duplicate) entry here.
                     let result = apply_tweak_sync(module, action_id);
                     let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
                     if success {
                         succeeded += 1;
-                        append_history(module, display, "green", "committed");
                     }
                     results.push(serde_json::json!({ "action_id": action_id, "display_name": display, "success": success }));
                 }
@@ -1092,7 +1123,7 @@ pub async fn run_preset(id: String) -> serde_json::Value {
             }
             None => serde_json::json!({ "success": false, "message": format!("Unknown preset: {}", id) }),
         }
-    }).await.unwrap()
+    }).await.unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -1146,7 +1177,7 @@ pub async fn take_snapshot() -> serde_json::Value {
         "timestamp": snapshot.get("timestamp").and_then(|v| v.as_str()).unwrap_or(""),
         "hostname": snapshot.get("hostname").and_then(|v| v.as_str()).unwrap_or(""),
     })
-    }).await.unwrap()
+    }).await.unwrap_or_else(|_| join_fallback())
 }
 
 #[tauri::command]
@@ -1210,7 +1241,7 @@ pub async fn get_machine_diff() -> serde_json::Value {
             "warning_event_change": cur_warn - prev_warn,
         },
     })
-    }).await.unwrap()
+    }).await.unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -1219,8 +1250,9 @@ pub async fn get_machine_diff() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_installed_runtimes() -> serde_json::Value {
-    let report = tokio::task::spawn_blocking(|| mod_runtimes::collect_runtimes()).await.unwrap();
-    serde_json::to_value(report).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_runtimes::collect_runtimes()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -1234,15 +1266,10 @@ pub async fn get_security_status() -> serde_json::Value {
 }
 
 #[tauri::command]
-pub async fn run_defender_scan(scan_type: String) -> serde_json::Value {
-    let result = tokio::task::spawn_blocking(move || mod_security::run_scan(&scan_type)).await.unwrap();
-    serde_json::to_value(result).unwrap_or_default()
-}
-
-#[tauri::command]
 pub async fn run_heuristic_scan() -> serde_json::Value {
-    let result = tokio::task::spawn_blocking(mod_security::run_heuristics).await.unwrap();
-    serde_json::to_value(result).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_security::run_heuristics()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -1264,15 +1291,17 @@ pub fn open_url(url: String) -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_disk_health() -> serde_json::Value {
-    let drives = tokio::task::spawn_blocking(|| mod_diskhealth::collect_drive_health()).await.unwrap();
-    serde_json::to_value(drives).unwrap_or_default()
+    tokio::task::spawn_blocking(|| serde_json::to_value(mod_diskhealth::collect_drive_health()).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
 pub async fn get_disk_space(drive: String) -> serde_json::Value {
     // get_largest_files does a recursive C:\Users scan; keep it off the async runtime thread.
-    let report = tokio::task::spawn_blocking(move || mod_diskhealth::get_largest_files(&drive)).await.unwrap();
-    serde_json::to_value(report).unwrap_or_default()
+    tokio::task::spawn_blocking(move || serde_json::to_value(mod_diskhealth::get_largest_files(&drive)).unwrap_or_default())
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -1304,17 +1333,17 @@ pub async fn get_performance_tweaks() -> Vec<serde_json::Value> {
                 })
             })
             .collect()
-    }).await.unwrap()
+    }).await.unwrap_or_default()
 }
 
 #[tauri::command]
 pub async fn apply_performance_tweak(id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || apply_perf_tweak_sync(&id)).await.unwrap()
+    tokio::task::spawn_blocking(move || apply_perf_tweak_sync(&id)).await.unwrap_or_else(|_| join_fallback())
 }
 
 #[tauri::command]
 pub async fn undo_performance_tweak(id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || undo_perf_tweak_sync(&id)).await.unwrap()
+    tokio::task::spawn_blocking(move || undo_perf_tweak_sync(&id)).await.unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -1323,7 +1352,7 @@ pub async fn undo_performance_tweak(id: String) -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_activation_status() -> serde_json::Value {
-    tokio::task::spawn_blocking(get_activation_status_sync).await.unwrap()
+    tokio::task::spawn_blocking(get_activation_status_sync).await.unwrap_or_else(|_| join_fallback())
 }
 
 fn get_activation_status_sync() -> serde_json::Value {
@@ -1366,7 +1395,7 @@ fn get_activation_status_sync() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn undo_change(id: i64) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || undo_change_sync(id)).await.unwrap()
+    tokio::task::spawn_blocking(move || undo_change_sync(id)).await.unwrap_or_else(|_| join_fallback())
 }
 
 fn undo_change_sync(id: i64) -> serde_json::Value {
@@ -1400,6 +1429,14 @@ fn undo_change_sync(id: i64) -> serde_json::Value {
             Some(t) => undo_visual_tweak_sync(&t.id),
             None => serde_json::json!({ "success": false, "message": format!("Tweak '{}' not found.", name) }),
         },
+        "privacy" => {
+            let tweaks = mod_privacy::get_tweaks();
+            let all: Vec<_> = [tweaks.basic, tweaks.standard, tweaks.advanced].concat();
+            match all.into_iter().find(|t| t.name == name) {
+                Some(t) => undo_privacy_tweak_sync(&t.id),
+                None => serde_json::json!({ "success": false, "message": format!("Tweak '{}' not found.", name) }),
+            }
+        }
         "startup" => {
             // Undo = flip to the opposite of the item's current state (which is the
             // state the change set it to), rather than always re-enabling.

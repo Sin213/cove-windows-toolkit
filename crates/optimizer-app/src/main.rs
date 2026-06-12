@@ -62,7 +62,6 @@ fn main() {
             // Visual effects
             commands::get_visual_tweaks,
             commands::apply_visual_tweak,
-            commands::apply_all_visual_tweaks,
             commands::undo_visual_tweak,
             // Health
             commands::get_health_report,
@@ -122,12 +121,8 @@ fn main() {
             commands::get_full_sysinfo,
             // Temperatures
             commands::get_temperatures,
-            commands::ensure_lhm_running,
-            commands::get_lhm_status,
             // DISM / SFC
             commands::check_admin_status,
-            commands::run_dism_scan,
-            commands::run_sfc_scan,
             // Live, tab-persistent scans
             scan::start_scan,
             scan::get_scan_progress,
@@ -160,7 +155,6 @@ fn main() {
             commands::run_speed_test,
             // Security
             commands::get_security_status,
-            commands::run_defender_scan,
             commands::run_heuristic_scan,
             // Disk Health
             commands::get_disk_health,

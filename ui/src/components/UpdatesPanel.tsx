@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
 import { timeAgo } from "../lib/format";
+import ConfirmDialog from "./ConfirmDialog";
 import "./UpdatesPanel.css";
 
 interface PendingUpdate {
@@ -32,6 +33,7 @@ export default function UpdatesPanel() {
   const [resetting, setResetting] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [resetOutput, setResetOutput] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     invoke<UpdateStatus>("get_update_status")
@@ -125,7 +127,7 @@ export default function UpdatesPanel() {
           <button className="wu-btn wu-btn-secondary" onClick={() => invoke("open_url", { url: "ms-settings:windowsupdate-optionalupdates" })}>
             Check for Driver Updates
           </button>
-          <button className="wu-btn wu-btn-warning" onClick={handleReset} disabled={resetting}>
+          <button className="wu-btn wu-btn-warning" onClick={() => setConfirmReset(true)} disabled={resetting}>
             {resetting ? "Resetting..." : "Reset Windows Update"}
           </button>
         </div>
@@ -166,6 +168,18 @@ export default function UpdatesPanel() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmReset}
+        safetyTier="Yellow"
+        title="Reset Windows Update"
+        message="This stops the Windows Update services and renames the update cache (SoftwareDistribution & catroot2) so Windows rebuilds it from scratch. Pending downloads will be discarded and a reboot is recommended afterward. Continue?"
+        onCancel={() => setConfirmReset(false)}
+        onConfirm={() => {
+          setConfirmReset(false);
+          handleReset();
+        }}
+      />
     </div>
   );
 }

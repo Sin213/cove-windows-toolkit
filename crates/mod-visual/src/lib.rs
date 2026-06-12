@@ -31,9 +31,6 @@ pub fn get_tweaks() -> Vec<VisualTweak> {
         ("visual.shadows", "Disable Icon Shadows", "Remove text shadows under desktop icons",
          "Visual Effects", "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
          "ListviewShadow", "0"),
-        ("visual.smooth_scroll", "Disable Smooth Scrolling", "Turn off smooth scrolling in lists",
-         "Visual Effects", "Control Panel\\Desktop",
-         "SmoothScroll", "0"),
     ];
 
     definitions.into_iter().map(|(id, name, desc, cat, path, reg_name, opt_val)| {
@@ -74,8 +71,8 @@ fn read_registry_value(_path: &str, _name: &str) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 pub fn apply_tweak(path: &str, name: &str, value: &str) -> Result<String, String> {
-    // MinAnimate and SmoothScroll are conventionally REG_SZ; the rest are DWORD.
-    let (ty, val) = if name == "MinAnimate" || name == "SmoothScroll" {
+    // MinAnimate (Control Panel\Desktop\WindowMetrics) is conventionally REG_SZ; the rest are DWORD.
+    let (ty, val) = if name == "MinAnimate" {
         ("String", format!("'{}'", value.replace('\'', "''")))
     } else {
         ("DWord", value.to_string())
