@@ -122,13 +122,21 @@ pub fn run_scan(_scan_type: &str) -> ScanResult {
 
 #[cfg(target_os = "windows")]
 pub fn run_heuristics() -> HeuristicResult {
-    
+    run_heuristics_with_progress(|_, _, _| {})
+}
+
+/// Runs the heuristic checks, invoking `progress(step, total, label)` before each
+/// one so callers can show real step-by-step progress.
+#[cfg(target_os = "windows")]
+pub fn run_heuristics_with_progress<F: FnMut(u32, u32, &str)>(mut progress: F) -> HeuristicResult {
     use std::time::Instant;
 
+    let total = 3u32;
     let start = Instant::now();
     let mut findings = Vec::new();
 
     // Check processes running from temp dirs
+    progress(1, total, "Checking processes in temp/download folders…");
     let ps_procs = r#"
 Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\Local\\Temp\\|\\Downloads\\') } |
     Select-Object Id, ProcessName, Path |
@@ -150,6 +158,7 @@ Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\L
     }
 
     // Check hosts file modification
+    progress(2, total, "Inspecting the hosts file…");
     let hosts_path = r"C:\Windows\System32\drivers\etc\hosts";
     if let Ok(contents) = std::fs::read_to_string(hosts_path) {
         let extra_entries: Vec<&str> = contents.lines()
@@ -169,6 +178,7 @@ Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\L
     }
 
     // Check browser extension count
+    progress(3, total, "Counting browser extensions…");
     let ps_ext = r#"
 $count = @{}
 $chromePath = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Extensions"
@@ -196,6 +206,7 @@ Write-Output "$total|$detail"
         }
     }
 
+    progress(total, total, "Done");
     let elapsed = start.elapsed().as_millis() as u64;
     HeuristicResult { findings, scan_time_ms: elapsed }
 }
@@ -219,4 +230,10 @@ pub fn run_heuristics() -> HeuristicResult {
         ],
         scan_time_ms: 3200,
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn run_heuristics_with_progress<F: FnMut(u32, u32, &str)>(mut progress: F) -> HeuristicResult {
+    progress(3, 3, "Done");
+    run_heuristics()
 }

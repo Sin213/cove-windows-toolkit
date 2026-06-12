@@ -22,69 +22,89 @@ interface SecurityData {
   scan_available: boolean;
 }
 
-interface ScanResult {
+interface SecScan {
+  running: boolean;
+  started: boolean;
+  kind: string;
+  indeterminate: boolean;
+  percent: number;
+  step: number;
+  total: number;
+  phase: string;
+  elapsed_secs: number;
+  done: boolean;
   success: boolean;
   threats_found: number;
+  findings: Finding[];
   message: string;
 }
 
-interface HeuristicResult {
-  findings: Finding[];
-  scan_time_ms: number;
-}
-
-const SEV_ICON: Record<string, string> = {
-  Critical: "✖",
-  Warning: "⚠",
-  Info: "ℹ",
-};
-
+const SEV_ICON: Record<string, string> = { Critical: "✖", Warning: "⚠", Info: "ℹ" };
 const SEV_ORDER = ["Critical", "Warning", "Info"];
+
+function fmtElapsed(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
 
 export default function SecurityPanel() {
   const [data, setData] = useState<SecurityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [scanning, setScanning] = useState<string | null>(null);
-  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
-  const [heuristicFindings, setHeuristicFindings] = useState<Finding[]>([]);
-  const [heuristicTime, setHeuristicTime] = useState<number | null>(null);
-  const [heuristicRunning, setHeuristicRunning] = useState(false);
+  const [defScan, setDefScan] = useState<SecScan | null>(null);
+  const [heurScan, setHeurScan] = useState<SecScan | null>(null);
+
+  const pollDef = async () => {
+    try {
+      setDefScan(await invoke<SecScan>("get_security_scan", { slot: "defender" }));
+    } catch {
+      /* ignore */
+    }
+  };
+  const pollHeur = async () => {
+    try {
+      setHeurScan(await invoke<SecScan>("get_security_scan", { slot: "heuristic" }));
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     invoke<SecurityData>("get_security_status")
       .then(setData)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
+    pollDef();
+    pollHeur();
   }, []);
 
-  const handleDefenderScan = async (scanType: string) => {
-    setScanning(scanType);
-    setScanResult(null);
+  const anyRunning = !!defScan?.running || !!heurScan?.running;
+  useEffect(() => {
+    if (!anyRunning) return;
+    const id = setInterval(() => {
+      pollDef();
+      pollHeur();
+    }, 500);
+    return () => clearInterval(id);
+  }, [anyRunning]);
+
+  const startScan = async (kind: string) => {
+    setError(null);
     try {
-      const result = await invoke<ScanResult>("run_defender_scan", { scanType });
-      setScanResult(result);
+      const res = await invoke<{ success: boolean; message?: string }>("start_security_scan", { kind });
+      if (!res.success) {
+        setError(res.message || "Could not start scan.");
+        return;
+      }
+      if (kind === "heuristic") pollHeur();
+      else pollDef();
     } catch (e) {
-      console.error("Scan failed:", e);
-    } finally {
-      setScanning(null);
+      setError(String(e));
     }
   };
 
-  const handleHeuristic = async () => {
-    setHeuristicRunning(true);
-    setHeuristicFindings([]);
-    setHeuristicTime(null);
-    try {
-      const result = await invoke<HeuristicResult>("run_heuristic_scan");
-      setHeuristicFindings(result.findings);
-      setHeuristicTime(result.scan_time_ms);
-    } catch (e) {
-      console.error("Heuristic scan failed:", e);
-    } finally {
-      setHeuristicRunning(false);
-    }
-  };
+  const openDefender = () => invoke("open_windows_security").catch(() => {});
 
   if (loading) return <div className="panel-loading">Checking security status...</div>;
   if (error) return <div className="panel-error">Error: {error}</div>;
@@ -93,15 +113,15 @@ export default function SecurityPanel() {
   const d = data.defender;
 
   const formatDate = (iso: string) => {
-    // Backend may send sentinels like "Never"/"Unknown"; new Date() of those is
-    // Invalid Date (it doesn't throw), so guard with Date.parse and pass through.
     if (!iso || Number.isNaN(Date.parse(iso))) return iso || "Unknown";
     return new Date(iso).toLocaleString();
   };
 
+  const busy = !!defScan?.running || !!heurScan?.running;
+  const heurFindings: Finding[] = (heurScan?.done ? heurScan.findings : []) || [];
   const grouped = SEV_ORDER.map((sev) => ({
     severity: sev,
-    findings: heuristicFindings.filter((f) => f.severity === sev),
+    findings: heurFindings.filter((f) => f.severity === sev),
   })).filter((g) => g.findings.length > 0);
 
   return (
@@ -132,27 +152,36 @@ export default function SecurityPanel() {
 
       {/* Defender scan buttons */}
       <div className="defender-actions">
-        <button
-          className="scan-btn primary"
-          onClick={() => handleDefenderScan("quick")}
-          disabled={!!scanning}
-        >
-          {scanning === "quick" ? "Scanning..." : "Quick Scan"}
+        <button className="scan-btn primary" onClick={() => startScan("quick")} disabled={busy}>
+          Quick Scan
         </button>
-        <button
-          className="scan-btn"
-          onClick={() => handleDefenderScan("full")}
-          disabled={!!scanning}
-        >
-          {scanning === "full" ? "Scanning..." : "Full Scan"}
+        <button className="scan-btn" onClick={() => startScan("full")} disabled={busy}>
+          Full Scan
+        </button>
+        <button className="scan-btn" onClick={openDefender}>
+          Open Windows Security
         </button>
       </div>
 
-      {/* Scan result banner */}
-      {scanResult && (
-        <div className={`scan-result-banner ${scanResult.threats_found > 0 ? "threats" : "clean"}`}>
-          <span>{scanResult.threats_found > 0 ? "⚠" : "✔"}</span>
-          <span>{scanResult.message}</span>
+      {/* Defender scan live / result */}
+      {defScan?.started && defScan.running && (
+        <div className="scan-card">
+          <div className="scan-phase">
+            Running {defScan.kind === "full" ? "full" : "quick"} scan… {fmtElapsed(defScan.elapsed_secs)} elapsed
+          </div>
+          <div className="scan-bar">
+            <div className="scan-bar-indet" />
+          </div>
+          <div className="scan-hint">
+            Windows Defender doesn't report a live percentage — use “Open Windows Security” for its native
+            progress bar. This keeps running if you switch tabs.
+          </div>
+        </div>
+      )}
+      {defScan?.started && defScan.done && (
+        <div className={`scan-result-banner ${defScan.threats_found > 0 ? "threats" : defScan.success ? "clean" : "threats"}`}>
+          <span>{defScan.threats_found > 0 ? "⚠" : defScan.success ? "✔" : "✖"}</span>
+          <span>{defScan.message}</span>
         </div>
       )}
 
@@ -160,38 +189,45 @@ export default function SecurityPanel() {
       <div className="heuristic-section">
         <div className="heuristic-header">
           <h3>Heuristic Scan</h3>
-          <button
-            className="scan-btn"
-            onClick={handleHeuristic}
-            disabled={heuristicRunning}
-          >
-            {heuristicRunning ? "Scanning..." : "Run Heuristic Scan"}
+          <button className="scan-btn" onClick={() => startScan("heuristic")} disabled={busy}>
+            {heurScan?.running ? "Scanning…" : "Run Heuristic Scan"}
           </button>
         </div>
 
-        {heuristicFindings.length === 0 && heuristicTime === null && (
-          <div className="no-findings">
-            Click "Run Heuristic Scan" to check for suspicious processes, persistence, integrity issues, and browser extensions.
+        {heurScan?.running && (
+          <div className="scan-live">
+            <div className="scan-bar">
+              <div className="scan-bar-fill" style={{ width: `${heurScan.percent}%` }} />
+            </div>
+            <div className="scan-phase">
+              {heurScan.total > 0 ? `Step ${heurScan.step} of ${heurScan.total} · ` : ""}
+              {heurScan.phase}
+            </div>
           </div>
         )}
 
-        {heuristicFindings.length === 0 && heuristicTime !== null && (
+        {!heurScan?.started && (
           <div className="no-findings">
-            No suspicious activity detected.
+            Click "Run Heuristic Scan" to check for suspicious processes, hosts-file tampering, and browser
+            extensions.
           </div>
+        )}
+
+        {heurScan?.done && grouped.length === 0 && (
+          <div className="no-findings">No suspicious activity detected.</div>
         )}
 
         {grouped.map((group) => (
           <div key={group.severity} className="findings-group">
             <div className={`findings-group-title sev-${group.severity.toLowerCase()}`}>
               <span>{SEV_ICON[group.severity]}</span>
-              <span>{group.severity} ({group.findings.length})</span>
+              <span>
+                {group.severity} ({group.findings.length})
+              </span>
             </div>
             {group.findings.map((f, i) => (
               <div key={i} className="finding-item">
-                <span className={`finding-icon sev-${f.severity.toLowerCase()}`}>
-                  {SEV_ICON[f.severity]}
-                </span>
+                <span className={`finding-icon sev-${f.severity.toLowerCase()}`}>{SEV_ICON[f.severity]}</span>
                 <div className="finding-content">
                   <div className="finding-title">{f.title}</div>
                   <div className="finding-detail">{f.detail}</div>
@@ -202,9 +238,7 @@ export default function SecurityPanel() {
           </div>
         ))}
 
-        {heuristicTime !== null && (
-          <div className="scan-time">Scan completed in {heuristicTime}ms</div>
-        )}
+        {heurScan?.done && <div className="scan-time">{heurScan.message}</div>}
       </div>
     </div>
   );

@@ -2,6 +2,7 @@
 
 mod commands;
 mod scan;
+mod security_scan;
 
 // Custom window-control commands for the frameless titlebar. Defined as plain
 // app commands (like everything else in this app) so they need no capability
@@ -130,6 +131,9 @@ fn main() {
             // Live, tab-persistent scans
             scan::start_scan,
             scan::get_scan_progress,
+            security_scan::start_security_scan,
+            security_scan::get_security_scan,
+            security_scan::open_windows_security,
             // Undo
             commands::undo_change,
             // Performance tweaks

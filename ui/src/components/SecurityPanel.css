@@ -2,6 +2,19 @@
   max-width: 700px;
 }
 
+/* Indeterminate progress bar for the Defender scan (no real % available). */
+.scan-bar-indet {
+  height: 100%;
+  width: 35%;
+  background: var(--accent);
+  border-radius: 4px;
+  animation: scan-indet 1.2s ease-in-out infinite;
+}
+@keyframes scan-indet {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+
 /* Defender status bar */
 .defender-status {
   display: flex;
