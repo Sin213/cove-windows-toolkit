@@ -96,11 +96,15 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
     use portable_pty::{native_pty_system, CommandBuilder, PtySize};
     use std::io::Read;
 
-    let (program, args): (&str, &[&str]) = match tool {
-        "sfc" => ("sfc", &["/scannow"]),
-        "dism" => ("dism", &["/Online", "/Cleanup-Image", "/RestoreHealth"]),
+    let (exe_name, args): (&str, &[&str]) = match tool {
+        "sfc" => ("sfc.exe", &["/scannow"]),
+        "dism" => ("dism.exe", &["/Online", "/Cleanup-Image", "/RestoreHealth"]),
         _ => return (false, -1, "Unknown tool".into(), Vec::new()),
     };
+    // Use the explicit full path: C:\Windows\System32\Dism is a *directory*, so a
+    // bare "dism" PATH lookup resolves to the folder and fails with access-denied.
+    let sysroot = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
+    let program = format!("{}\\System32\\{}", sysroot, exe_name);
 
     let sys = native_pty_system();
     let pair = match sys.openpty(PtySize { rows: 50, cols: 220, pixel_width: 0, pixel_height: 0 }) {
@@ -108,7 +112,7 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
         Err(e) => return (false, -1, format!("PTY error: {}", e), Vec::new()),
     };
 
-    let mut cmd = CommandBuilder::new(program);
+    let mut cmd = CommandBuilder::new(&program);
     for a in args {
         cmd.arg(a);
     }
