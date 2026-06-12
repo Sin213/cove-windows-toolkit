@@ -23,12 +23,30 @@ pub struct RestoreStatus {
 #[cfg(target_os = "windows")]
 pub fn get_restore_status() -> RestoreStatus {
     
+    // Get-ComputerRestorePoint succeeds (returns empty) even when System
+    // Protection is OFF, so it can't tell us enablement. The reliable signal is
+    // whether the system volume actually has shadow-copy storage allocated
+    // (required to create a restore point), plus "any existing points => on".
+    let script = r#"$enabled = $false
+# 1) Any existing restore point => protection is on.
+try { if (@(Get-ComputerRestorePoint -ErrorAction Stop).Count -gt 0) { $enabled = $true } } catch {}
+# 2) RPSessionInterval > 0 (set when protection is enabled, even before the first point).
+if (-not $enabled) {
+  $rp = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' -Name RPSessionInterval -ErrorAction SilentlyContinue).RPSessionInterval
+  if ($rp -and [int]$rp -gt 0) { $enabled = $true }
+}
+# 3) The system volume actually has shadow-copy storage allocated.
+if (-not $enabled) {
+  try {
+    $sysDev = (Get-CimInstance Win32_Volume -Filter "DriveLetter='$env:SystemDrive'" -ErrorAction Stop).DeviceID
+    foreach ($s in (Get-CimInstance Win32_ShadowStorage -ErrorAction SilentlyContinue)) {
+      if ($s.Volume -and $s.Volume.DeviceID -eq $sysDev) { $enabled = $true; break }
+    }
+  } catch {}
+}
+if ($enabled) { 'enabled' } else { 'disabled' }"#;
     let output = optimizer_core::silent_cmd("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "try { $null = Get-ComputerRestorePoint -ErrorAction Stop; Write-Output 'enabled' } catch { if ($_.Exception.Message -match 'disabled|ServiceDisabled') { Write-Output 'disabled' } else { Write-Output 'unknown' } }",
-        ])
+        .args(["-NoProfile", "-Command", script])
         .output();
 
     match output {
