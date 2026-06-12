@@ -2,6 +2,8 @@
 
 A desktop toolkit built for tech support teams to diagnose and optimize Windows machines. Built with Tauri v2 (Rust backend + React frontend).
 
+![Cove Windows Toolkit dashboard](docs/dashboard.png)
+
 ## Download
 
 Grab the latest build from the [Releases page](https://github.com/Sin213/cove-windows-toolkit/releases/latest):
