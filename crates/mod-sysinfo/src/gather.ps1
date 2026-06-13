@@ -147,12 +147,27 @@ foreach ($n in $net) {
     }
 }
 
+# Effective module speed: ConfiguredClockSpeed is the ACTUAL running speed
+# (reflects an active XMP/EXPO profile); Speed often reports only the JEDEC base
+# rating (e.g. DDR5-6000 running at 6000 but Speed=4800). Prefer the former and
+# fall back to Speed when ConfiguredClockSpeed is missing/zero.
+function Get-ModuleSpeed($m) {
+    if ($m.ConfiguredClockSpeed -and [int]$m.ConfiguredClockSpeed -gt 0) { [int]$m.ConfiguredClockSpeed }
+    else { [int]$m.Speed }
+}
+
+# Installed RAM = sum of the physical module capacities. Win32_ComputerSystem's
+# TotalPhysicalMemory reports OS-VISIBLE memory (installed minus hardware-reserved),
+# so 32 GB installed shows as ~31.2 GB. Fall back to it only if SMBIOS lists nothing.
+$ramTotalBytes = [long](($mem | Measure-Object -Property Capacity -Sum).Sum)
+if (-not $ramTotalBytes -or $ramTotalBytes -le 0) { $ramTotalBytes = [long]$cs.TotalPhysicalMemory }
+
 # RAM modules
 $memModules = @()
 foreach ($m in $mem) {
     $memModules += @{
         capacity_bytes = [long]$m.Capacity
-        speed_mhz = [int]$m.Speed
+        speed_mhz = Get-ModuleSpeed $m
         manufacturer = if ($m.Manufacturer) { $m.Manufacturer.Trim() } else { '' }
         part_number = if ($m.PartNumber) { $m.PartNumber.Trim() } else { '' }
         slot = if ($m.DeviceLocator) { $m.DeviceLocator } else { '' }
@@ -198,9 +213,9 @@ $result = @{
         temperature_c = $cpuTemp
     }
     ram = @{
-        total_bytes = [long]$cs.TotalPhysicalMemory
+        total_bytes = $ramTotalBytes
         available_bytes = [long]($os.FreePhysicalMemory * 1024)
-        speed_mhz = if ($mem.Count -gt 0) { [int]$mem[0].Speed } else { 0 }
+        speed_mhz = if ($mem.Count -gt 0) { Get-ModuleSpeed $mem[0] } else { 0 }
         slots_used = $mem.Count
         slots_total = $slotsTotal
         ram_type = $memType

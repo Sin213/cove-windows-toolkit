@@ -22,6 +22,65 @@ mod windows {
 
     const LHM_ZIP: &[u8] = include_bytes!("../resources/LibreHardwareMonitor.zip");
 
+    // This LHM build reads CPU temperatures exclusively through the PawnIO kernel
+    // driver (the embedded WinRing0 path is gone, and Win11's Vulnerable Driver
+    // Blocklist blocks WinRing0 anyway). PawnIO must therefore be installed on the
+    // machine or CPU sensors come back empty. We bundle the official signed setup
+    // (namazso.eu, github.com/namazso/PawnIO.Setup) and install it on first run.
+    const PAWNIO_SETUP: &[u8] = include_bytes!("../resources/PawnIO_setup.exe");
+
+    /// True if the PawnIO kernel driver service is registered on this machine.
+    fn pawnio_installed() -> bool {
+        optimizer_core::silent_cmd("sc")
+            .args(["query", "PawnIO"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    /// Outcome of ensuring the PawnIO driver is present.
+    enum PawnIo {
+        /// Driver was already installed before this call.
+        AlreadyPresent,
+        /// Driver was just installed this run. A fresh install reports exit 3010
+        /// (reboot-required), so CPU sensors may not read until Cove (or the PC)
+        /// is restarted.
+        JustInstalled,
+    }
+
+    /// Message shown when the driver was just installed but CPU temps aren't
+    /// readable yet (the fresh driver needs a restart to come up).
+    const RESTART_MSG: &str =
+        "CPU temperature driver (PawnIO) was just installed. Restart Cove to enable CPU temperature readings.";
+
+    /// Install the bundled PawnIO driver if it isn't already present. Requires
+    /// admin (the app ships with a requireAdministrator manifest). The silent
+    /// switch `-install -silent` is the official one — winget installs
+    /// namazso.PawnIO unattended with exactly this.
+    fn ensure_pawnio_installed() -> Result<PawnIo, String> {
+        if pawnio_installed() {
+            return Ok(PawnIo::AlreadyPresent);
+        }
+        let setup = std::env::temp_dir().join("cove-pawnio-setup.exe");
+        std::fs::write(&setup, PAWNIO_SETUP)
+            .map_err(|e| format!("Failed to stage PawnIO installer: {e}"))?;
+        let result = optimizer_core::silent_cmd(&setup.to_string_lossy())
+            .args(["-install", "-silent"])
+            .output();
+        let _ = std::fs::remove_file(&setup);
+        let output = result.map_err(|e| format!("Failed to run PawnIO installer: {e}"))?;
+        // A fresh install exits 3010 (reboot-required); trust the service
+        // registration as the real signal rather than the exit code alone.
+        if pawnio_installed() {
+            Ok(PawnIo::JustInstalled)
+        } else {
+            Err(format!(
+                "PawnIO installer ran but the driver is not registered (exit {:?}). CPU temperature requires the PawnIO driver.",
+                output.status.code()
+            ))
+        }
+    }
+
     fn lhm_dir() -> Option<std::path::PathBuf> {
         let local_app = std::env::var("LOCALAPPDATA").ok()?;
         Some(std::path::PathBuf::from(local_app).join("CoveToolkit").join("lhm"))
@@ -63,6 +122,12 @@ mod windows {
         format!(r#"
 $ErrorActionPreference = 'Stop'
 $lhmDir = '{lhm_dir}'
+
+# LHM P/Invokes PawnIOLib.dll to reach the kernel driver. After a fresh install
+# the PawnIO dir is on the machine PATH, but this process inherited the app's
+# PATH from launch (pre-install), so prepend it here to resolve on the first run.
+$pawnioDir = Join-Path $env:ProgramFiles 'PawnIO'
+if (Test-Path $pawnioDir) {{ $env:PATH = "$pawnioDir;$env:PATH" }}
 
 [System.Reflection.Assembly]::LoadFrom("$lhmDir\LibreHardwareMonitorLib.dll") | Out-Null
 
@@ -205,10 +270,33 @@ $computer.Close()
     }
 
     pub fn collect_temps_impl() -> TempReport {
+        // CPU temps need the PawnIO driver; install it on first run if missing.
+        // Keep the outcome so we can explain an empty CPU result instead of failing
+        // silently (the classic "works only on the dev's machine" symptom).
+        let (just_installed, pawnio_err) = match ensure_pawnio_installed() {
+            Ok(PawnIo::AlreadyPresent) => (false, None),
+            Ok(PawnIo::JustInstalled) => (true, None),
+            Err(e) => (false, Some(e)),
+        };
+
+        // Explain an absent CPU reading: a failed install, or a just-installed
+        // driver that needs a restart to come up.
+        let cpu_note = |readings: &[TempReading]| -> Option<String> {
+            if readings.iter().any(|r| r.category == "CPU") {
+                None
+            } else if let Some(pe) = &pawnio_err {
+                Some(pe.clone())
+            } else if just_installed {
+                Some(RESTART_MSG.to_string())
+            } else {
+                None
+            }
+        };
+
         match probe_lhm_dll() {
             Ok(report) if !report.readings.is_empty() => return report,
             Ok(_) => {
-                // DLL loaded but no sensors - fall through to fallbacks
+                // DLL loaded but reported no sensors - fall through to fallbacks
             }
             Err(e) => {
                 eprintln!("LHM DLL probe failed: {}", e);
@@ -217,11 +305,18 @@ $computer.Close()
                 if fallback.readings.is_empty() {
                     fallback.warnings.push(format!("Sensor library error: {}", e));
                 }
+                if let Some(note) = cpu_note(&fallback.readings) {
+                    fallback.warnings.push(note);
+                }
                 return fallback;
             }
         }
 
-        try_fallback_probes()
+        let mut fallback = try_fallback_probes();
+        if let Some(note) = cpu_note(&fallback.readings) {
+            fallback.warnings.push(note);
+        }
+        fallback
     }
 
     fn try_fallback_probes() -> TempReport {

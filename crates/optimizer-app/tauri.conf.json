@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri-conf-schema/main/schema.json",
   "productName": "Cove Windows Toolkit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "com.cove.optimizer",
   "build": {
     "frontendDist": "../../ui/dist",
