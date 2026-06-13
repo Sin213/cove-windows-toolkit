@@ -697,9 +697,13 @@ fn apply_registry_tweak(path: &str, name: &str, value: &str) -> serde_json::Valu
 // ---------------------------------------------------------------------------
 
 fn history_path() -> std::path::PathBuf {
-    directories::ProjectDirs::from("com", "cove", "optimizer")
-        .map(|dirs| dirs.data_local_dir().join("change_history.json"))
-        .unwrap_or_else(|| std::path::PathBuf::from("change_history.json"))
+    if crate::portable::is_portable() {
+        crate::portable::portable_data_dir("cove-windows-optimizer").join("change_history.json")
+    } else {
+        directories::ProjectDirs::from("com", "cove", "optimizer")
+            .map(|dirs| dirs.data_local_dir().join("change_history.json"))
+            .unwrap_or_else(|| std::path::PathBuf::from("change_history.json"))
+    }
 }
 
 #[tauri::command]
@@ -745,9 +749,13 @@ fn append_history(module: &str, name: &str, tier: &str, status: &str) {
 // ---------------------------------------------------------------------------
 
 fn tweak_snapshot_path() -> std::path::PathBuf {
-    directories::ProjectDirs::from("com", "cove", "optimizer")
-        .map(|dirs| dirs.data_local_dir().join("tweak_snapshots.json"))
-        .unwrap_or_else(|| std::path::PathBuf::from("tweak_snapshots.json"))
+    if crate::portable::is_portable() {
+        crate::portable::portable_data_dir("cove-windows-optimizer").join("tweak_snapshots.json")
+    } else {
+        directories::ProjectDirs::from("com", "cove", "optimizer")
+            .map(|dirs| dirs.data_local_dir().join("tweak_snapshots.json"))
+            .unwrap_or_else(|| std::path::PathBuf::from("tweak_snapshots.json"))
+    }
 }
 
 /// Record the value a tweak had BEFORE it was applied. `None` means the registry
@@ -1126,9 +1134,13 @@ pub async fn run_preset(id: String) -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 fn snapshot_path() -> std::path::PathBuf {
-    directories::ProjectDirs::from("com", "cove", "optimizer")
-        .map(|dirs| dirs.data_local_dir().join("snapshot.json"))
-        .unwrap_or_else(|| std::path::PathBuf::from("snapshot.json"))
+    if crate::portable::is_portable() {
+        crate::portable::portable_data_dir("cove-windows-optimizer").join("snapshot.json")
+    } else {
+        directories::ProjectDirs::from("com", "cove", "optimizer")
+            .map(|dirs| dirs.data_local_dir().join("snapshot.json"))
+            .unwrap_or_else(|| std::path::PathBuf::from("snapshot.json"))
+    }
 }
 
 fn system_drive_free_bytes() -> u64 {

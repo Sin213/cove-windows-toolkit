@@ -1,12 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod portable;
 mod scan;
 mod security_scan;
 
-// Custom window-control commands for the frameless titlebar. Defined as plain
-// app commands (like everything else in this app) so they need no capability
-// permissions.
 #[tauri::command]
 fn win_minimize(window: tauri::Window) {
     let _ = window.minimize();
@@ -34,9 +32,13 @@ fn win_start_drag(window: tauri::Window) {
 fn init_logging() {
     use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-    let log_dir = directories::ProjectDirs::from("com", "cove", "optimizer")
-        .map(|dirs| dirs.data_local_dir().join("logs"))
-        .unwrap_or_else(|| std::path::PathBuf::from("logs"));
+    let log_dir = if crate::portable::is_portable() {
+        crate::portable::portable_data_dir("cove-windows-optimizer").join("logs")
+    } else {
+        directories::ProjectDirs::from("com", "cove", "optimizer")
+            .map(|dirs| dirs.data_local_dir().join("logs"))
+            .unwrap_or_else(|| std::path::PathBuf::from("logs"))
+    };
 
     let file_appender = tracing_appender::rolling::daily(&log_dir, "cove-optimizer.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
