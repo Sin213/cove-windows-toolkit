@@ -1,9 +1,11 @@
 name: release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Tag-triggered auto-release is intentionally disabled. mod-temps embeds two
+  # git-ignored binaries (PawnIO_setup.exe, LibreHardwareMonitor.zip) that are
+  # local-only build inputs, so a fresh CI clone cannot compile. Releases are
+  # built locally and uploaded with `gh release`. This workflow remains available
+  # for manual runs only, in case those binaries are ever made available to CI.
   workflow_dispatch:
     inputs:
       version:
