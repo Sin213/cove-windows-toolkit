@@ -107,7 +107,7 @@ fn read_reg(path: &str, name: &str) -> String {
         "try {{ $v = (Get-ItemProperty -Path 'Registry::{}' -Name '{}' -ErrorAction Stop).'{}'; Write-Output $v }} catch {{ Write-Output 'NotSet' }}",
         path, name, name
     );
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(&ps).output() {
         let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if !val.is_empty() { return val; }
     }
@@ -122,12 +122,18 @@ fn read_reg(_path: &str, _name: &str) -> String {
 #[cfg(target_os = "windows")]
 fn query_service(service: &str) -> String {
     
+    // Some services (e.g. DiagTrack) do not exist on Windows Home N / LTSC editions.
+    // A missing service returns no object (not an exception), so report an honest
+    // 'NotAvailable' rather than a blank value the UI cannot interpret.
     let ps = format!(
-        "try {{ (Get-WmiObject Win32_Service -Filter \"Name='{}'\").StartMode }} catch {{ 'Unknown' }}",
+        "try {{ $s = Get-WmiObject Win32_Service -Filter \"Name='{}'\" -ErrorAction Stop; if ($s) {{ $s.StartMode }} else {{ 'NotAvailable' }} }} catch {{ 'Unknown' }}",
         service
     );
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
-        return String::from_utf8_lossy(&o.stdout).trim().to_string();
+    if let Ok(o) = optimizer_core::powershell(&ps).output() {
+        let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        if !val.is_empty() {
+            return val;
+        }
     }
     "Unknown".into()
 }

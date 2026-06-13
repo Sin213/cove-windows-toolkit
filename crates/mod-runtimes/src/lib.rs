@@ -77,7 +77,7 @@ try {
 } catch { Write-Output 'NOTFOUND|.NET Framework 3.5' }
 "#;
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('|').collect();
@@ -154,7 +154,7 @@ Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','
     ForEach-Object { Write-Output "$($_.DisplayName)|$($_.DisplayVersion)" }
 "#;
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         let entries: Vec<RuntimeEntry> = stdout.lines().filter_map(|line| {
             let parts: Vec<&str> = line.splitn(2, '|').collect();
@@ -196,9 +196,13 @@ fn detect_directx() -> DirectXInfo {
     let ps = r#"
 $tmp = Join-Path $env:TEMP 'cove_dxdiag.xml'
 Remove-Item $tmp -ErrorAction SilentlyContinue
-Start-Process dxdiag -ArgumentList "/x `"$tmp`"" -Wait -WindowStyle Hidden
+# Do NOT use -Wait: dxdiag can hang indefinitely on VMs / GPU-less or policy-
+# restricted machines, which would block the whole scan. Launch async, poll for
+# the output file up to 15s, then force-kill dxdiag if it is still running.
+$p = Start-Process dxdiag -ArgumentList "/x `"$tmp`"" -WindowStyle Hidden -PassThru
 $n = 0
 while (-not (Test-Path $tmp) -and $n -lt 30) { Start-Sleep -Milliseconds 500; $n++ }
+if ($p -and -not $p.HasExited) { try { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } catch {} }
 try {
     [xml]$x = Get-Content $tmp -Raw -ErrorAction Stop
     $ver = ($x.DxDiag.SystemInformation.DirectXVersion -replace 'DirectX\s*','').Trim()
@@ -211,7 +215,7 @@ try {
 } catch { Write-Output 'Unknown|Unknown' }
 "#;
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.split('|').collect();
         if parts.len() >= 2 && !parts[0].is_empty() {
@@ -251,7 +255,7 @@ if ($found.Count -eq 0) { Write-Output 'NONE' }
 else { $found | ForEach-Object { Write-Output $_ } }
 "#;
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if stdout != "NONE" {
             return stdout.lines().filter_map(|line| {

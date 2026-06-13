@@ -203,13 +203,11 @@ pub async fn set_dns(preset: String) -> serde_json::Value {
         )
     };
     let script = format!(
-        "$ErrorActionPreference='Stop'; try {{ Get-NetAdapter | Where-Object {{$_.Status -eq 'Up'}} | ForEach-Object {{ {} }}; Write-Output 'OK' }} catch {{ Write-Output ('FAIL|' + $_.Exception.Message) }}",
+        "$ErrorActionPreference='Stop'; try {{ Get-NetAdapter | Where-Object {{$_.ifOperStatus -eq 'Up'}} | ForEach-Object {{ {} }}; Write-Output 'OK' }} catch {{ Write-Output ('FAIL|' + $_.Exception.Message) }}",
         inner
     );
 
-    let output = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", &script])
-        .output();
+    let output = optimizer_core::powershell(&script).output();
 
     match output {
         Ok(o) => {
@@ -291,9 +289,7 @@ foreach ($s in $services) { Start-Service -Name $s -ErrorAction SilentlyContinue
 $log -join "`n"
 "#;
 
-    let output = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", script])
-        .output();
+    let output = optimizer_core::powershell(script).output();
 
     match output {
         Ok(o) => {
@@ -685,7 +681,7 @@ fn apply_registry_tweak(path: &str, name: &str, value: &str) -> serde_json::Valu
             "try {{ New-Item -Path 'Registry::{}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{}' -Name '{}' -Value {} -Type {} -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ Write-Output $_.Exception.Message }}",
             path, path, name, val, ty
         );
-        if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+        if let Ok(o) = optimizer_core::powershell(&ps).output() {
             let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
             if result == "OK" {
                 return serde_json::json!({ "success": true, "message": format!("Applied: {} = {}", name, value) });
@@ -790,8 +786,7 @@ fn delete_registry_value(path: &str, name: &str) -> Result<String, String> {
         "try {{ Remove-ItemProperty -Path 'Registry::{}' -Name '{}' -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ if ($_.Exception.Message -match 'does not exist|cannot find|was not found') {{ Write-Output 'OK' }} else {{ Write-Output $_.Exception.Message }} }}",
         path, name
     );
-    let o = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::powershell(&ps).output()
         .map_err(|e| e.to_string())?;
     let r = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if r == "OK" { Ok(format!("Removed {}", name)) } else { Err(r) }
@@ -1140,7 +1135,7 @@ fn system_drive_free_bytes() -> u64 {
     #[cfg(target_os = "windows")]
     {
         let ps = r#"$sd = $env:SystemDrive; (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sd'" -ErrorAction SilentlyContinue).FreeSpace"#;
-        if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+        if let Ok(o) = optimizer_core::powershell(ps).output() {
             return String::from_utf8_lossy(&o.stdout).trim().parse().unwrap_or(0);
         }
     }
@@ -1360,9 +1355,8 @@ fn get_activation_status_sync() -> serde_json::Value {
         return serde_json::json!({ "activated": true, "edition": "Windows 11 Pro", "status": "Licensed", "detail": "Windows is activated with a digital license." });
     }
 
-    let output = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command",
-            "Get-CimInstance -ClassName SoftwareLicensingProduct -Filter \"ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL\" | Select-Object -First 1 Name, LicenseStatus | ConvertTo-Json"])
+    let output = optimizer_core::powershell(
+            "Get-CimInstance -ClassName SoftwareLicensingProduct -Filter \"ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL\" | Select-Object -First 1 Name, LicenseStatus | ConvertTo-Json")
         .output();
 
     match output {

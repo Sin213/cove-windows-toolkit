@@ -54,7 +54,7 @@ if (Test-Path $disabledFolder) {
     let mut items = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if line.starts_with("ITEM|") {
@@ -170,7 +170,7 @@ if ($found) { Write-Output 'OK' } else { Write-Output 'NOTFOUND' }
 "#;
     let ps = format!("{}{}", prefix, body);
 
-    let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::powershell(&ps).output()
         .map_err(|e| e.to_string())?;
     let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if result == "OK" {

@@ -57,7 +57,7 @@ fn read_registry_value(path: &str, name: &str) -> Option<String> {
         "try {{ $v = (Get-ItemProperty -Path 'Registry::{}' -Name '{}' -ErrorAction Stop).'{}'; Write-Output $v }} catch {{ Write-Output 'NOTFOUND' }}",
         full_path, name, name
     );
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(&ps).output() {
         let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if val != "NOTFOUND" && !val.is_empty() { return Some(val); }
     }
@@ -81,7 +81,7 @@ pub fn apply_tweak(path: &str, name: &str, value: &str) -> Result<String, String
         "try {{ Set-ItemProperty -Path 'Registry::{path}' -Name '{name}' -Value {val} -Type {ty} -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ New-Item -Path 'Registry::{path}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{path}' -Name '{name}' -Value {val} -Type {ty} -Force -ErrorAction Stop; Write-Output 'OK' }}",
         path = path, name = name, val = val, ty = ty
     );
-    let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::powershell(&ps).output()
         .map_err(|e| e.to_string())?;
     if String::from_utf8_lossy(&o.stdout).trim() == "OK" {
         Ok(format!("Applied: {} = {}", name, value))

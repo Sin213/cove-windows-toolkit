@@ -135,8 +135,7 @@ fn run_defender_thread(kind: &str) {
         scan_flag
     );
 
-    let (success, threats, message) = match optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", &ps]).output()
+    let (success, threats, message) = match optimizer_core::powershell(&ps).output()
     {
         Ok(o) => {
             let s = String::from_utf8_lossy(&o.stdout);

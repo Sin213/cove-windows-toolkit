@@ -68,7 +68,7 @@ Write-Output "$size|$count"
         path, path
     );
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(&ps).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = line.split('|').collect();
         if parts.len() >= 2 {
@@ -122,7 +122,7 @@ Write-Output "OK|$freed"
         path, path, path, path
     );
 
-    let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::powershell(&ps).output()
         .map_err(|e| e.to_string())?;
     let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if line.starts_with("OK|") {

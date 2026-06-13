@@ -88,7 +88,7 @@ try {
     Write-Output "FAIL|0|0|0|$url"
 }
 "#;
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let p: Vec<&str> = line.split('|').collect();
         if p.len() >= 5 && p[0] == "OK" {
@@ -112,7 +112,7 @@ pub fn run_speed_test() -> SpeedTestResult {
 #[cfg(target_os = "windows")]
 fn get_primary_adapter() -> Option<AdapterInfo> {
     let ps = r#"
-$a = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' } | Select-Object -First 1
+$a = Get-NetAdapter | Where-Object { $_.ifOperStatus -eq 'Up' } | Select-Object -First 1
 if (-not $a) { exit 0 }
 $cfg = Get-NetIPConfiguration -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue
 $dns = ($cfg.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | ForEach-Object { $_.ServerAddresses }) -join ','
@@ -120,7 +120,7 @@ $ip = if ($cfg.IPv4Address) { $cfg.IPv4Address.IPAddress } else { '' }
 $gw = if ($cfg.IPv4DefaultGateway) { $cfg.IPv4DefaultGateway.NextHop } else { '' }
 Write-Output "$($a.Name)|$($a.InterfaceDescription)|$($a.LinkSpeed)|$ip|$gw|$dns|$($a.Status)"
 "#;
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let p: Vec<&str> = line.split('|').collect();
         if p.len() >= 7 {
@@ -183,7 +183,7 @@ try {
 "#;
 
     let mut tests = Vec::new();
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if !line.starts_with("TEST|") { continue; }
@@ -215,10 +215,16 @@ fn get_wifi_info() -> Option<WifiInfo> {
         let line = line.trim();
         if line.starts_with("SSID") && !line.starts_with("BSSID") {
             ssid = line.split(':').nth(1).unwrap_or("").trim().to_string();
+        } else if line.contains('%') {
+            // The signal-strength line is "<label> : NN%". The label is localized
+            // on non-English Windows, but the "NN%" value is not, and it is the only
+            // line in this section that contains a percent sign. Matching the value
+            // instead of the English "Signal" label keeps this locale-independent.
+            if let Some(rest) = line.split(':').nth(1) {
+                signal = rest.trim().trim_end_matches('%').trim().parse().unwrap_or(signal);
+            }
         } else if line.starts_with("Channel") {
             channel = line.split(':').nth(1).unwrap_or("").trim().parse().unwrap_or(0);
-        } else if line.starts_with("Signal") {
-            signal = line.split(':').nth(1).unwrap_or("").trim().trim_end_matches('%').parse().unwrap_or(0);
         }
     }
 

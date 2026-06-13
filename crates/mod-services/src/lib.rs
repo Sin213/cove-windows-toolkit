@@ -74,7 +74,7 @@ fn query_service_start_type(service: &str) -> String {
         service, service
     );
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(&ps).output() {
         let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
         if !result.is_empty() { return result; }
     }
@@ -89,7 +89,7 @@ pub fn apply_change(service: &str, start_type: &str) -> Result<String, String> {
         "Set-Service -Name '{}' -StartupType '{}' -ErrorAction Stop; Write-Output 'OK'",
         service, start_type
     );
-    let o = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output()
+    let o = optimizer_core::powershell(&ps).output()
         .map_err(|e| e.to_string())?;
     let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if result == "OK" {

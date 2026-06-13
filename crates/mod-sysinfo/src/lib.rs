@@ -133,9 +133,7 @@ pub fn collect() -> FullSystemInfo {
 #[cfg(target_os = "windows")]
 fn run_ps(script: &str) -> String {
     
-    let out = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", script])
-        .output();
+    let out = optimizer_core::powershell(script).output();
     match out {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(e) => format!("{{\"error\":\"{e}\"}}"),

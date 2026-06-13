@@ -55,7 +55,7 @@ try {
 }
 "#;
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.split('|').collect();
         if parts.len() >= 5 && parts[0] == "OK" {
@@ -103,7 +103,7 @@ pub fn run_scan(scan_type: &str) -> ScanResult {
         scan_flag
     );
 
-    match optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    match optimizer_core::powershell(&ps).output() {
         Ok(o) => {
             let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
             if result == "OK" {
@@ -148,7 +148,7 @@ Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\L
     Select-Object Id, ProcessName, Path |
     ForEach-Object { Write-Output "$($_.Id)|$($_.ProcessName)|$($_.Path)" }
 "#;
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps_procs]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps_procs).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.splitn(3, '|').collect();
@@ -195,7 +195,7 @@ $total = ($count.Values | Measure-Object -Sum).Sum
 $detail = ($count.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }) -join ', '
 Write-Output "$total|$detail"
 "#;
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps_ext]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps_ext).output() {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.splitn(2, '|').collect();
         if parts.len() == 2 {

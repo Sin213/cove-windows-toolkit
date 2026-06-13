@@ -135,7 +135,7 @@ foreach ($n in $net) {
         else { $spd = "$s bps" }
     }
     $atype = if ($n.AdapterType) { $n.AdapterType } else { '' }
-    if ($n.Name -match 'Wi-Fi|Wireless') { $atype = 'Wi-Fi' }
+    if ($n.Name -match 'Wi-Fi|Wireless|WLAN|802\.11' -or $atype -match 'Wireless|802\.11') { $atype = 'Wi-Fi' }
     $st = if ($n.NetConnectionStatus -eq 2) { 'Connected' } else { 'Disconnected' }
     $netArr += @{
         name = if ($n.Name) { $n.Name } else { 'Unknown' }

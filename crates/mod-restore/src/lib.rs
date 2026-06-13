@@ -29,9 +29,7 @@ pub fn get_restore_status() -> RestoreStatus {
     // System Protection is disabled and non-zero when it is enabled.
     let script = r#"$rp = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' -Name RPSessionInterval -ErrorAction SilentlyContinue).RPSessionInterval
 if ($rp -and [int]$rp -gt 0) { 'enabled' } else { 'disabled' }"#;
-    let output = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", script])
-        .output();
+    let output = optimizer_core::powershell(script).output();
 
     match output {
         Ok(out) => {
@@ -69,13 +67,10 @@ pub fn get_restore_status() -> RestoreStatus {
 #[cfg(target_os = "windows")]
 pub fn list_restore_points() -> Vec<RestorePoint> {
     
-    let output = optimizer_core::silent_cmd("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Get-ComputerRestorePoint | Select-Object SequenceNumber, Description, @{N='RestorePointType';E={ switch ([int]$_.RestorePointType) { 0 {'Application Install'} 1 {'Application Uninstall'} 10 {'Device Driver Install'} 12 {'Modify Settings'} 13 {'Cancelled Operation'} default {\"Type $($_.RestorePointType)\"} } }}, @{N='CreationTime';E={$_.ConvertToDateTime($_.CreationTime).ToString('o')}} | ConvertTo-Json -Compress",
-        ])
-        .output();
+    let output = optimizer_core::powershell(
+        "Get-ComputerRestorePoint | Select-Object SequenceNumber, Description, @{N='RestorePointType';E={ switch ([int]$_.RestorePointType) { 0 {'Application Install'} 1 {'Application Uninstall'} 10 {'Device Driver Install'} 12 {'Modify Settings'} 13 {'Cancelled Operation'} default {\"Type $($_.RestorePointType)\"} } }}, @{N='CreationTime';E={$_.ConvertToDateTime($_.CreationTime).ToString('o')}} | ConvertTo-Json -Compress",
+    )
+    .output();
 
     match output {
         Ok(out) => {
@@ -129,8 +124,7 @@ pub fn create_restore_point(description: &str) -> Result<String, String> {
         "Checkpoint-Computer -Description '{}' -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop",
         description.replace('\'', "''")
     );
-    let output = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", &script])
+    let output = optimizer_core::powershell(&script)
         .output()
         .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
 
@@ -159,12 +153,7 @@ pub fn create_restore_point(description: &str) -> Result<String, String> {
 #[cfg(target_os = "windows")]
 pub fn enable_system_protection() -> Result<String, String> {
     
-    let output = optimizer_core::silent_cmd("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "Enable-ComputerRestore -Drive $env:SystemDrive -ErrorAction Stop",
-        ])
+    let output = optimizer_core::powershell("Enable-ComputerRestore -Drive $env:SystemDrive -ErrorAction Stop")
         .output()
         .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
 

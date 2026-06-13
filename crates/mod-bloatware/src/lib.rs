@@ -88,7 +88,10 @@ $all | Sort-Object -Unique | ConvertTo-Json -Compress
     let installed: Vec<String> = serde_json::from_str(&json).unwrap_or_default();
 
     BLOATWARE_LIST.iter().map(|(pkg, name, cat)| {
-        let is_installed = installed.iter().any(|i| i.contains(pkg));
+        // AppX package-name casing can vary across machines/locales, so match
+        // case-insensitively to avoid reporting an installed app as absent.
+        let pkg_l = pkg.to_lowercase();
+        let is_installed = installed.iter().any(|i| i.to_lowercase().contains(&pkg_l));
         BloatwareApp {
             package_name: pkg.to_string(),
             display_name: name.to_string(),
@@ -120,9 +123,7 @@ pub fn remove_apps(packages: &[String]) -> Vec<RemoveResult> {
             pkg.replace('\'', "''"),
             pkg.replace('\'', "''"),
         );
-        let output = optimizer_core::silent_cmd("powershell")
-            .args(["-NoProfile", "-Command", &script])
-            .output();
+        let output = optimizer_core::powershell(&script).output();
 
         match output {
             Ok(o) if o.status.success() => RemoveResult {
@@ -155,7 +156,7 @@ pub fn remove_apps(packages: &[String]) -> Vec<RemoveResult> {
 #[cfg(target_os = "windows")]
 fn run_ps(script: &str) -> String {
     
-    match optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", script]).output() {
+    match optimizer_core::powershell(script).output() {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(_) => "[]".to_string(),
     }

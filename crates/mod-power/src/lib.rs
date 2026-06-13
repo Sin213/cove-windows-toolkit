@@ -83,13 +83,20 @@ pub fn get_info() -> PowerInfo {
 }
 
 fn parse_powercfg_timeout(output: &str) -> u32 {
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("Current AC Power Setting Index:") {
-            let hex = trimmed.split("0x").nth(1).unwrap_or("0");
-            let seconds = u32::from_str_radix(hex.trim(), 16).unwrap_or(0);
-            return seconds / 60;
-        }
+    // The "Current AC Power Setting Index:" label is localized on non-English
+    // Windows, so we cannot match on it. For a range setting, powercfg always
+    // emits its 0x hex values in a fixed order regardless of language:
+    //   Minimum / Maximum / increment possible, then Current AC, then Current DC.
+    // The AC value (what we want) is therefore the second-to-last 0x value.
+    let hexes: Vec<u32> = output
+        .lines()
+        .filter_map(|l| {
+            l.find("0x")
+                .and_then(|i| u32::from_str_radix(l[i + 2..].trim(), 16).ok())
+        })
+        .collect();
+    if hexes.len() >= 2 {
+        return hexes[hexes.len() - 2] / 60;
     }
     0
 }

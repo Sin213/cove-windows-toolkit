@@ -120,8 +120,7 @@ pub fn scan_leftovers(name: &str, _publisher: &str, _install_location: &str, _re
 
 #[cfg(target_os = "windows")]
 fn run_removal(script: &str) -> (bool, String) {
-    match optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", script]).output()
+    match optimizer_core::powershell(script).output()
     {
         Ok(o) if o.status.success() => (true, "Removed".into()),
         Ok(o) => {
@@ -208,7 +207,7 @@ try {{
 }}"#,
         quoted
     );
-    match optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &script]).output() {
+    match optimizer_core::powershell(&script).output() {
         Ok(o) => {
             let out = String::from_utf8_lossy(&o.stdout);
             let last = out.lines().map(str::trim).filter(|s| !s.is_empty()).last().unwrap_or("");
@@ -277,7 +276,7 @@ pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
 #[cfg(target_os = "windows")]
 fn run_ps(script: &str) -> String {
     
-    match optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", script]).output() {
+    match optimizer_core::powershell(script).output() {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         Err(_) => "[]".to_string(),
     }

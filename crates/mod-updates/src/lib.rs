@@ -62,8 +62,12 @@ try {
         Write-Output "COMP|Unknown"
     } elseif ($dism -match 'No component store corruption') {
         Write-Output "COMP|Healthy"
-    } else {
+    } elseif ($dism -match 'repairable|corruption') {
         Write-Output "COMP|Needs Repair"
+    } else {
+        # DISM's health text is localized; on non-English Windows a healthy store
+        # matches neither pattern. Report 'Unknown' rather than a false 'Needs Repair'.
+        Write-Output "COMP|Unknown"
     }
 } catch { Write-Output "COMP|Unknown" }
 "#;
@@ -77,7 +81,7 @@ try {
         days_since_last_update: 0,
     };
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if line.starts_with("STATUS|") {

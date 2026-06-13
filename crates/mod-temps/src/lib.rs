@@ -96,16 +96,11 @@ mod windows {
         std::fs::write(&zip_path, LHM_ZIP).ok()?;
         std::fs::create_dir_all(&dir).ok()?;
 
-        let output = optimizer_core::silent_cmd("powershell")
-            .args([
-                "-NoProfile",
-                "-Command",
-                &format!(
-                    "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
-                    zip_path.display(),
-                    dir.display()
-                ),
-            ])
+        let output = optimizer_core::powershell(&format!(
+                "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+                zip_path.display(),
+                dir.display()
+            ))
             .output()
             .ok()?;
 
@@ -182,8 +177,17 @@ $computer.Close()
 
         let script = build_sensor_script(&dir_str);
 
+        // Needs -ExecutionPolicy Bypass (loads LibreHardwareMonitor via Add-Type), so it
+        // can't use the plain helper; prepend PS_PRELUDE manually to force UTF-8 output.
         let output = optimizer_core::silent_cmd("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &format!("{}{}", optimizer_core::PS_PRELUDE, script),
+            ])
             .output()
             .map_err(|e| format!("PowerShell failed: {}", e))?;
 

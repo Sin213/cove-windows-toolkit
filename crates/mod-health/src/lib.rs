@@ -42,8 +42,7 @@ fn check_disk_space() -> (Finding, i32) {
     let ps = r#"$sd = $env:SystemDrive
 $d = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sd'" -ErrorAction SilentlyContinue
 Write-Output "$($d.FreeSpace)|$($d.Size)""#;
-    if let Ok(o) = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", ps]).output()
+    if let Ok(o) = optimizer_core::powershell(ps).output()
     {
         let s = String::from_utf8_lossy(&o.stdout);
         let p: Vec<&str> = s.trim().split('|').collect();
@@ -95,8 +94,7 @@ fn disk_finding(free: u64, total: u64) -> (Finding, i32) {
 fn check_ram() -> (Finding, i32) {
     let ps = r#"$os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
 Write-Output "$($os.FreePhysicalMemory)|$($os.TotalVisibleMemorySize)""#;
-    if let Ok(o) = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", ps]).output()
+    if let Ok(o) = optimizer_core::powershell(ps).output()
     {
         let s = String::from_utf8_lossy(&o.stdout);
         let p: Vec<&str> = s.trim().split('|').collect();

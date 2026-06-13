@@ -62,7 +62,7 @@ foreach ($lvl in @(1,2,3)) {{
 
     let mut summary = LogSummary { critical: 0, error: 0, warning: 0, recent_events: Vec::new() };
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", &ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(&ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if let Some(rest) = line.strip_prefix("EVT|") {

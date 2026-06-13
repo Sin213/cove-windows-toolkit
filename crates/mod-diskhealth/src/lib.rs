@@ -80,7 +80,7 @@ foreach ($d in $disks) {
 
     let mut drives = Vec::new();
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.split('|').collect();
@@ -196,8 +196,7 @@ Get-ChildItem -Path '{}\Users' -Recurse -File -Force -ErrorAction SilentlyContin
         largest_files: Vec::new(),
     };
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell")
-        .args(["-NoProfile", "-Command", &ps])
+    if let Ok(o) = optimizer_core::powershell(&ps)
         .output()
     {
         let stdout = String::from_utf8_lossy(&o.stdout);
@@ -372,7 +371,7 @@ Write-Output "DIRTY|$dirty"
         dirty_bit: false,
     };
 
-    if let Ok(o) = optimizer_core::silent_cmd("powershell").args(["-NoProfile", "-Command", ps]).output() {
+    if let Ok(o) = optimizer_core::powershell(ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if line.starts_with("FOUND|") {
