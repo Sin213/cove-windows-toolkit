@@ -3,7 +3,7 @@ import iconUrl from "../assets/icon.png";
 import "./TitleBar.css";
 
 const TITLE = "Cove Windows Toolkit";
-const VERSION = "v1.0.0";
+const VERSION = `v${__APP_VERSION__}`;
 
 function TitleBar() {
   // Drag the window from the bar background (not from the control buttons).
