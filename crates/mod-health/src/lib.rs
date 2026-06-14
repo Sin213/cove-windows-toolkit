@@ -79,8 +79,9 @@ fn disk_finding(free: u64, total: u64) -> (Finding, i32) {
         id: "disk.free_space".to_string(),
         severity,
         title: "System Drive Free Space".to_string(),
+        // Volume free/total space is binary (matches what Windows Explorer shows).
         detail: format!("{:.1} GB free of {:.1} GB ({:.0}%)",
-            free as f64 / 1e9, total as f64 / 1e9, pct_free),
+            free as f64 / 1_073_741_824.0, total as f64 / 1_073_741_824.0, pct_free),
         metric: Some(MetricValue::Percent(pct_free)),
         remediation: if severity != Severity::Ok {
             Some("Run Disk Cleanup to free space on the system drive".to_string())
@@ -132,8 +133,9 @@ fn ram_finding(available: u64, total: u64) -> (Finding, i32) {
         id: "ram.available".to_string(),
         severity,
         title: "Available RAM".to_string(),
+        // RAM is binary: a 32 GiB machine is 34.36e9 bytes, which must read as 32 GB.
         detail: format!("{:.1} GB available of {:.1} GB ({:.0}%)",
-            available as f64 / 1e9, total as f64 / 1e9, pct_available),
+            available as f64 / 1_073_741_824.0, total as f64 / 1_073_741_824.0, pct_available),
         metric: Some(MetricValue::Percent(pct_available)),
         remediation: if severity != Severity::Ok {
             Some("Close unused applications to free memory".to_string())

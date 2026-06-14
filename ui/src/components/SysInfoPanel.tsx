@@ -33,10 +33,24 @@ const SECTIONS: { id: Section; label: string; icon: string }[] = [
   { id: "network", label: "Network", icon: "⇄" },
 ];
 
+// Decimal (powers of 1000) - for storage marketed capacity. A "500 GB" drive
+// is 500 * 10^9 bytes on the sticker, so disk sizes use this base.
 function fmtBytes(b: number): string {
   if (b >= 1e12) return `${(b / 1e12).toFixed(1)} TB`;
   if (b >= 1e9) return `${(b / 1e9).toFixed(1)} GB`;
   if (b >= 1e6) return `${(b / 1e6).toFixed(0)} MB`;
+  return `${b} B`;
+}
+
+// Binary (powers of 1024) - for memory-class values. RAM and VRAM are inherently
+// power-of-two: a 16 GiB stick reports 17,179,869,184 bytes, which Windows and
+// every BIOS calls "16 GB". Volume free/used space is also binary in Explorer.
+// Using the decimal base here is what produced the bogus "34.4 GB" / "17.2 GB".
+function fmtBin(b: number): string {
+  if (b >= 1024 ** 4) return `${(b / 1024 ** 4).toFixed(1)} TB`;
+  if (b >= 1024 ** 3) return `${(b / 1024 ** 3).toFixed(1)} GB`;
+  if (b >= 1024 ** 2) return `${(b / 1024 ** 2).toFixed(0)} MB`;
+  if (b >= 1024) return `${(b / 1024).toFixed(0)} KB`;
   return `${b} B`;
 }
 
@@ -129,15 +143,15 @@ function SummaryView({ info }: { info: FullSystemInfo }) {
         <div className="summary-sub">{info.cpu.cores} Cores / {info.cpu.threads} Threads</div>
       </SectionCard>
       <SectionCard title="RAM" icon="▦">
-        <div className="summary-value">{fmtBytes(info.ram.total_bytes)}</div>
-        <div className="summary-sub">{info.ram.ram_type} {info.ram.speed_mhz} MHz - {info.ram.slots_used}/{info.ram.slots_total} slots</div>
+        <div className="summary-value">{fmtBin(info.ram.total_bytes)}</div>
+        <div className="summary-sub">{info.ram.ram_type} {info.ram.speed_mhz} MT/s - {info.ram.slots_used}/{info.ram.slots_total} slots</div>
       </SectionCard>
       <SectionCard title="Motherboard" icon="▣">
         <div className="summary-value">{info.motherboard.manufacturer} {info.motherboard.product}</div>
       </SectionCard>
       <SectionCard title="Graphics" icon="🖵">
         {info.graphics.map((g, i) => (
-          <div key={i} className="summary-value">{g.name} ({fmtBytes(g.vram_bytes)} VRAM)</div>
+          <div key={i} className="summary-value">{g.name} ({fmtBin(g.vram_bytes)} VRAM)</div>
         ))}
         {info.monitors.map((m, i) => (
           <div key={`m${i}`} className="summary-sub">{m.name} {m.resolution && `(${m.resolution})`}</div>
@@ -197,10 +211,10 @@ function CpuView({ cpu }: { cpu: CpuInfo }) {
 function RamView({ ram }: { ram: RamInfo }) {
   return (
     <div className="detail-section">
-      <Row label="Total" value={fmtBytes(ram.total_bytes)} />
-      <Row label="Available" value={fmtBytes(ram.available_bytes)} />
+      <Row label="Total" value={fmtBin(ram.total_bytes)} />
+      <Row label="Available" value={fmtBin(ram.available_bytes)} />
       <Row label="Type" value={ram.ram_type} />
-      <Row label="Speed" value={`${ram.speed_mhz} MHz`} />
+      <Row label="Speed" value={`${ram.speed_mhz} MT/s`} />
       <Row label="Slots" value={`${ram.slots_used} of ${ram.slots_total} used`} />
       {ram.modules.length > 0 && (
         <>
@@ -208,8 +222,8 @@ function RamView({ ram }: { ram: RamInfo }) {
           {ram.modules.map((m, i) => (
             <div key={i} className="module-card">
               <Row label="Slot" value={m.slot} />
-              <Row label="Capacity" value={fmtBytes(m.capacity_bytes)} />
-              <Row label="Speed" value={`${m.speed_mhz} MHz`} />
+              <Row label="Capacity" value={fmtBin(m.capacity_bytes)} />
+              <Row label="Speed" value={`${m.speed_mhz} MT/s`} />
               <Row label="Manufacturer" value={m.manufacturer} />
               <Row label="Part Number" value={m.part_number} />
             </div>
@@ -240,7 +254,7 @@ function GfxView({ gpus, monitors }: { gpus: GpuInfo[]; monitors: MonitorInfo[] 
       {gpus.map((g, i) => (
         <div key={i} className="module-card">
           <Row label="GPU" value={g.name} />
-          <Row label="VRAM" value={fmtBytes(g.vram_bytes)} />
+          <Row label="VRAM" value={fmtBin(g.vram_bytes)} />
           <Row label="Driver" value={g.driver_version} />
           <Row label="Status" value={g.status} />
         </div>
@@ -280,7 +294,7 @@ function StorageView({ drives }: { drives: DriveInfo[] }) {
                     <div className="part-bar-wrap">
                       <div className="part-bar" style={{ width: `${usedPct}%`, background: usedPct > 90 ? "var(--red)" : "var(--accent)" }} />
                     </div>
-                    <span className="part-size">{fmtBytes(p.free_bytes)} free / {fmtBytes(p.size_bytes)}</span>
+                    <span className="part-size">{fmtBin(p.free_bytes)} free / {fmtBin(p.size_bytes)}</span>
                   </div>
                 );
               })}
