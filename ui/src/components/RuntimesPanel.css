@@ -7,28 +7,38 @@
 }
 
 .runtimes-category-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  letter-spacing: 1.3px;
+  margin-bottom: 10px;
 }
 
+/* Hairline row list: gap rendered as the divider line */
 .runtimes-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
 }
 
 .runtime-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 11px 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: none;
+  border-radius: 0;
+  transition: background 0.15s ease;
+}
+
+.runtime-item:hover {
+  background: var(--bg-card-2);
 }
 
 .runtime-status-icon {
@@ -43,7 +53,7 @@
 }
 
 .runtime-status-icon.missing {
-  color: var(--text-muted);
+  color: var(--ink-4);
 }
 
 .runtime-status-icon.outdated {
@@ -58,29 +68,40 @@
 .runtime-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .runtime-detail {
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-top: 2px;
 }
 
 .runtime-version {
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
 .runtime-arch {
+  font-family: var(--font-mono);
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-2);
+  color: var(--ink-3);
   flex-shrink: 0;
 }
 
@@ -90,65 +111,89 @@
   gap: 10px;
 }
 
+/* Ghost / secondary button */
 .copy-summary-btn {
   padding: 8px 16px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-2);
   background: var(--bg-card);
-  color: var(--text-secondary);
+  color: var(--ink);
+  font-family: var(--font-ui);
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .copy-summary-btn:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--accent);
+  background: var(--bg-card-2);
+  border-color: var(--line-3);
 }
 
+/* DirectX single row — match card recipe */
 .dx-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 14px;
+  padding: 11px 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
+.dx-row:hover {
+  background: var(--bg-card-2);
+  border-color: var(--line-3);
+}
+
+/* Feature level reads as mono inside the DirectX row */
+.dx-row .runtime-version {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* Semantic soft pill */
 .runtime-outdated-badge {
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--yellow-bg);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--yellow-soft);
   color: var(--yellow);
-  margin-left: 6px;
+  border: 1px solid var(--yellow-soft);
+  margin-left: 2px;
   font-weight: 600;
 }
 
+/* Inline ghost action */
 .runtime-dl-btn {
   padding: 4px 12px;
-  border-radius: 5px;
-  border: 1px solid var(--accent);
-  background: transparent;
-  color: var(--accent);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  font-family: var(--font-ui);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: filter 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .runtime-dl-btn:hover {
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
+  border-color: var(--accent-line);
   color: #fff;
+  box-shadow: 0 6px 20px -10px var(--accent), 0 1px 0 rgba(255, 255, 255, 0.18) inset;
 }
 
 .java-empty {
   padding: 12px 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }

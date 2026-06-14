@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { View } from "../App";
 import { invoke } from "../lib/tauri";
+import Icon from "./Icon";
 import "./Sidebar.css";
 
 interface Props {
@@ -61,10 +62,13 @@ export default function Sidebar({ current, onNavigate }: Props) {
     <nav className="sidebar">
       {isAdmin !== null && (
         <div className={`admin-badge ${isAdmin ? "admin-yes" : "admin-no"}`}>
-          <span className="admin-icon">{isAdmin ? "🛡" : "⚠"}</span>
-          <span className="admin-label">
-            {isAdmin ? "Admin" : "Not Admin"}
+          <span className="admin-icon">
+            <Icon name={isAdmin ? "shield" : "warn"} size={15} />
           </span>
+          <span className="admin-label">
+            {isAdmin ? "Administrator" : "Not Admin"}
+          </span>
+          <span className="admin-pulse" />
         </div>
       )}
       {sections.map((section) => {
@@ -81,7 +85,7 @@ export default function Sidebar({ current, onNavigate }: Props) {
                 className={`nav-item ${current === item.id ? "active" : ""}`}
                 onClick={() => onNavigate(item.id)}
               >
-                <span className="nav-icon">{item.icon}</span>
+                <span className="nav-icon"><Icon name={item.id} size={17} /></span>
                 <span className="nav-label">{item.label}</span>
               </button>
             ))}

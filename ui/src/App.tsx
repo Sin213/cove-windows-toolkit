@@ -40,11 +40,13 @@ function App() {
       <div className="app-body">
         <Sidebar current={view} onNavigate={setView} />
         <main className="main-content">
-          {view === "dashboard" ? (
-            <Dashboard onNavigate={setView} />
-          ) : (
-            <CategoryPanel view={view} onBack={() => setView("dashboard")} />
-          )}
+          <div className="main-inner">
+            {view === "dashboard" ? (
+              <Dashboard onNavigate={setView} />
+            ) : (
+              <CategoryPanel view={view} onBack={() => setView("dashboard")} />
+            )}
+          </div>
         </main>
       </div>
     </>

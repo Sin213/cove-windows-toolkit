@@ -1,35 +1,50 @@
-.category-panel {
-  max-width: 860px;
-}
-
-.back-btn {
-  background: none;
-  border: none;
-  color: var(--accent);
-  font-size: 13px;
-  cursor: pointer;
-  padding: 0;
-  margin-bottom: 16px;
-}
-
-.back-btn:hover {
-  color: var(--accent-hover);
-}
-
-.panel-header {
+/* ============================================================
+   PANEL HEAD - back button, icon chip, titles
+   ============================================================ */
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   margin-bottom: 24px;
 }
 
-.panel-header h1 {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 4px;
+.back-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-card);
+  color: var(--ink-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color 0.14s, color 0.14s, background 0.14s;
+}
+.back-btn:hover { border-color: var(--line-3); color: var(--ink); background: var(--bg-card-2); }
+
+.panel-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  border: 1px solid var(--accent-line);
 }
 
-.panel-header p {
-  color: var(--text-secondary);
-  font-size: 13px;
+.panel-titles h1 {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+}
+.panel-titles p {
+  color: var(--ink-2);
+  font-size: 13.5px;
+  margin-top: 2px;
 }
 
 /* ── Shared tier badges ────────────────────────────────────────────── */

@@ -7,5 +7,12 @@
 .main-content {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 32px;
+  background: var(--bg-canvas);
+  position: relative;
+}
+
+.main-inner {
+  padding: 30px 36px 56px;
+  max-width: 1180px;
+  margin: 0 auto;
 }

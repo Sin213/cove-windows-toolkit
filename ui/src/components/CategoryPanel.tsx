@@ -1,4 +1,5 @@
 import type { View } from "../App";
+import Icon from "./Icon";
 import "./CategoryPanel.css";
 
 import PerformancePanel from "./PerformancePanel";
@@ -172,12 +173,15 @@ export default function CategoryPanel({ view, onBack }: Props) {
 
   return (
     <div className="category-panel">
-      <button className="back-btn" onClick={onBack}>
-        &larr; Dashboard
-      </button>
-      <div className="panel-header">
-        <h1>{meta.title}</h1>
-        <p>{meta.description}</p>
+      <div className="panel-head">
+        <button className="back-btn" onClick={onBack} aria-label="Back">
+          <Icon name="back" size={18} />
+        </button>
+        <span className="panel-icon"><Icon name={view} size={20} /></span>
+        <div className="panel-titles">
+          <h1>{meta.title}</h1>
+          <p>{meta.description}</p>
+        </div>
       </div>
 
       {PanelComponent ? (

@@ -1,131 +1,208 @@
 .diff-panel {
   max-width: 700px;
+  font-family: var(--font-ui);
 }
 
+/* ---- First-visit empty state ---- */
 .diff-first-visit {
   text-align: center;
-  padding: 40px 20px;
-  color: var(--text-secondary);
+  padding: 48px 28px;
+  color: var(--ink-3);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.diff-first-visit h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+
+.diff-first-visit p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-3);
+  max-width: 420px;
+  margin: 0 auto;
 }
 
 .diff-first-visit-icon {
   font-size: 40px;
-  margin-bottom: 12px;
+  line-height: 1;
+  margin-bottom: 14px;
+  opacity: 0.85;
 }
 
 .diff-timestamp {
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--ink-4);
   margin-bottom: 16px;
+  letter-spacing: 0.2px;
 }
 
+/* ---- Primary button (Cove) ---- */
 .diff-snapshot-btn {
-  margin-top: 16px;
-  padding: 8px 20px;
-  border-radius: 6px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
+  margin-top: 18px;
+  padding: 9px 22px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--accent-line);
+  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
   color: #fff;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-}
-
-.diff-snapshot-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  box-shadow:
+    0 6px 20px -10px var(--accent),
+    0 1px 0 rgba(255, 255, 255, 0.18) inset;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
 }
 
 .diff-snapshot-btn:hover:not(:disabled) {
-  filter: brightness(1.1);
+  filter: brightness(1.08);
 }
 
+.diff-snapshot-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.diff-snapshot-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* ---- Metric change list (hairline rows) ---- */
 .diff-grid {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
 }
 
 .diff-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 13px 16px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: none;
+  border-radius: 0;
+  transition: background 0.12s ease;
+}
+
+.diff-row:hover {
+  background: var(--bg-card-2);
 }
 
 .diff-row-label {
   font-size: 13px;
-  color: var(--text-primary);
+  color: var(--ink-2);
   font-weight: 500;
 }
 
+/* Delta value rendered as a Cove pill */
 .diff-row-value {
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  letter-spacing: 0.2px;
 }
 
 .diff-row-value.positive {
   color: var(--green);
+  background: var(--green-soft);
 }
 
 .diff-row-value.negative {
   color: var(--red);
+  background: var(--red-soft);
 }
 
 .diff-row-value.neutral {
-  color: var(--text-muted);
+  color: var(--ink-3);
+  background: var(--bg-inset);
 }
 
+/* ---- Change lists (new/removed programs, etc.) ---- */
 .diff-list-section {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .diff-list-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
+  letter-spacing: 1.3px;
+  margin-bottom: 10px;
 }
 
 .diff-list-items {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
 }
 
 .diff-list-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 9px 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: none;
+  border-radius: 0;
   font-size: 13px;
-  color: var(--text-primary);
+  color: var(--ink-2);
+  transition: background 0.12s ease;
 }
 
+.diff-list-item:hover {
+  background: var(--bg-card-2);
+}
+
+/* +/- marker rendered as a mono delta pill */
 .diff-list-icon {
-  font-size: 12px;
-  width: 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
   text-align: center;
 }
 
+/* TSX maps a "+" badge to .added (a removal/regression -> red)
+   and a "-" badge to .removed (a removal of an item -> green). */
 .diff-list-icon.added {
   color: var(--red);
+  background: var(--red-soft);
 }
 
 .diff-list-icon.removed {
   color: var(--green);
+  background: var(--green-soft);
 }
 
 .diff-actions {
-  margin-top: 20px;
+  margin-top: 22px;
   display: flex;
   gap: 10px;
 }

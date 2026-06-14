@@ -1,7 +1,8 @@
 .temps-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
+  font-family: var(--font-ui);
 }
 
 /* Toolbar */
@@ -11,28 +12,32 @@
   gap: 16px;
 }
 
+/* Ghost button */
 .temps-refresh-btn {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
+  border: 1px solid var(--line-2);
+  color: var(--ink);
+  font-family: var(--font-ui);
   font-size: 13px;
-  padding: 6px 16px;
-  border-radius: 6px;
+  font-weight: 600;
+  padding: 7px 18px;
+  border-radius: var(--r-md);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .temps-refresh-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--line-3);
+  background: var(--bg-card-2);
+  color: var(--ink);
 }
 
 .auto-refresh-label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   cursor: pointer;
   user-select: none;
 }
@@ -45,19 +50,20 @@
 .temps-warnings {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
 
 .temps-warning {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: var(--yellow-bg);
+  gap: 9px;
+  padding: 11px 15px;
+  background: var(--yellow-soft);
   color: var(--yellow);
-  border: 1px solid var(--yellow);
-  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--yellow) 45%, transparent);
+  border-radius: var(--r-md);
   font-size: 12px;
+  font-weight: 500;
 }
 
 .warn-icon {
@@ -66,42 +72,55 @@
 }
 
 .temps-empty {
-  padding: 32px 20px;
+  padding: 36px 24px;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: 13px;
+  line-height: 1.5;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r-lg);
 }
 
 /* Category */
 .temps-category {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 20px 22px;
 }
 
 .temps-cat-title {
-  margin: 0 0 12px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent);
+  margin: 0 0 16px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
 }
 
 .temps-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 16px;
+  gap: 14px;
 }
 
-/* Gauge */
+/* Gauge card */
 .temp-gauge {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  padding: 16px 12px 14px;
+  background: var(--bg-card-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.temp-gauge:hover {
+  background: var(--bg-inset);
+  border-color: var(--line-3);
 }
 
 .gauge-ring-wrap {
@@ -117,19 +136,23 @@
 
 .gauge-temp {
   position: absolute;
-  bottom: 2px;
+  bottom: 0;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 20px;
+  font-family: var(--font-mono);
+  font-size: 22px;
   font-weight: 700;
-  transition: color 0.3s;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+  transition: color 0.3s ease;
 }
 
 .gauge-label {
-  font-size: 12px;
-  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
   font-weight: 500;
-  margin-top: 4px;
+  margin-top: 8px;
   max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -138,51 +161,57 @@
 
 .gauge-status {
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 2px;
+  letter-spacing: 0.8px;
+  margin-top: 4px;
 }
 
 .gauge-max {
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 1px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  margin-top: 3px;
 }
 
 /* LHM status */
 .lhm-badge {
   font-size: 11px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 10px;
+  font-weight: 700;
+  padding: 3px 11px;
+  border-radius: 999px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.7px;
 }
 
 .lhm-active {
-  background: rgba(76, 175, 80, 0.15);
+  background: var(--green-soft);
   color: var(--green);
-  border: 1px solid var(--green);
+  border: 1px solid color-mix(in srgb, var(--green) 45%, transparent);
 }
 
+/* Primary button */
 .lhm-start-btn {
-  background: var(--accent);
-  color: var(--bg-main);
-  border: none;
+  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
+  color: #fff;
+  border: 1px solid var(--accent-line);
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 600;
-  padding: 5px 14px;
-  border-radius: 6px;
+  padding: 6px 16px;
+  border-radius: var(--r-md);
   cursor: pointer;
-  transition: opacity 0.15s;
+  box-shadow: 0 6px 20px -10px var(--accent), 0 1px 0 rgba(255, 255, 255, 0.18) inset;
+  transition: filter 0.15s ease, opacity 0.15s ease;
 }
 
 .lhm-start-btn:hover {
-  opacity: 0.85;
+  filter: brightness(1.08);
 }
 
 .lhm-start-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  filter: none;
 }

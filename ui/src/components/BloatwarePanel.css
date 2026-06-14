@@ -1,151 +1,126 @@
-.bloatware-panel .bloatware-summary {
+/* ============================================================
+   BLOATWARE REMOVER - Cove redesign
+   ============================================================ */
+.bloat-summary {
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 14px 16px;
+  justify-content: space-between;
+  gap: 16px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 18px 22px;
+  margin-bottom: 22px;
 }
+.bs-stat { display: flex; align-items: baseline; gap: 10px; }
+.bs-num { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+.bs-lbl { font-size: 13px; color: var(--ink-2); }
 
-.bloatware-panel .summary-actions {
-  display: flex;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.bloatware-panel .select-all-btn {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
-  font-size: 12px;
-  padding: 6px 14px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.bloatware-panel .select-all-btn:hover:not(:disabled) {
-  border-color: var(--text-muted);
-}
-
-.remove-btn {
-  background: var(--red);
-  border: none;
-  color: #fff;
+.bloat-actions { display: flex; gap: 9px; }
+.btn-sel {
+  padding: 9px 16px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-inset);
+  color: var(--ink);
   font-size: 13px;
-  font-weight: 500;
-  padding: 6px 20px;
-  border-radius: 6px;
+  font-weight: 600;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: border-color 0.14s;
 }
-
-.remove-btn:hover:not(:disabled) {
-  opacity: 0.85;
+.btn-sel:hover:not(:disabled) { border-color: var(--line-3); }
+.btn-remove {
+  padding: 9px 18px;
+  border-radius: var(--r-sm);
+  border: 1px solid color-mix(in oklch, var(--red) 38%, transparent);
+  background: var(--red-soft);
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s;
 }
-
-.remove-btn:disabled,
-.bloatware-panel .select-all-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.btn-remove:hover:not(:disabled) { background: color-mix(in oklch, var(--red) 22%, transparent); }
+.btn-remove:disabled, .btn-sel:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .no-bloatware {
   padding: 24px;
   text-align: center;
-  color: var(--text-secondary);
+  color: var(--ink-2);
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
 }
 
-.bloatware-group {
-  margin-bottom: 18px;
-}
-
-.bloatware-group-title {
+.bloat-group { margin-bottom: 22px; }
+.bloat-group-title {
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-weight: 700;
+  color: var(--ink-3);
+  letter-spacing: 1.2px;
   text-transform: uppercase;
-  color: var(--text-muted);
-  margin: 0 4px 8px;
+  margin-bottom: 10px;
 }
 
-.bloatware-list {
+.bloat-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
 }
-
-.bloatware-item {
+.bloat-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 11px 16px;
+  gap: 13px;
+  padding: 12px 15px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.12s;
 }
+.bloat-item:hover { background: var(--bg-card-2); }
+.bloat-item.removed { opacity: 0.5; cursor: default; }
 
-.bloatware-item:hover {
-  border-color: var(--text-muted);
-}
-
-.bloatware-item.item-removed {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.bloatware-check {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
+/* Hidden native checkbox - the custom check carries the visual */
+.bloat-native { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+.bloat-check {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
   flex-shrink: 0;
+  border: 1.5px solid var(--line-3);
+  background: var(--bg-inset);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  transition: background 0.12s, border-color 0.12s;
 }
+.bloat-item.on .bloat-check { background: var(--accent); border-color: var(--accent); }
+.bloat-check svg { opacity: 0; }
+.bloat-item.on .bloat-check svg { opacity: 1; }
 
-.bloatware-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.bloatware-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.bloatware-pkg {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
+.bloat-info { flex: 1; min-width: 0; }
+.bloat-name { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+.bloat-pkg {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  margin-top: 1px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.bloatware-result {
-  font-size: 11px;
+.bloat-result {
+  font-size: 11.5px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 4px;
   flex-shrink: 0;
   max-width: 50%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.bloatware-result.ok {
-  color: var(--green);
-  background: var(--green-bg);
-}
-
-.bloatware-result.fail {
-  color: var(--red);
-  background: var(--red-bg);
-}
+.bloat-result.ok { color: var(--green); }
+.bloat-result.fail { color: var(--red); }

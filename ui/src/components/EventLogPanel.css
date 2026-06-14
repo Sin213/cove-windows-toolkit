@@ -1,101 +1,135 @@
 .eventlog-panel .log-tabs {
   display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
+  gap: 6px;
+  margin-bottom: 14px;
 }
 
+/* Filter chips / tabs */
 .log-tab {
-  padding: 8px 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text-secondary);
+  padding: 8px 18px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  color: var(--ink-2);
+  font-family: var(--font-ui);
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
 }
 
 .log-tab:hover {
-  color: var(--text-primary);
-  border-color: var(--text-muted);
+  color: var(--ink);
+  border-color: var(--line-3);
+  background: var(--bg-card-2);
 }
 
 .log-tab.active {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: rgba(88, 166, 255, 0.06);
+  color: var(--accent-bright);
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
 }
 
+/* Summary / severity filter bar */
 .log-summary-bar {
   display: flex;
-  gap: 16px;
-  padding: 10px 16px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  margin-bottom: 14px;
 }
 
+/* Severity filter chips (counts) */
 .log-stat {
-  font-size: 12px;
-  font-weight: 500;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-2);
+  border-radius: 20px;
+  padding: 3px 11px;
+  color: var(--ink-2);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.16s, border-color 0.16s, color 0.16s;
 }
 
 .log-stat:hover {
-  background: var(--bg-card-hover);
-}
-
-.log-stat.active-filter {
-  border-color: currentColor;
-  background: var(--bg-card);
+  background: var(--bg-card-2);
+  border-color: var(--line-3);
 }
 
 .log-stat.critical {
   color: var(--red);
+  background: var(--red-soft);
+  border-color: color-mix(in oklch, var(--red) 26%, transparent);
 }
 
 .log-stat.error {
   color: var(--orange);
+  background: var(--orange-soft);
+  border-color: color-mix(in oklch, var(--orange) 26%, transparent);
 }
 
 .log-stat.warning {
   color: var(--yellow);
+  background: var(--yellow-soft);
+  border-color: color-mix(in oklch, var(--yellow) 26%, transparent);
+}
+
+.log-stat.active-filter {
+  box-shadow: 0 0 0 1px currentColor inset;
+  filter: brightness(1.08);
 }
 
 .log-stat.clear-filter {
-  color: var(--text-muted);
-  font-size: 11px;
+  color: var(--ink-3);
+  background: var(--bg-inset);
+  border-color: var(--line-2);
+}
+
+.log-stat.clear-filter:hover {
+  color: var(--ink);
 }
 
 .no-events {
-  padding: 20px;
+  padding: 24px;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: 13px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
 }
 
+/* Hairline row list of events */
 .events-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
 }
 
 .event-item {
   display: flex;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: none;
+  border-radius: 0;
   overflow: hidden;
+  transition: background 0.16s;
+}
+
+.event-item:hover {
+  background: var(--bg-card-2);
 }
 
 .event-level-bar {
-  width: 4px;
+  width: 3px;
   flex-shrink: 0;
 }
 
@@ -118,7 +152,7 @@
 
 .event-content {
   flex: 1;
-  padding: 10px 14px;
+  padding: 11px 14px;
   min-width: 0;
 }
 
@@ -126,69 +160,84 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  margin-bottom: 5px;
   flex-wrap: wrap;
 }
 
+/* Source name — monospace */
 .event-source {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
 }
 
+/* Severity pill */
 .event-level {
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 3px 9px;
+  border-radius: 20px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border: 1px solid transparent;
 }
 
 .level-text-critical {
-  background: var(--red-bg);
+  background: var(--red-soft);
   color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 26%, transparent);
 }
 
 .level-text-error {
-  background: var(--orange-bg);
+  background: var(--orange-soft);
   color: var(--orange);
+  border-color: color-mix(in oklch, var(--orange) 26%, transparent);
 }
 
 .level-text-warning {
-  background: var(--yellow-bg);
+  background: var(--yellow-soft);
   color: var(--yellow);
+  border-color: color-mix(in oklch, var(--yellow) 26%, transparent);
 }
 
 .level-text-information,
 .level-text-info {
-  background: rgba(88, 166, 255, 0.1);
-  color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+  border-color: var(--accent-line);
 }
 
+/* Event ID — monospace raw code */
 .event-id {
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--ink-3);
 }
 
+/* Repeat count pill */
 .event-count {
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   color: var(--yellow);
-  padding: 0 4px;
-  background: var(--yellow-bg);
-  border-radius: 3px;
+  padding: 3px 9px;
+  background: var(--yellow-soft);
+  border: 1px solid color-mix(in oklch, var(--yellow) 26%, transparent);
+  border-radius: 20px;
 }
 
+/* Timestamp — monospace */
 .event-time {
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   margin-left: auto;
 }
 
 .event-message {
   font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.4;
+  color: var(--ink-2);
+  line-height: 1.45;
 }

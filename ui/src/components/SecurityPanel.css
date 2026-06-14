@@ -6,8 +6,8 @@
 .scan-bar-indet {
   height: 100%;
   width: 35%;
-  background: var(--accent);
-  border-radius: 4px;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent-bright));
+  border-radius: 20px;
   animation: scan-indet 1.2s ease-in-out infinite;
 }
 @keyframes scan-indet {
@@ -15,49 +15,74 @@
   100% { margin-left: 100%; }
 }
 
-/* Defender status bar */
+/* Defender status — card with key/value stats */
 .defender-status {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 16px;
+  gap: 16px;
+  padding: 16px 18px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
   margin-bottom: 16px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.defender-status:hover {
+  background: var(--bg-card-2);
+  border-color: var(--line-3);
 }
 
 .defender-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 6px;
   flex: 1;
   min-width: 120px;
 }
 
 .defender-stat-label {
   font-size: 11px;
-  color: var(--text-muted);
+  font-weight: 700;
+  color: var(--ink-3);
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 1.2px;
 }
 
 .defender-stat-value {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink);
+}
+
+/* Defender state pills */
+.defender-stat-value.status-good,
+.defender-stat-value.status-warn,
+.defender-stat-value.status-bad {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
 }
 
 .defender-stat-value.status-good {
   color: var(--green);
+  background: var(--green-soft);
+  border: 1px solid var(--green);
 }
 
 .defender-stat-value.status-warn {
   color: var(--yellow);
+  background: var(--yellow-soft);
+  border: 1px solid var(--yellow);
 }
 
 .defender-stat-value.status-bad {
   color: var(--red);
+  background: var(--red-soft);
+  border: 1px solid var(--red);
 }
 
 .defender-actions {
@@ -66,21 +91,23 @@
   margin-bottom: 24px;
 }
 
+/* Ghost button (default) */
 .scan-btn {
   padding: 8px 16px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-2);
   background: var(--bg-card);
-  color: var(--text-primary);
+  color: var(--ink);
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.15s ease, background 0.15s ease, filter 0.15s ease;
 }
 
 .scan-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--bg-card-hover);
+  border-color: var(--line-3);
+  background: var(--bg-card-2);
 }
 
 .scan-btn:disabled {
@@ -88,14 +115,61 @@
   cursor: not-allowed;
 }
 
+/* Primary / scan button */
 .scan-btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  border: 1px solid var(--accent-line);
+  background: linear-gradient(180deg, var(--accent), var(--accent-dim));
   color: #fff;
+  box-shadow: 0 6px 20px -10px var(--accent), 0 1px 0 rgba(255, 255, 255, 0.18) inset;
 }
 
 .scan-btn.primary:hover:not(:disabled) {
-  filter: brightness(1.1);
+  filter: brightness(1.08);
+}
+
+/* Live scan card */
+.scan-card,
+.scan-live {
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  margin-bottom: 16px;
+}
+
+.scan-phase {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 10px;
+}
+
+.scan-live .scan-phase {
+  margin-bottom: 0;
+  margin-top: 10px;
+}
+
+.scan-bar {
+  height: 8px;
+  width: 100%;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
+}
+
+.scan-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent-bright));
+  border-radius: 20px;
+  transition: width 0.3s ease;
+}
+
+.scan-hint {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-top: 10px;
+  line-height: 1.5;
 }
 
 .scan-result-banner {
@@ -103,19 +177,20 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   font-size: 13px;
+  font-weight: 500;
   margin-bottom: 16px;
 }
 
 .scan-result-banner.clean {
-  background: var(--green-bg);
+  background: var(--green-soft);
   color: var(--green);
   border: 1px solid var(--green);
 }
 
 .scan-result-banner.threats {
-  background: var(--red-bg);
+  background: var(--red-soft);
   color: var(--red);
   border: 1px solid var(--red);
 }
@@ -129,13 +204,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .heuristic-header h3 {
   font-size: 15px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink);
 }
 
 .findings-group {
@@ -146,8 +221,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
   margin-bottom: 8px;
 }
 
@@ -160,18 +238,35 @@
 }
 
 .findings-group-title.sev-info {
-  color: var(--text-muted);
+  color: var(--ink-3);
+}
+
+/* Findings list — hairline row list */
+.findings-group .finding-item:first-of-type {
+  border-top-left-radius: var(--r-md);
+  border-top-right-radius: var(--r-md);
+}
+
+.findings-group .finding-item:last-of-type {
+  border-bottom-left-radius: var(--r-md);
+  border-bottom-right-radius: var(--r-md);
 }
 
 .finding-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 11px 14px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
   margin-bottom: 6px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.finding-item:hover {
+  background: var(--bg-card-2);
+  border-color: var(--line-3);
 }
 
 .finding-icon {
@@ -191,32 +286,40 @@
 }
 
 .finding-icon.sev-info {
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .finding-content {
   flex: 1;
+  min-width: 0;
 }
 
 .finding-title {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-weight: 600;
+  color: var(--ink);
 }
 
+/* Paths, hashes, process names, registry keys — monospace */
 .finding-detail {
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-muted);
-  margin-top: 2px;
+  color: var(--ink-3);
+  margin-top: 3px;
   word-break: break-all;
+  line-height: 1.5;
 }
 
+/* Category tag */
 .finding-category {
+  font-family: var(--font-mono);
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  color: var(--text-muted);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line-2);
+  color: var(--ink-3);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -224,12 +327,17 @@
 .no-findings {
   padding: 20px;
   text-align: center;
-  color: var(--text-muted);
+  color: var(--ink-3);
   font-size: 13px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  line-height: 1.5;
 }
 
 .scan-time {
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--ink-3);
   margin-top: 8px;
 }

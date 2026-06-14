@@ -12,52 +12,69 @@
 
 .drive-card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
   padding: 16px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.drive-card:hover {
+  background: var(--bg-card-2);
+  border-color: var(--line-3);
 }
 
 .drive-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
 .drive-model {
+  font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink);
 }
 
+/* SMART health pill */
 .drive-rating {
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 600;
-  padding: 2px 10px;
-  border-radius: 12px;
+  letter-spacing: 0.2px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .drive-rating.rating-good {
   color: var(--green);
-  background: var(--green-bg);
+  background: var(--green-soft);
+  border-color: var(--green-soft);
 }
 
 .drive-rating.rating-warn {
   color: var(--yellow);
-  background: var(--yellow-bg);
+  background: var(--yellow-soft);
+  border-color: var(--yellow-soft);
 }
 
 .drive-rating.rating-crit {
   color: var(--red);
-  background: var(--red-bg);
+  background: var(--red-soft);
+  border-color: var(--red-soft);
 }
 
 .drive-meta {
   display: flex;
   gap: 12px;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 12px;
+  color: var(--ink-3);
+  margin-bottom: 14px;
 }
 
 .drive-stats {
@@ -69,20 +86,23 @@
 .drive-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 
 .stat-label {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 1.2px;
 }
 
 .stat-value {
+  font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-value.stat-warn {
@@ -102,15 +122,17 @@
 }
 
 .space-header h3 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 1.3px;
 }
 
 .space-content {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
   padding: 16px;
 }
 
@@ -120,30 +142,38 @@
 
 .space-bar-bg {
   height: 12px;
-  background: var(--bg-secondary);
-  border-radius: 6px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: 20px;
   overflow: hidden;
 }
 
 .space-bar-used {
   height: 100%;
   background: var(--accent);
-  border-radius: 6px;
-  transition: width 0.3s;
+  border-radius: 20px;
+  transition: width 0.3s ease;
 }
 
 .space-bar-labels {
   display: flex;
   justify-content: space-between;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
-  margin-top: 4px;
+  color: var(--ink-3);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
 }
 
+/* Largest files - row list */
 .file-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
 }
 
 .file-row {
@@ -151,14 +181,19 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: var(--bg-secondary);
-  border-radius: 8px;
+  background: var(--bg-card);
+  transition: background 0.15s ease;
+}
+
+.file-row:hover {
+  background: var(--bg-card-2);
 }
 
 .file-rank {
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: var(--ink-4);
   min-width: 24px;
 }
 
@@ -176,43 +211,53 @@
 .file-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary);
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .file-ext {
+  font-family: var(--font-mono);
   font-size: 10px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--bg-card);
-  color: var(--text-muted);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
   flex-shrink: 0;
 }
 
 .file-path {
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--ink-4);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .file-size {
+  font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--ink);
   white-space: nowrap;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 /* chkdsk section */
 .chkdsk-section h3 {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 1.3px;
   margin-bottom: 12px;
 }
 
@@ -224,11 +269,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: var(--yellow-bg);
+  padding: 9px 12px;
+  background: var(--yellow-soft);
   color: var(--yellow);
-  border: 1px solid var(--yellow);
-  border-radius: 8px;
+  border: 1px solid var(--yellow-soft);
+  border-radius: var(--r-md);
   font-size: 13px;
   margin-bottom: 8px;
 }
@@ -238,21 +283,27 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  font-family: var(--font-mono);
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .last-label {
-  font-weight: 500;
-  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .last-result-text {
   width: 100%;
+  font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--text-muted);
-  background: var(--bg-secondary);
-  border-radius: 6px;
+  color: var(--ink-3);
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   padding: 8px 10px;
   margin-top: 4px;
   word-break: break-all;
@@ -260,7 +311,7 @@
 
 .no-chkdsk {
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--ink-3);
 }
 
 .chkdsk-actions {
@@ -270,40 +321,41 @@
 }
 
 .chkdsk-yellow {
-  border-color: var(--yellow) !important;
+  border-color: var(--yellow-soft) !important;
   color: var(--yellow) !important;
 }
 
 .chkdsk-yellow:hover:not(:disabled) {
-  background: var(--yellow-bg) !important;
+  background: var(--yellow-soft) !important;
+  border-color: var(--yellow) !important;
 }
 
 
 .chkdsk-hint {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--ink-4);
   margin-bottom: 12px;
 }
 
 .chkdsk-result {
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 12px;
   font-size: 13px;
   margin-top: 8px;
 }
 
 .chkdsk-result.chkdsk-ok {
-  background: var(--green-bg);
-  border: 1px solid var(--green);
+  background: var(--green-soft);
+  border: 1px solid var(--green-soft);
   color: var(--green);
 }
 
 .chkdsk-result.chkdsk-fail {
-  background: var(--red-bg);
-  border: 1px solid var(--red);
+  background: var(--red-soft);
+  border: 1px solid var(--red-soft);
   color: var(--red);
 }
 
@@ -312,25 +364,29 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .reboot-badge {
+  font-family: var(--font-mono);
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: var(--yellow-bg);
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--yellow-soft);
   color: var(--yellow);
-  border: 1px solid var(--yellow);
+  border: 1px solid var(--yellow-soft);
 }
 
 .chkdsk-output {
   margin-top: 8px;
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-muted);
-  background: var(--bg-secondary);
-  padding: 8px;
-  border-radius: 6px;
+  color: var(--ink-3);
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
   max-height: 200px;
   overflow-y: auto;
   white-space: pre-wrap;

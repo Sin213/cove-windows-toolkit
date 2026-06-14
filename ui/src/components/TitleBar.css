@@ -1,44 +1,46 @@
-/* Frameless custom titlebar, matching the Cove Narrator design system. */
+/* ============================================================
+   TITLEBAR - centered brand, icon left, standard Win controls
+   ============================================================ */
 .titlebar {
-  height: 38px;
-  flex: 0 0 38px;
+  height: 40px;
+  flex: 0 0 40px;
   display: flex;
   align-items: center;
-  background: #0b0b10;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-app);
+  border-bottom: 1px solid var(--line);
   user-select: none;
   position: relative;
   z-index: 100;
 }
 
 .titlebar-icon {
-  width: 18px;
-  height: 18px;
-  margin-left: 14px;
+  width: 20px;
+  height: 20px;
+  margin-left: 13px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
   pointer-events: none;
 }
 
-/* Absolutely centered brand block, like narrator. */
 .titlebar-brand {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 9px;
   pointer-events: none;
 }
-
 .titlebar-title {
-  color: #ececf1;
-  font-size: 12px;
-  font-weight: 500;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
 }
-
 .titlebar-version {
-  color: #6b6b80;
+  color: var(--ink-3);
   font-size: 10.5px;
-  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-family: var(--font-mono);
+  letter-spacing: -0.2px;
 }
 
 .titlebar-controls {
@@ -46,27 +48,18 @@
   display: flex;
   height: 100%;
 }
-
 .titlebar-btn {
   width: 46px;
   height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   background: transparent;
   border: none;
   padding: 0;
   cursor: default;
-  color: #9a9aae;
+  color: var(--ink-2);
   transition: background 0.12s ease, color 0.12s ease;
 }
-
-.titlebar-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: #ececf1;
-}
-
-.titlebar-btn-close:hover {
-  background: #e81123;
-  color: #ffffff;
-}
+.titlebar-btn:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
+.titlebar-btn-close:hover { background: #e81123; color: #fff; }
+.titlebar-btn svg { width: 10px; height: 10px; }

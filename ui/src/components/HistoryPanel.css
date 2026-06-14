@@ -1,36 +1,52 @@
 .history-panel .history-empty {
   text-align: center;
-  padding: 48px 20px;
-  color: var(--text-muted);
+  padding: 56px 24px;
+  color: var(--ink-3);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
 }
 
 .history-empty h3 {
   font-size: 16px;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 6px;
 }
 
 .history-empty p {
   font-size: 13px;
+  color: var(--ink-3);
 }
 
 .history-list {
   display: flex;
   flex-direction: column;
+  gap: 1px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
 }
 
 .history-item {
   display: flex;
   gap: 12px;
-  padding: 12px 0;
+  padding: 14px 14px;
+  background: var(--bg-card);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.history-item:hover {
+  background: var(--bg-card-2);
 }
 
 .history-item.item-undone {
-  opacity: 0.55;
+  opacity: 0.6;
 }
 
 .history-item.item-failed {
-  opacity: 0.75;
+  opacity: 0.85;
 }
 
 .history-timeline {
@@ -47,6 +63,7 @@
   border-radius: 50%;
   flex-shrink: 0;
   margin-top: 4px;
+  box-shadow: 0 0 0 3px var(--bg-card);
 }
 
 .dot-committed {
@@ -54,7 +71,7 @@
 }
 
 .dot-undone {
-  background: var(--text-muted);
+  background: var(--ink-4);
 }
 
 .dot-failed {
@@ -64,7 +81,7 @@
 .timeline-line {
   width: 2px;
   flex: 1;
-  background: var(--border);
+  background: var(--line-2);
   margin-top: 4px;
 }
 
@@ -78,62 +95,75 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 2px;
+  margin-bottom: 5px;
 }
 
 .history-desc {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .history-status {
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
   font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 3px 9px;
+  border-radius: 20px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   flex-shrink: 0;
+  border: 1px solid transparent;
 }
 
 .status-committed {
-  background: var(--green-bg);
+  background: var(--green-soft);
   color: var(--green);
+  border-color: var(--green);
 }
 
 .status-undone {
-  background: rgba(110, 118, 129, 0.15);
-  color: var(--text-muted);
+  background: var(--bg-inset);
+  color: var(--ink-3);
+  border-color: var(--line-3);
 }
 
 .status-failed {
-  background: var(--red-bg);
+  background: var(--red-soft);
   color: var(--red);
+  border-color: var(--red);
 }
 
 .history-meta {
   display: flex;
+  align-items: center;
   gap: 10px;
   font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 2px;
+  color: var(--ink-3);
 }
 
 .history-module {
-  padding: 0 5px;
-  background: var(--bg-card);
-  border-radius: 3px;
+  font-family: var(--font-mono);
+  padding: 2px 7px;
+  background: var(--bg-inset);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
 }
 
 .history-op {
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-family: var(--font-mono);
+}
+
+.history-time {
+  font-family: var(--font-mono);
+  color: var(--ink-4);
 }
 
 .history-detail {
   font-size: 11px;
-  color: var(--text-secondary);
-  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
 }
 
 .history-actions {
@@ -143,18 +173,20 @@
 
 .history-actions .undo-btn {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--yellow);
+  border: 1px solid var(--line-2);
+  color: var(--ink);
   font-size: 11px;
-  padding: 3px 10px;
-  border-radius: 4px;
+  font-weight: 600;
+  padding: 4px 12px;
+  border-radius: var(--r-md);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .history-actions .undo-btn:hover {
-  background: var(--yellow);
-  color: #000;
+  background: var(--bg-card-2);
+  border-color: var(--line-3);
+  color: var(--ink);
 }
 
 .history-actions .undo-btn:disabled {

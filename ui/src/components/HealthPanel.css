@@ -1,153 +1,101 @@
-.health-panel .health-hero {
+/* ============================================================
+   SYSTEM HEALTH - Cove redesign
+   ============================================================ */
+.health-hero {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
+  gap: 24px;
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 22px 24px;
+  margin-bottom: 22px;
 }
 
-.health-ring-wrap {
+.ring-wrap {
   position: relative;
-  width: 140px;
-  height: 140px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
 }
-
-.health-ring {
-  width: 100%;
-  height: 100%;
-}
-
-.health-score {
+.ring-wrap svg { width: 100%; height: 100%; }
+.ring-num {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -60%);
-  font-size: 38px;
+  font-size: 30px;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-7px);
+}
+.ring-lbl {
+  position: absolute;
+  font-size: 9.5px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  transform: translateY(20px);
+  font-weight: 600;
 }
 
-.health-score-label {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, 60%);
-  font-size: 12px;
-  color: var(--text-muted);
-}
+.hh-body { flex: 1; }
+.hh-grade { font-size: 19px; font-weight: 700; }
+.hh-sub { color: var(--ink-2); font-size: 13px; margin-top: 3px; }
 
 .rescan-btn {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
+  padding: 10px 18px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-inset);
+  color: var(--ink);
   font-size: 13px;
-  padding: 8px 20px;
-  border-radius: 8px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: border-color 0.14s, background 0.14s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
+.rescan-btn:hover { border-color: var(--accent-line); background: var(--bg-card-2); }
 
-.rescan-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.findings-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+.findings-list { display: flex; flex-direction: column; gap: 9px; }
 
 .finding-item {
   display: flex;
-  gap: 12px;
-  padding: 12px 16px;
+  gap: 13px;
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  align-items: flex-start;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 15px 16px;
 }
+.finding-item .sev-bar { width: 3px; border-radius: 3px; flex-shrink: 0; align-self: stretch; }
+.finding-item.ok .sev-bar { background: var(--green); }
+.finding-item.warning .sev-bar { background: var(--yellow); }
+.finding-item.critical .sev-bar { background: var(--red); }
+.finding-item.info .sev-bar { background: var(--accent); }
 
-.severity-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-top: 5px;
-}
-
-.severity-ok {
-  background: var(--green);
-}
-
-.severity-info {
-  background: var(--accent);
-}
-
-.severity-warning {
-  background: var(--yellow);
-}
-
-.severity-critical {
-  background: var(--red);
-}
-
-.finding-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.finding-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 2px;
-}
-
-.finding-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
+.finding-content { flex: 1; min-width: 0; position: relative; }
+.finding-title { font-size: 14px; font-weight: 600; color: var(--ink); padding-right: 80px; display: block; }
+.finding-detail { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
+.finding-remediation {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-top: 7px;
+  padding-left: 13px;
+  border-left: 2px solid var(--line-2);
 }
 
 .severity-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
+  position: absolute;
+  top: 1px;
+  right: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 20px;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
-
-.sev-ok {
-  background: var(--green-bg);
-  color: var(--green);
-}
-
-.sev-info {
-  background: rgba(88, 166, 255, 0.1);
-  color: var(--accent);
-}
-
-.sev-warning {
-  background: var(--yellow-bg);
-  color: var(--yellow);
-}
-
-.sev-critical {
-  background: var(--red-bg);
-  color: var(--red);
-}
-
-.finding-detail {
-  font-size: 12px;
-  color: var(--text-secondary);
-  margin-bottom: 2px;
-}
-
-.finding-remediation {
-  font-size: 11px;
-  color: var(--yellow);
-  margin-top: 4px;
-  padding: 4px 8px;
-  background: var(--yellow-bg);
-  border-radius: 4px;
-}
+.severity-badge.ok { background: var(--green-soft); color: var(--green); }
+.severity-badge.warning { background: var(--yellow-soft); color: var(--yellow); }
+.severity-badge.critical { background: var(--red-soft); color: var(--red); }
+.severity-badge.info { background: var(--accent-soft); color: var(--accent-bright); }

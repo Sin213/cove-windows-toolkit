@@ -1,33 +1,84 @@
+/* ============================================================
+   COVE - Windows Toolkit - Redesign design tokens
+   A refined, layered-black design language. New token names plus
+   legacy names remapped so existing panels inherit the palette.
+   ============================================================ */
 :root {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-card: #1c2128;
-  --bg-card-hover: #242b35;
-  --border: #30363d;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
-  --accent: #58a6ff;
-  --accent-hover: #79c0ff;
-  --green: #3fb950;
-  --green-bg: rgba(63, 185, 80, 0.1);
-  --yellow: #d29922;
-  --yellow-bg: rgba(210, 153, 34, 0.1);
-  --red: #f85149;
-  --red-bg: rgba(248, 81, 73, 0.1);
-  --orange: #db6d28;
-  --orange-bg: rgba(219, 109, 40, 0.1);
+  /* Surfaces (layered near-black, cool-neutral) */
+  --bg-app:    #08080b;   /* window / titlebar deepest */
+  --bg-rail:   #0c0c11;   /* sidebar */
+  --bg-canvas: #0e0e13;   /* main scroll area */
+  --bg-card:   #15151c;   /* cards, panels */
+  --bg-card-2: #1b1b24;   /* hover / raised */
+  --bg-inset:  #101016;   /* wells, inputs */
 
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Hairlines */
+  --line:   rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.10);
+  --line-3: rgba(255, 255, 255, 0.16);
+
+  /* Ink */
+  --ink:   #edeef3;
+  --ink-2: #a3a3b4;
+  --ink-3: #6c6c7c;
+  --ink-4: #4a4a57;
+
+  /* Accent (refined azure) */
+  --accent:        oklch(0.70 0.135 252);
+  --accent-bright: oklch(0.80 0.115 252);
+  --accent-dim:    oklch(0.52 0.10 252);
+  --accent-soft:   color-mix(in oklch, var(--accent) 16%, transparent);
+  --accent-line:   color-mix(in oklch, var(--accent) 38%, transparent);
+
+  /* Semantic */
+  --green:  oklch(0.76 0.16 152);
+  --yellow: oklch(0.82 0.13 92);
+  --orange: oklch(0.74 0.16 55);
+  --red:    oklch(0.66 0.20 24);
+  --green-soft:  color-mix(in oklch, var(--green) 15%, transparent);
+  --yellow-soft: color-mix(in oklch, var(--yellow) 15%, transparent);
+  --orange-soft: color-mix(in oklch, var(--orange) 15%, transparent);
+  --red-soft:    color-mix(in oklch, var(--red) 15%, transparent);
+
+  /* Type */
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", ui-monospace, "SF Mono", Consolas, monospace;
+
+  /* Radius / shadow */
+  --r-sm: 7px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 24px -16px rgba(0, 0, 0, 0.8);
+  --shadow-pop: 0 24px 60px -20px rgba(0, 0, 0, 0.85);
+
+  /* ── Legacy aliases (existing panels use these names) ─────── */
+  --bg-primary:     var(--bg-canvas);
+  --bg-secondary:   var(--bg-rail);
+  --bg-card-hover:  var(--bg-card-2);
+  --border:         var(--line-2);
+  --text-primary:   var(--ink);
+  --text-secondary: var(--ink-2);
+  --text-muted:     var(--ink-3);
+  --accent-hover:   var(--accent-bright);
+  --green-bg:       var(--green-soft);
+  --yellow-bg:      var(--yellow-soft);
+  --red-bg:         var(--red-soft);
+  --orange-bg:      var(--orange-soft);
+
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.5;
-  color: var(--text-primary);
-  background: var(--bg-primary);
+  color: var(--ink);
+  background: var(--bg-app);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body { margin: 0; overflow: hidden; }
+
+button { font-family: inherit; }
 
 #root {
   display: flex;
@@ -36,7 +87,13 @@ body { margin: 0; overflow: hidden; }
   width: 100vw;
 }
 
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: var(--bg-secondary); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+/* Scrollbars - thin, on-brand */
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.16); background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }

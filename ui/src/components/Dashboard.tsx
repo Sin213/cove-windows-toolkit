@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { View } from "../App";
 import { invoke } from "../lib/tauri";
+import Icon from "./Icon";
 import "./Dashboard.css";
 
 interface Props {
@@ -159,14 +160,15 @@ const DIAGNOSTIC_CARDS: CategoryCard[] = [
   },
 ];
 
-function ScoreRing({ score }: { score: number | null }) {
-  const radius = 54;
-  const circumference = 2 * Math.PI * radius;
+function ScoreRing({ score, size = 108, stroke = 9 }: { score: number | null; size?: number; stroke?: number }) {
+  const r = (size - stroke) / 2 - 2;
+  const circumference = 2 * Math.PI * r;
   const pct = score !== null ? score / 100 : 0;
   const offset = circumference * (1 - pct);
+  const cx = size / 2;
   const color =
     score === null
-      ? "var(--text-muted)"
+      ? "var(--ink-3)"
       : score >= 90
         ? "var(--green)"
         : score >= 70
@@ -176,34 +178,29 @@ function ScoreRing({ score }: { score: number | null }) {
             : "var(--red)";
 
   return (
-    <div className="score-ring-wrapper">
-      <svg viewBox="0 0 128 128" className="score-ring">
+    <div className="score-ring-wrapper" style={{ width: size, height: size }}>
+      <svg viewBox={`0 0 ${size} ${size}`} className="score-ring" style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={cx} cy={cx} r={r} fill="none" stroke="var(--line-2)" strokeWidth={stroke} />
         <circle
-          cx="64"
-          cy="64"
-          r={radius}
-          fill="none"
-          stroke="var(--border)"
-          strokeWidth="8"
-        />
-        <circle
-          cx="64"
-          cy="64"
-          r={radius}
+          cx={cx}
+          cy={cx}
+          r={r}
           fill="none"
           stroke={color}
-          strokeWidth="8"
+          strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
-          transform="rotate(-90 64 64)"
-          style={{ transition: "stroke-dashoffset 0.8s ease" }}
+          style={{
+            transition: "stroke-dashoffset 0.9s cubic-bezier(.4,0,.2,1)",
+            filter: score !== null ? `drop-shadow(0 0 6px color-mix(in oklch, ${color} 50%, transparent))` : undefined,
+          }}
         />
       </svg>
       <div className="score-text" style={{ color }}>
         {score !== null ? score : "--"}
       </div>
-      <div className="score-label">Health Score</div>
+      <div className="score-label">Health</div>
     </div>
   );
 }
@@ -218,7 +215,7 @@ function Card({
   return (
     <button className="card" onClick={onClick}>
       <div className="card-header">
-        <span className="card-icon">{card.icon}</span>
+        <span className="card-icon"><Icon name={card.id} size={19} /></span>
         {card.badge && (
           <span className={`card-badge ${card.badgeColor || ""}`}>
             {card.badge}
@@ -362,6 +359,7 @@ export default function Dashboard({ onNavigate }: Props) {
               }
             }}
           >
+            <Icon name="export" size={16} />
             {exporting ? "Exporting..." : "Export Report"}
           </button>
         </div>

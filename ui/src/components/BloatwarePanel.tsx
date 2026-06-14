@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
 import ConfirmDialog from "./ConfirmDialog";
+import Icon from "./Icon";
 import "./BloatwarePanel.css";
 
 interface BloatwareApp {
@@ -97,17 +98,17 @@ export default function BloatwarePanel() {
 
   return (
     <div className="bloatware-panel">
-      <div className="bloatware-summary">
-        <div className="summary-stat">
-          <span className="stat-value">{installed.length}</span>
-          <span className="stat-label">installed bloatware apps</span>
+      <div className="bloat-summary">
+        <div className="bs-stat">
+          <span className="bs-num">{installed.length}</span>
+          <span className="bs-lbl">installed bloatware apps</span>
         </div>
-        <div className="summary-actions">
-          <button className="select-all-btn" onClick={toggleAll} disabled={installed.length === 0}>
+        <div className="bloat-actions">
+          <button className="btn-sel" onClick={toggleAll} disabled={installed.length === 0}>
             Select All
           </button>
           <button
-            className="remove-btn"
+            className="btn-remove"
             onClick={() => setShowConfirm(true)}
             disabled={removing || selectedApps.length === 0}
           >
@@ -121,29 +122,31 @@ export default function BloatwarePanel() {
       )}
 
       {grouped.map((group) => (
-        <div key={group.cat} className="bloatware-group">
-          <div className="bloatware-group-title">{CATEGORY_LABELS[group.cat] || group.cat}</div>
-          <div className="bloatware-list">
+        <div key={group.cat} className="bloat-group">
+          <div className="bloat-group-title">{CATEGORY_LABELS[group.cat] || group.cat}</div>
+          <div className="bloat-list">
             {group.items.map((app) => {
               const result = results[app.package_name];
+              const on = !!selected[app.package_name] && !result?.success;
               return (
                 <label
                   key={app.package_name}
-                  className={`bloatware-item ${result?.success ? "item-removed" : ""}`}
+                  className={`bloat-item ${on ? "on" : ""} ${result?.success ? "removed" : ""}`}
                 >
                   <input
                     type="checkbox"
-                    checked={!!selected[app.package_name] && !result?.success}
+                    checked={on}
                     onChange={() => toggle(app.package_name)}
                     disabled={result?.success}
-                    className="bloatware-check"
+                    className="bloat-native"
                   />
-                  <div className="bloatware-info">
-                    <div className="bloatware-name">{app.display_name}</div>
-                    <div className="bloatware-pkg">{app.package_name}</div>
+                  <span className="bloat-check"><Icon name="check" size={11} stroke={2.4} /></span>
+                  <div className="bloat-info">
+                    <div className="bloat-name">{app.display_name}</div>
+                    <div className="bloat-pkg">{app.package_name}</div>
                   </div>
                   {result && (
-                    <span className={`bloatware-result ${result.success ? "ok" : "fail"}`}>
+                    <span className={`bloat-result ${result.success ? "ok" : "fail"}`}>
                       {result.success ? "Removed" : result.message}
                     </span>
                   )}

@@ -1,12 +1,13 @@
 .confirm-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fade-in 0.12s ease;
+  animation: fade-in 0.14s ease;
 }
 
 @keyframes fade-in {
@@ -16,55 +17,67 @@
 
 .confirm-dialog {
   background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-lg);
   padding: 24px;
   max-width: 420px;
   width: 90%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-pop);
+  animation: dialog-rise 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes dialog-rise {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .confirm-dialog.tier-yellow {
-  border-color: var(--yellow);
+  border-color: color-mix(in oklch, var(--yellow) 40%, var(--line-2));
 }
 
 .confirm-dialog.tier-red {
-  border-color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 42%, var(--line-2));
 }
 
 .confirm-tier-badge {
   display: inline-block;
+  font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  padding: 2px 10px;
-  border-radius: 12px;
-  margin-bottom: 12px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  margin-bottom: 14px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border: 1px solid transparent;
 }
 
 .confirm-tier-badge.tier-yellow {
-  background: var(--yellow-bg);
+  background: var(--yellow-soft);
   color: var(--yellow);
+  border-color: color-mix(in oklch, var(--yellow) 38%, transparent);
 }
 
 .confirm-tier-badge.tier-red {
-  background: var(--red-bg);
+  background: var(--red-soft);
   color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 38%, transparent);
 }
 
 .confirm-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
   margin-bottom: 8px;
+  letter-spacing: -0.01em;
 }
 
 .confirm-message {
-  font-size: 13px;
-  color: var(--text-secondary);
+  font-size: 13.5px;
+  color: var(--ink-2);
   line-height: 1.5;
-  margin-bottom: 20px;
+  margin-bottom: 22px;
 }
 
 .confirm-actions {
@@ -75,40 +88,51 @@
 
 .confirm-cancel-btn {
   padding: 8px 16px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-secondary);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg-card);
+  color: var(--ink);
+  font-family: var(--font-ui);
   font-size: 13px;
   cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
 }
 
 .confirm-cancel-btn:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-card-2);
+  border-color: var(--line-3);
 }
 
 .confirm-proceed-btn {
   padding: 8px 16px;
-  border-radius: 6px;
-  border: none;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   color: #fff;
+  transition: background 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
 }
 
 .confirm-proceed-btn.tier-yellow {
-  background: var(--yellow);
+  background: var(--yellow-soft);
+  color: var(--yellow);
+  border-color: color-mix(in oklch, var(--yellow) 38%, transparent);
 }
 
 .confirm-proceed-btn.tier-yellow:hover {
-  filter: brightness(1.1);
+  background: color-mix(in oklch, var(--yellow) 18%, var(--yellow-soft));
+  border-color: color-mix(in oklch, var(--yellow) 52%, transparent);
 }
 
 .confirm-proceed-btn.tier-red {
-  background: var(--red);
+  background: var(--red-soft);
+  color: var(--red);
+  border-color: color-mix(in oklch, var(--red) 38%, transparent);
 }
 
 .confirm-proceed-btn.tier-red:hover {
-  filter: brightness(1.1);
+  background: color-mix(in oklch, var(--red) 18%, var(--red-soft));
+  border-color: color-mix(in oklch, var(--red) 52%, transparent);
 }
