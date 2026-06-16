@@ -45,13 +45,16 @@ fn query_log(log_name: &str) -> LogSummary {
     // from the events we actually retrieve, so the summary numbers always match
     // the list shown. Previously the counts were all-time totals while the list
     // was capped, so "257 errors" could display only a handful of entries.
+    // The per-level cap is set high (2000) so the full recent history is
+    // scrollable for both System and Application, instead of being truncated
+    // at a few hundred on noisy logs (e.g. System).
     let ps = format!(
         r#"
 $cutoff = (Get-Date).AddDays(-7)
 foreach ($lvl in @(1,2,3)) {{
     $label = switch ($lvl) {{ 1 {{'Critical'}} 2 {{'Error'}} 3 {{'Warning'}} }}
     try {{
-        Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=$lvl; StartTime=$cutoff}} -MaxEvents 200 -ErrorAction Stop | ForEach-Object {{
+        Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=$lvl; StartTime=$cutoff}} -MaxEvents 2000 -ErrorAction Stop | ForEach-Object {{
             $msg = if ($_.Message) {{ ($_.Message -replace '[\r\n]+',' ').Substring(0, [Math]::Min($_.Message.Length, 200)) }} else {{ 'No message' }}
             Write-Output "EVT|$($_.Id)|$($_.ProviderName)|$label|$($_.TimeCreated.ToString('o'))|$msg"
         }}
