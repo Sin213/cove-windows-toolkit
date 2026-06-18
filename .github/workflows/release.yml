@@ -140,13 +140,15 @@ jobs:
         with:
           path: artifacts
 
-      - name: Collect release assets
+      - name: Collect release assets and generate SHA256 sidecars
         run: |
           mkdir -p release
           find artifacts -type f \( -name '*-Setup.exe' -o -name '*-Portable.exe' \) -exec cp {} release/ \;
           cd release
-          sha256sum * > checksums-sha256.txt
-          cat checksums-sha256.txt
+          for f in *.exe; do
+            [ -e "$f" ] && sha256sum "$f" > "$f.sha256"
+          done
+          cat *.sha256
 
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -163,8 +165,5 @@ jobs:
             | `Cove-Windows-Toolkit-${{ env.VERSION }}-Setup.exe` | Windows Installer |
             | `Cove-Windows-Toolkit-${{ env.VERSION }}-Portable.exe` | Portable (no install) |
 
-            Verify downloads with `checksums-sha256.txt`:
-            ```
-            certutil -hashfile <file> SHA256
-            ```
+            Each file includes a `.sha256` sidecar for verification.
           make_latest: true
