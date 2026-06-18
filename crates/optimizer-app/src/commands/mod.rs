@@ -672,7 +672,10 @@ fn apply_registry_tweak(path: &str, name: &str, value: &str) -> serde_json::Valu
         // Infer the registry type from the value: a plain unsigned integer is
         // written as REG_DWORD (unquoted), anything else as REG_SZ (quoted +
         // single-quote-escaped). Hardcoding DWord corrupts string-valued tweaks.
-        let (ty, val) = if !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit()) {
+        // Only treat the value as a DWORD when it parses as a u32 (the actual
+        // REG_DWORD range). An all-digits string that overflows u32 would fail
+        // `Set-ItemProperty -Type DWord`, so fall back to REG_SZ for those.
+        let (ty, val) = if value.parse::<u32>().is_ok() {
             ("DWord", value.to_string())
         } else {
             ("String", format!("'{}'", value.replace('\'', "''")))
@@ -695,6 +698,11 @@ fn apply_registry_tweak(path: &str, name: &str, value: &str) -> serde_json::Valu
 // ---------------------------------------------------------------------------
 // Change history (file-backed)
 // ---------------------------------------------------------------------------
+
+// Serializes read-modify-write of the file-backed history/snapshot stores so
+// concurrent apply/undo tasks (run on spawn_blocking worker threads) can't
+// clobber each other's writes.
+static DATA_FILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn history_path() -> std::path::PathBuf {
     if crate::portable::is_portable() {
@@ -720,6 +728,7 @@ pub fn get_change_history() -> serde_json::Value {
 }
 
 fn append_history(module: &str, name: &str, tier: &str, status: &str) {
+    let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = history_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -732,7 +741,14 @@ fn append_history(module: &str, name: &str, tier: &str, status: &str) {
     } else {
         Vec::new()
     };
-    let id = entries.len() as i64 + 1;
+    // Derive the next id from the current maximum rather than the entry count,
+    // so ids stay unique even if entries are ever pruned/filtered.
+    let id = entries
+        .iter()
+        .filter_map(|e| e.get("id").and_then(|v| v.as_i64()))
+        .max()
+        .unwrap_or(0)
+        + 1;
     entries.push(serde_json::json!({
         "id": id,
         "timestamp": chrono::Local::now().to_rfc3339(),
@@ -761,6 +777,7 @@ fn tweak_snapshot_path() -> std::path::PathBuf {
 /// Record the value a tweak had BEFORE it was applied. `None` means the registry
 /// value did not exist (so undo should delete it rather than write a default).
 fn save_snapshot(id: &str, value: Option<&str>) {
+    let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = tweak_snapshot_path();
     if let Some(p) = path.parent() {
         let _ = std::fs::create_dir_all(p);

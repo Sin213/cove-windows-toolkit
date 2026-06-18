@@ -56,6 +56,9 @@ fn expand_env(path: &str) -> String {
 fn measure_dir(path: &str) -> (u64, u64) {
     
 
+    // Escape single quotes so profile paths containing an apostrophe
+    // (e.g. C:\Users\O'Brien\...) don't break the single-quoted PS strings.
+    let safe = path.replace('\'', "''");
     let ps = format!(
         r#"
 if (-not (Test-Path '{}')) {{ Write-Output '0|0'; exit }}
@@ -65,7 +68,7 @@ $count = ($files | Measure-Object).Count
 if ($null -eq $size) {{ $size = 0 }}
 Write-Output "$size|$count"
 "#,
-        path, path
+        safe, safe
     );
 
     if let Ok(o) = optimizer_core::powershell(&ps).output() {
@@ -108,6 +111,9 @@ pub fn clean_targets(_ids: &[String]) -> Vec<(String, bool, String)> {
 fn clean_directory(path: &str) -> Result<String, String> {
     
 
+    // Escape single quotes so profile paths containing an apostrophe
+    // (e.g. C:\Users\O'Brien\...) don't break the single-quoted PS strings.
+    let safe = path.replace('\'', "''");
     let ps = format!(
         r#"
 if (-not (Test-Path '{}')) {{ Write-Output 'PATH_MISSING'; exit }}
@@ -119,7 +125,7 @@ if ($null -eq $after) {{ $after = 0 }}
 $freed = $before - $after
 Write-Output "OK|$freed"
 "#,
-        path, path, path, path
+        safe, safe, safe, safe
     );
 
     let o = optimizer_core::powershell(&ps).output()

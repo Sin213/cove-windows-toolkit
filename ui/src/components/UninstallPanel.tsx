@@ -38,6 +38,13 @@ function fmtBytes(b: number): string {
   return `${b} B`;
 }
 
+// Stable identity for a program row. registry_key can be empty for some entries
+// (e.g. system VC++ redists), so fall back to a composite of name/version/publisher
+// to avoid duplicate React keys and mis-highlighting rows that share a name.
+function progId(p: InstalledProgram): string {
+  return p.registry_key || `${p.name}|${p.version}|${p.publisher}`;
+}
+
 type Step = "list" | "uninstalling" | "scanning" | "leftovers" | "cleaning" | "done";
 
 export default function UninstallPanel() {
@@ -188,8 +195,8 @@ export default function UninstallPanel() {
         <div className="program-list">
           {filtered.map((p) => (
             <button
-              key={p.registry_key || p.name}
-              className={`program-item ${selected?.name === p.name ? "active" : ""}`}
+              key={progId(p)}
+              className={`program-item ${selected && progId(selected) === progId(p) ? "active" : ""}`}
               onClick={() => handleSelect(p)}
             >
               <div className="prog-name">{p.name}</div>

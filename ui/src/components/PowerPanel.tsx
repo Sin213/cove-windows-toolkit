@@ -64,13 +64,23 @@ export default function PowerPanel() {
         setSelectedPlan(prev);
         setFeedback({ type: "error", message: res.message || "Failed to change plan." });
       }
-    } catch {
+    } catch (e) {
       setSelectedPlan(prev);
+      setFeedback({ type: "error", message: String(e) });
     }
   };
 
   const handleTimeout = async (setting: string, minutes: number) => {
     setFeedback(null);
+    // Remember the previous value so we can roll back the optimistic update if
+    // the apply fails — otherwise the dropdown would show a timeout that was
+    // never actually applied to the system.
+    const prev = setting === "display" ? display : setting === "sleep" ? sleep : disk;
+    const restore = () => {
+      if (setting === "display") setDisplay(prev);
+      else if (setting === "sleep") setSleep(prev);
+      else if (setting === "disk") setDisk(prev);
+    };
     if (setting === "display") setDisplay(minutes);
     if (setting === "sleep") setSleep(minutes);
     if (setting === "disk") setDisk(minutes);
@@ -79,9 +89,11 @@ export default function PowerPanel() {
       if (res.success) {
         setFeedback({ type: "success", message: res.message || "Timeout updated." });
       } else {
+        restore();
         setFeedback({ type: "error", message: res.message || "Failed to update timeout." });
       }
     } catch (e) {
+      restore();
       setFeedback({ type: "error", message: String(e) });
     }
   };

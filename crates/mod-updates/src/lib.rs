@@ -46,7 +46,7 @@ try {
     foreach ($u in $result.Updates) {
         $sev = switch ($u.MsrcSeverity) { 'Critical' {'Critical'} 'Important' {'Important'} default {'Optional'} }
         $cat = if ($u.Categories.Count -gt 0) { $u.Categories.Item(0).Name } else { 'Other' }
-        $sizeMB = [math]::Round($u.MaxDownloadSize / 1MB, 0)
+        $sizeMB = [int64][math]::Round($u.MaxDownloadSize / 1MB, 0)
         $pending += "$($u.Title)|$sizeMB|$sev|$cat"
     }
 } catch { $pending = @() }

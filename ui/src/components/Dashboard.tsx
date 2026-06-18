@@ -252,6 +252,9 @@ export default function Dashboard({ onNavigate }: Props) {
   const [presetResult, setPresetResult] = useState<PresetResult | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportPath, setExportPath] = useState<string | null>(null);
+  const [diagError, setDiagError] = useState<string | null>(null);
+  const [presetError, setPresetError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<HealthReport>("get_health_report")
@@ -280,11 +283,13 @@ export default function Dashboard({ onNavigate }: Props) {
   const handleRunDiag = async () => {
     setDiagRunning(true);
     setDiagResult(null);
+    setDiagError(null);
     try {
       const result = await invoke<DiagResult>("run_all_diagnostics");
       setDiagResult(result);
     } catch (e) {
       console.error("Diagnostics failed:", e);
+      setDiagError(`Diagnostics failed: ${String(e)}`);
     } finally {
       setDiagRunning(false);
     }
@@ -293,11 +298,13 @@ export default function Dashboard({ onNavigate }: Props) {
   const handleRunPreset = async (preset: Preset) => {
     setPresetRunning(preset.id);
     setPresetResult(null);
+    setPresetError(null);
     try {
       const result = await invoke<PresetResult>("run_preset", { id: preset.id });
       setPresetResult(result);
     } catch (e) {
       console.error("Preset failed:", e);
+      setPresetError(`Could not run "${preset.name}": ${String(e)}`);
     } finally {
       setPresetRunning(null);
     }
@@ -349,11 +356,14 @@ export default function Dashboard({ onNavigate }: Props) {
             onClick={async () => {
               setExporting(true);
               setExportPath(null);
+              setExportError(null);
               try {
                 const res = await invoke<{ success: boolean; path: string }>("export_report");
                 if (res.success) setExportPath(res.path);
+                else setExportError("Export failed.");
               } catch (e) {
                 console.error("Export failed:", e);
+                setExportError(`Export failed: ${String(e)}`);
               } finally {
                 setExporting(false);
               }
@@ -367,6 +377,12 @@ export default function Dashboard({ onNavigate }: Props) {
           <div className="export-result">
             Report saved and opened: <span className="export-path">{exportPath}</span>
           </div>
+        )}
+        {diagError && (
+          <div className="diag-overall sev-critical" role="alert">{diagError}</div>
+        )}
+        {exportError && (
+          <div className="diag-overall sev-critical" role="alert">{exportError}</div>
         )}
         {diagResult && (
           <div className="diag-results">
@@ -425,6 +441,12 @@ export default function Dashboard({ onNavigate }: Props) {
                 {presetResult.succeeded} of {presetResult.total} actions applied
                 {presetResult.failed > 0 && ` (${presetResult.failed} failed)`}
               </span>
+            </div>
+          )}
+          {presetError && (
+            <div className="preset-result" role="alert">
+              <span className="preset-result-icon">⚠</span>
+              <span>{presetError}</span>
             </div>
           )}
         </section>

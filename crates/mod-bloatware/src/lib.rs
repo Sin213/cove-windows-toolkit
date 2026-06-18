@@ -119,7 +119,7 @@ pub fn scan_installed() -> Vec<BloatwareApp> {
 pub fn remove_apps(packages: &[String]) -> Vec<RemoveResult> {
     packages.iter().map(|pkg| {
         let script = format!(
-            "Get-AppxPackage -AllUsers -Name '{}' | Remove-AppxPackage -AllUsers -ErrorAction Stop; Get-AppxProvisionedPackage -Online | Where-Object {{ $_.PackageName -match '{}' }} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue",
+            "Get-AppxPackage -AllUsers -Name '{}' | Remove-AppxPackage -AllUsers -ErrorAction Stop; Get-AppxProvisionedPackage -Online | Where-Object {{ $_.PackageName -match ('^' + [regex]::Escape('{}') + '_') }} | Remove-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue",
             pkg.replace('\'', "''"),
             pkg.replace('\'', "''"),
         );

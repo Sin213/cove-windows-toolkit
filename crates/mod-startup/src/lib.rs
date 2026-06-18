@@ -113,6 +113,18 @@ pub fn toggle(name: &str, enabled: bool) -> Result<String, String> {
 $paths = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run')
 $found = $false
 
+# Copy a Run value between keys preserving its original value kind (REG_SZ vs
+# REG_EXPAND_SZ). Reading the raw value with DoNotExpandEnvironmentNames keeps
+# %VAR% tokens intact so a disable->enable round-trip doesn't break entries that
+# rely on environment expansion at boot.
+function Copy-RunValue($src, $dst, $valueName) {
+    $key = Get-Item $src
+    $kind = $key.GetValueKind($valueName)
+    $raw = $key.GetValue($valueName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    if (-not (Test-Path $dst)) { New-Item $dst -Force | Out-Null }
+    New-ItemProperty -Path $dst -Name $valueName -Value $raw -PropertyType $kind -Force | Out-Null
+}
+
 # Registry Run keys
 foreach ($p in $paths) {
     try {
@@ -120,8 +132,7 @@ foreach ($p in $paths) {
         if ($val) {
             if ($action -eq 'disable') {
                 $disabledPath = $p -replace 'Run$','Run_Disabled'
-                if (-not (Test-Path $disabledPath)) { New-Item $disabledPath -Force | Out-Null }
-                Set-ItemProperty -Path $disabledPath -Name $name -Value $val
+                Copy-RunValue $p $disabledPath $name
                 Remove-ItemProperty -Path $p -Name $name -Force
             }
             $found = $true
@@ -135,7 +146,7 @@ if (-not $found -and $action -eq 'enable') {
         try {
             $val = (Get-ItemProperty $disabledPath -Name $name -ErrorAction Stop).$name
             if ($val) {
-                Set-ItemProperty -Path $p -Name $name -Value $val
+                Copy-RunValue $disabledPath $p $name
                 Remove-ItemProperty -Path $disabledPath -Name $name -Force
                 $found = $true
                 break

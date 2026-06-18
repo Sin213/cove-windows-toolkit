@@ -160,7 +160,7 @@ foreach ($hw in $computer.Hardware) {{
 }}
 $computer.Close()
 
-@{{ readings = $readings; warnings = @(); lhm_status = 'active' }} | ConvertTo-Json -Depth 3 -Compress
+@{{ readings = @($readings); warnings = @(); lhm_status = 'active' }} | ConvertTo-Json -Depth 3 -Compress
 "#, lhm_dir = lhm_dir)
     }
 

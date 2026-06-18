@@ -149,8 +149,8 @@ export default function DiskHealthPanel() {
     <div className="diskhealth-panel">
       {/* SMART / Drive Health Cards */}
       <div className="drive-cards">
-        {drives.map((d) => (
-          <div key={d.serial || d.model} className="drive-card">
+        {drives.map((d, i) => (
+          <div key={`${d.serial || d.model}-${i}`} className="drive-card">
             <div className="drive-card-header">
               <div className="drive-model">{d.model}</div>
               <span
@@ -249,7 +249,7 @@ export default function DiskHealthPanel() {
                 <div
                   className="space-bar-used"
                   style={{
-                    width: `${((spaceData.total_bytes - spaceData.free_bytes) / spaceData.total_bytes) * 100}%`,
+                    width: `${spaceData.total_bytes > 0 ? ((spaceData.total_bytes - spaceData.free_bytes) / spaceData.total_bytes) * 100 : 0}%`,
                   }}
                 />
               </div>

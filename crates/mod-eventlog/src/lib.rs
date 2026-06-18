@@ -55,7 +55,7 @@ foreach ($lvl in @(1,2,3)) {{
     $label = switch ($lvl) {{ 1 {{'Critical'}} 2 {{'Error'}} 3 {{'Warning'}} }}
     try {{
         Get-WinEvent -FilterHashtable @{{LogName='{log}'; Level=$lvl; StartTime=$cutoff}} -MaxEvents 2000 -ErrorAction Stop | ForEach-Object {{
-            $msg = if ($_.Message) {{ ($_.Message -replace '[\r\n]+',' ').Substring(0, [Math]::Min($_.Message.Length, 200)) }} else {{ 'No message' }}
+            $msg = if ($_.Message) {{ $m = ($_.Message -replace '[\r\n]+',' '); $m.Substring(0, [Math]::Min($m.Length, 200)) }} else {{ 'No message' }}
             Write-Output "EVT|$($_.Id)|$($_.ProviderName)|$label|$($_.TimeCreated.ToString('o'))|$msg"
         }}
     }} catch {{}}

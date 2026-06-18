@@ -55,6 +55,9 @@ export default function CleanupPanel() {
   const selectedTargets = targets.filter(
     (t) => selected[t.id] && !cleaned[t.id]
   );
+  const uncleanedTargets = targets.filter((t) => !cleaned[t.id]);
+  const allSelected =
+    uncleanedTargets.length > 0 && uncleanedTargets.every((t) => selected[t.id]);
   const totalSize = selectedTargets.reduce((s, t) => s + t.size_bytes, 0);
   const totalFiles = selectedTargets.reduce((s, t) => s + t.file_count, 0);
 
@@ -97,7 +100,7 @@ export default function CleanupPanel() {
         </div>
         <div className="summary-actions">
           <button className="select-all-btn" onClick={toggleAll}>
-            Select All
+            {allSelected ? "Deselect All" : "Select All"}
           </button>
           <button
             className="clean-btn"

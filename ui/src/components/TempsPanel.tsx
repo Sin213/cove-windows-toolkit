@@ -129,8 +129,10 @@ function TempGauge({ reading }: { reading: TempReading }) {
   const { sensor, temperature_c, max_c, critical_c } = reading;
   const limit = critical_c ?? max_c ?? 105;
   const pct = Math.min((temperature_c / limit) * 100, 100);
-  const color = tempColor(temperature_c, max_c);
-  const label = tempLabel(temperature_c, max_c);
+  // Use the same limit for color/label as the gauge fill so the severity color
+  // never disagrees with the displayed arc.
+  const color = tempColor(temperature_c, critical_c ?? max_c);
+  const label = tempLabel(temperature_c, critical_c ?? max_c);
 
   const radius = 42;
   const circumference = Math.PI * radius;

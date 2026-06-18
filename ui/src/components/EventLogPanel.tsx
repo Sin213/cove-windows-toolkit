@@ -99,7 +99,7 @@ export default function EventLogPanel() {
           <div className="no-events">No {filter === "all" ? "" : filter.toLowerCase() + " "}events found.</div>
         )}
         {filtered.map((ev, i) => (
-          <div key={i} className="event-item">
+          <div key={`${ev.time}-${ev.id}-${ev.source}-${i}`} className="event-item">
             <span className={`event-level-bar level-${ev.level.toLowerCase()}`} />
             <div className="event-content">
               <div className="event-header">
