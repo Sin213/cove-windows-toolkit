@@ -17,7 +17,9 @@ if (grip) {
   grip.addEventListener('mousedown', async (e) => {
     e.preventDefault()
     try {
-      await getCurrentWindow().startResizing('SouthEast')
+      // Tauri v2 typings don't always expose startResizing; cast to any.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (getCurrentWindow() as any).startResizing('SouthEast')
     } catch {
       // ignore — Tauri may not be available outside the Tauri runtime
     }
@@ -34,7 +36,7 @@ document.querySelectorAll<HTMLElement>('.edge-handle').forEach((el) => {
     if (!edge) return
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await getCurrentWindow().startResizing(edge as any)
+      await (getCurrentWindow() as any).startResizing(edge)
     } catch {
       // ignore
     }
