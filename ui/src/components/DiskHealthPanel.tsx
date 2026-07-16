@@ -78,6 +78,7 @@ export default function DiskHealthPanel() {
   const [lastChkdsk, setLastChkdsk] = useState<LastChkdskInfo | null>(null);
   const [chkdskRunning, setChkdskRunning] = useState<string | null>(null);
   const [chkdskResult, setChkdskResult] = useState<ChkdskResult | null>(null);
+  const [chkdskError, setChkdskError] = useState<string | null>(null);
 
   const [pendingConfirm, setPendingConfirm] = useState<{
     mode: string;
@@ -128,6 +129,7 @@ export default function DiskHealthPanel() {
   const runChkdsk = async (mode: string) => {
     setChkdskRunning(mode);
     setChkdskResult(null);
+    setChkdskError(null);
     try {
       const result = await invoke<ChkdskResult>("run_chkdsk", {
         mode,
@@ -136,6 +138,7 @@ export default function DiskHealthPanel() {
       setChkdskResult(result);
     } catch (e) {
       console.error("chkdsk failed:", e);
+      setChkdskError(String(e));
     } finally {
       setChkdskRunning(null);
     }
@@ -359,10 +362,16 @@ export default function DiskHealthPanel() {
               )}
             </div>
             {chkdskResult.output && (
-              <pre className="chkdsk-output">
-                {chkdskResult.output.slice(0, 1000)}
-              </pre>
+              <pre className="chkdsk-output">{chkdskResult.output}</pre>
             )}
+          </div>
+        )}
+
+        {chkdskError && (
+          <div className="chkdsk-result chkdsk-fail">
+            <div className="chkdsk-result-header">
+              <span>{"✖"} chkdsk failed to run: {chkdskError}</span>
+            </div>
           </div>
         )}
       </div>
