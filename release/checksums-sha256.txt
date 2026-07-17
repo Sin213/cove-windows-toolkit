@@ -1,2 +1,0 @@
-8f18e291ed677decb7baed02df32a23c7b3609b3ce682765ce5182a2e088c447 *Cove-Windows-Toolkit-2.2.0-Portable.exe
-7e5d9862aef70f9406a273fd7021f4a95b3903a1783e94a15eb77ab68da7ae98 *Cove-Windows-Toolkit-2.2.0-Setup.exe

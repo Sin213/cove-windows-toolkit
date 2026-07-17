@@ -96,7 +96,6 @@ jobs:
             Copy-Item $nsis.FullName "release/Cove-Windows-Toolkit-$env:VERSION-Setup.exe"
           }
 
-          # The -Portable filename activates portable storage mode at runtime.
           $exe = "target/release/optimizer-app.exe"
           if (Test-Path $exe) {
             Copy-Item $exe "release/Cove-Windows-Toolkit-$env:VERSION-Portable.exe"
@@ -130,13 +129,14 @@ jobs:
         with:
           path: artifacts
 
-      - name: Collect release assets and generate checksums
+      - name: Collect release assets
         run: |
           mkdir -p release
           find artifacts -type f \( -name '*-Setup.exe' -o -name '*-Portable.exe' \) -exec cp {} release/ \;
           cd release
-          sha256sum *.exe > checksums-sha256.txt
-          cat checksums-sha256.txt
+          for file in *.exe; do
+            sha256sum "$file" > "$file.sha256"
+          done
 
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -153,5 +153,4 @@ jobs:
             | `Cove-Windows-Toolkit-${{ env.VERSION }}-Setup.exe` | Windows Installer |
             | `Cove-Windows-Toolkit-${{ env.VERSION }}-Portable.exe` | Portable (no install) |
 
-            Verify downloads with `checksums-sha256.txt`.
           make_latest: true
