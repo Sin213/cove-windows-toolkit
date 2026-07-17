@@ -13,7 +13,8 @@ interface Finding {
 }
 
 interface HealthReport {
-  score: number;
+  score: number | null;
+  complete: boolean;
   findings: Finding[];
 }
 
@@ -44,7 +45,7 @@ export default function HealthPanel() {
   };
 
   useEffect(() => {
-    load();
+    queueMicrotask(load);
   }, []);
 
   if (loading) return <div className="panel-loading">Running health scan...</div>;
@@ -53,15 +54,17 @@ export default function HealthPanel() {
 
   const score = report.score;
   const scoreColor =
-    score >= 90 ? "var(--green)" : score >= 70 ? "var(--yellow)" : score >= 50 ? "var(--orange)" : "var(--red)";
+    score === null ? "var(--text-muted)" : score >= 90 ? "var(--green)" : score >= 70 ? "var(--yellow)" : score >= 50 ? "var(--orange)" : "var(--red)";
   const grade =
-    score >= 90 ? "Excellent" : score >= 70 ? "Good standing" : score >= 50 ? "Needs attention" : "Critical";
+    score === null ? "Unknown" : score >= 90 ? "Excellent" : score >= 70 ? "Good standing" : score >= 50 ? "Needs attention" : "Critical";
 
   const attention = report.findings.filter(
     (f) => f.severity === "Warning" || f.severity === "Critical"
   ).length;
   const sub =
-    attention === 0
+    !report.complete || score === null
+      ? "One or more health checks could not be completed."
+      : attention === 0
       ? "All checks passed. Nothing requires action."
       : `${attention} finding${attention > 1 ? "s" : ""} worth a glance.`;
 
@@ -69,7 +72,7 @@ export default function HealthPanel() {
   const stroke = 10;
   const r = (size - stroke) / 2 - 2;
   const circumference = 2 * Math.PI * r;
-  const offset = circumference * (1 - score / 100);
+  const offset = circumference * (1 - (score ?? 0) / 100);
   const cx = size / 2;
 
   return (
@@ -94,7 +97,7 @@ export default function HealthPanel() {
               }}
             />
           </svg>
-          <span className="ring-num" style={{ color: scoreColor }}>{score}</span>
+          <span className="ring-num" style={{ color: scoreColor }}>{score ?? "--"}</span>
           <span className="ring-lbl">Health</span>
         </div>
         <div className="hh-body">

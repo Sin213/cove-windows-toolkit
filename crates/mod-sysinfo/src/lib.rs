@@ -2,6 +2,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FullSystemInfo {
+    #[serde(default)]
+    pub complete: bool,
+    #[serde(default)]
+    pub errors: Vec<String>,
     pub os: OsInfo,
     pub cpu: CpuInfo,
     pub ram: RamInfo,
@@ -120,7 +124,11 @@ pub fn collect() -> FullSystemInfo {
         Ok(info) => info,
         Err(e) => {
             eprintln!("sysinfo parse error: {e}\n{json}");
-            FullSystemInfo::default()
+            FullSystemInfo {
+                complete: false,
+                errors: vec![format!("System information parse failed: {e}")],
+                ..Default::default()
+            }
         }
     }
 }
@@ -132,7 +140,6 @@ pub fn collect() -> FullSystemInfo {
 
 #[cfg(target_os = "windows")]
 fn run_ps(script: &str) -> String {
-    
     let out = optimizer_core::powershell(script).output();
     match out {
         Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
@@ -143,6 +150,8 @@ fn run_ps(script: &str) -> String {
 #[cfg(not(target_os = "windows"))]
 fn stub_info() -> FullSystemInfo {
     FullSystemInfo {
+        complete: true,
+        errors: Vec::new(),
         os: OsInfo {
             name: "Windows 11 Pro".into(),
             version: "23H2".into(),

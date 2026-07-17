@@ -59,7 +59,7 @@
 
 .findings-list { display: flex; flex-direction: column; gap: 9px; }
 
-.finding-item {
+.health-panel .finding-item {
   display: flex;
   gap: 13px;
   background: var(--bg-card);
@@ -67,16 +67,16 @@
   border-radius: var(--r-md);
   padding: 15px 16px;
 }
-.finding-item .sev-bar { width: 3px; border-radius: 3px; flex-shrink: 0; align-self: stretch; }
-.finding-item.ok .sev-bar { background: var(--green); }
-.finding-item.warning .sev-bar { background: var(--yellow); }
-.finding-item.critical .sev-bar { background: var(--red); }
-.finding-item.info .sev-bar { background: var(--accent); }
+.health-panel .finding-item .sev-bar { width: 3px; border-radius: 3px; flex-shrink: 0; align-self: stretch; }
+.health-panel .finding-item.ok .sev-bar { background: var(--green); }
+.health-panel .finding-item.warning .sev-bar { background: var(--yellow); }
+.health-panel .finding-item.critical .sev-bar { background: var(--red); }
+.health-panel .finding-item.info .sev-bar { background: var(--accent); }
 
-.finding-content { flex: 1; min-width: 0; position: relative; }
-.finding-title { font-size: 14px; font-weight: 600; color: var(--ink); padding-right: 80px; display: block; }
-.finding-detail { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
-.finding-remediation {
+.health-panel .finding-content { flex: 1; min-width: 0; position: relative; }
+.health-panel .finding-title { font-size: 14px; font-weight: 600; color: var(--ink); padding-right: 80px; display: block; }
+.health-panel .finding-detail { font-size: 12.5px; color: var(--ink-2); margin-top: 4px; }
+.health-panel .finding-remediation {
   font-size: 12.5px;
   color: var(--ink-3);
   margin-top: 7px;

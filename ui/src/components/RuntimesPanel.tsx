@@ -24,6 +24,12 @@ interface RuntimesData {
   vcredist: RuntimeEntry[];
   directx: DirectXInfo;
   java: RuntimeEntry[];
+  coverage: Record<"dotnet" | "vcredist" | "directx" | "java", ProbeState>;
+}
+
+interface ProbeState {
+  complete: boolean;
+  errors: string[];
 }
 
 export default function RuntimesPanel() {
@@ -57,10 +63,14 @@ export default function RuntimesPanel() {
       ),
       "",
       "-- DirectX --",
-      `[OK] DirectX ${data.directx.version} (Feature Level ${data.directx.feature_level})`,
+      data.coverage.directx.complete
+        ? `[OK] DirectX ${data.directx.version} (Feature Level ${data.directx.feature_level})`
+        : `[??] DirectX detection incomplete: ${data.coverage.directx.errors.join("; ")}`,
       "",
       "-- Java --",
-      ...(data.java.length > 0
+      ...(!data.coverage.java.complete
+        ? [`[??] Java detection incomplete: ${data.coverage.java.errors.join("; ")}`]
+        : data.java.length > 0
         ? data.java.map((r) => `[OK] ${r.name} (${r.version})${r.path ? " - " + r.path : ""}`)
         : ["[--] No Java installation detected"]),
     ];
@@ -79,6 +89,7 @@ export default function RuntimesPanel() {
       {/* .NET */}
       <div className="runtimes-category">
         <div className="runtimes-category-title">.NET</div>
+        <ProbeWarning state={data.coverage.dotnet} family=".NET" />
         <div className="runtimes-list">
           {data.dotnet.map((r) => (
             <RuntimeRow key={r.name} entry={r} />
@@ -89,6 +100,7 @@ export default function RuntimesPanel() {
       {/* Visual C++ */}
       <div className="runtimes-category">
         <div className="runtimes-category-title">Visual C++ Redistributables</div>
+        <ProbeWarning state={data.coverage.vcredist} family="Visual C++" />
         <div className="runtimes-list">
           {data.vcredist.map((r) => (
             <RuntimeRow key={r.name} entry={r} />
@@ -99,8 +111,11 @@ export default function RuntimesPanel() {
       {/* DirectX */}
       <div className="runtimes-category">
         <div className="runtimes-category-title">DirectX</div>
+        <ProbeWarning state={data.coverage.directx} family="DirectX" />
         <div className="dx-row">
-          <span className="runtime-status-icon installed">✔</span>
+          <span className={`runtime-status-icon ${data.coverage.directx.complete ? "installed" : "missing"}`}>
+            {data.coverage.directx.complete ? "✔" : "?"}
+          </span>
           <div className="runtime-info">
             <div className="runtime-name">DirectX {data.directx.version}</div>
           </div>
@@ -111,7 +126,8 @@ export default function RuntimesPanel() {
       {/* Java */}
       <div className="runtimes-category">
         <div className="runtimes-category-title">Java</div>
-        {data.java.length === 0 ? (
+        <ProbeWarning state={data.coverage.java} family="Java" />
+        {data.coverage.java.complete && data.java.length === 0 ? (
           <div className="java-empty">No Java installation detected</div>
         ) : (
           <div className="runtimes-list">
@@ -127,6 +143,15 @@ export default function RuntimesPanel() {
           {copied ? "Copied!" : "Copy Summary"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function ProbeWarning({ state, family }: { state: ProbeState; family: string }) {
+  if (state.complete) return null;
+  return (
+    <div className="panel-error">
+      {family} detection is incomplete: {state.errors.join("; ") || "query failed"}
     </div>
   );
 }

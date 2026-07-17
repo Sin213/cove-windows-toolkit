@@ -12,6 +12,10 @@ interface EventEntry {
 }
 
 interface LogChannel {
+  complete: boolean;
+  query_error: string | null;
+  window_days: number;
+  truncated: boolean;
   critical: number;
   error: number;
   warning: number;
@@ -67,6 +71,7 @@ export default function EventLogPanel() {
       </div>
 
       <div className="log-summary-bar">
+        <span className="log-stat">Last {channel.window_days} days{channel.truncated ? " (capped)" : ""}</span>
         {channel.critical > 0 && (
           <button
             className={`log-stat critical ${filter === "Critical" ? "active-filter" : ""}`}
@@ -94,9 +99,13 @@ export default function EventLogPanel() {
         )}
       </div>
 
+      {!channel.complete && (
+        <div className="panel-error">Event log results are incomplete: {channel.query_error || "query failed"}</div>
+      )}
+
       <div className="events-list">
         {filtered.length === 0 && (
-          <div className="no-events">No {filter === "all" ? "" : filter.toLowerCase() + " "}events found.</div>
+          <div className="no-events">{channel.complete ? `No ${filter === "all" ? "" : filter.toLowerCase() + " "}events found in this window.` : "No reliable event result is available."}</div>
         )}
         {filtered.map((ev, i) => (
           <div key={`${ev.time}-${ev.id}-${ev.source}-${i}`} className="event-item">

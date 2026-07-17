@@ -23,33 +23,115 @@ pub struct ServicesTweaks {
 #[cfg(target_os = "windows")]
 pub fn get_tweaks() -> ServicesTweaks {
     let conservative_defs = vec![
-        ("svc.wsearch", "Windows Search", "WSearch", "Indexing service -uses RAM and disk I/O", "green", "Manual", "Search works but first query is slower", None),
-        ("svc.sysmain", "SysMain (Superfetch)", "SysMain", "Prefetch service -irrelevant on SSDs", "green", "Manual", "Frees RAM and reduces disk I/O on SSDs", None),
-        ("svc.diagtrack", "DiagTrack", "DiagTrack", "Connected User Experiences and Telemetry", "green", "Manual", "Stops telemetry data upload", None),
-        ("svc.spooler", "Print Spooler", "Spooler", "Manages print jobs", "green", "Manual", "Set Manual only if no printer detected", None),
-        ("svc.xbox_auth", "Xbox Live Auth Manager", "XblAuthManager", "Xbox Live authentication", "green", "Disabled", "No effect unless Xbox app is actively used", None),
-        ("svc.xbox_save", "Xbox Live Game Save", "XblGameSave", "Xbox cloud saves", "green", "Disabled", "No cloud save sync for Xbox games", None),
-        ("svc.fax", "Fax", "Fax", "Fax service", "green", "Disabled", "No fax capability", None),
+        (
+            "svc.wsearch",
+            "Windows Search",
+            "WSearch",
+            "Indexing service -uses RAM and disk I/O",
+            "green",
+            "Manual",
+            "Search works but first query is slower",
+            None,
+        ),
+        (
+            "svc.sysmain",
+            "SysMain (Superfetch)",
+            "SysMain",
+            "Prefetch service -irrelevant on SSDs",
+            "green",
+            "Manual",
+            "Frees RAM and reduces disk I/O on SSDs",
+            None,
+        ),
+        (
+            "svc.diagtrack",
+            "DiagTrack",
+            "DiagTrack",
+            "Connected User Experiences and Telemetry",
+            "green",
+            "Manual",
+            "Changes future startup behavior; the currently running service is not stopped",
+            None,
+        ),
+        (
+            "svc.xbox_auth",
+            "Xbox Live Auth Manager",
+            "XblAuthManager",
+            "Xbox Live authentication",
+            "green",
+            "Disabled",
+            "No effect unless Xbox app is actively used",
+            None,
+        ),
+        (
+            "svc.xbox_save",
+            "Xbox Live Game Save",
+            "XblGameSave",
+            "Xbox cloud saves",
+            "green",
+            "Disabled",
+            "No cloud save sync for Xbox games",
+            None,
+        ),
+        (
+            "svc.fax",
+            "Fax",
+            "Fax",
+            "Fax service",
+            "green",
+            "Disabled",
+            "No fax capability",
+            None,
+        ),
     ];
 
     let advanced_defs = vec![
-        ("svc.wuauserv", "Windows Update", "wuauserv", "Manages Windows Updates", "red", "Disabled", "No security patches while disabled", Some("Your system will not receive security patches. Re-enable monthly.")),
-        ("svc.windefend", "Windows Defender", "WinDefend", "Real-time antivirus protection", "red", "Disabled", "No AV protection", Some("Only disable if using a third-party antivirus")),
+        (
+            "svc.wuauserv",
+            "Windows Update",
+            "wuauserv",
+            "Manages Windows Updates",
+            "red",
+            "Disabled",
+            "No security patches while disabled",
+            Some("Your system will not receive security patches. Re-enable monthly."),
+        ),
+        (
+            "svc.windefend",
+            "Windows Defender",
+            "WinDefend",
+            "Real-time antivirus protection",
+            "red",
+            "Disabled",
+            "No AV protection",
+            Some("Only disable if using a third-party antivirus"),
+        ),
     ];
 
     ServicesTweaks {
-        conservative: conservative_defs.into_iter().map(|d| build_service_tweak(d)).collect(),
-        advanced: advanced_defs.into_iter().map(|d| build_service_tweak(d)).collect(),
+        conservative: conservative_defs
+            .into_iter()
+            .map(|d| build_service_tweak(d))
+            .collect(),
+        advanced: advanced_defs
+            .into_iter()
+            .map(|d| build_service_tweak(d))
+            .collect(),
     }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn get_tweaks() -> ServicesTweaks {
-    ServicesTweaks { conservative: Vec::new(), advanced: Vec::new() }
+    ServicesTweaks {
+        conservative: Vec::new(),
+        advanced: Vec::new(),
+    }
 }
 
 #[cfg(target_os = "windows")]
-fn build_service_tweak(def: (&str, &str, &str, &str, &str, &str, &str, Option<&str>)) -> ServiceTweak {
+fn build_service_tweak(
+    def: (&str, &str, &str, &str, &str, &str, &str, Option<&str>),
+) -> ServiceTweak {
     let (id, name, service, desc, tier, optimized, impact, warning) = def;
     let current = query_service_start_type(service);
     ServiceTweak {
@@ -67,8 +149,6 @@ fn build_service_tweak(def: (&str, &str, &str, &str, &str, &str, &str, Option<&s
 
 #[cfg(target_os = "windows")]
 fn query_service_start_type(service: &str) -> String {
-    
-
     let ps = format!(
         "try {{ $s = Get-Service '{}' -ErrorAction Stop; $st = (Get-WmiObject Win32_Service -Filter \"Name='{}'\").StartMode; if ($st -eq 'Auto') {{ $st = 'Automatic' }}; Write-Output $st }} catch {{ Write-Output 'NotFound' }}",
         service, service
@@ -76,24 +156,28 @@ fn query_service_start_type(service: &str) -> String {
 
     if let Ok(o) = optimizer_core::powershell(&ps).output() {
         let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
-        if !result.is_empty() { return result; }
+        if !result.is_empty() {
+            return result;
+        }
     }
     "Unknown".into()
 }
 
 #[cfg(target_os = "windows")]
 pub fn apply_change(service: &str, start_type: &str) -> Result<String, String> {
-    
-
     let ps = format!(
         "Set-Service -Name '{}' -StartupType '{}' -ErrorAction Stop; Write-Output 'OK'",
         service, start_type
     );
-    let o = optimizer_core::powershell(&ps).output()
+    let o = optimizer_core::powershell(&ps)
+        .output()
         .map_err(|e| e.to_string())?;
     let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if result == "OK" {
-        Ok(format!("Service '{}' set to {}", service, start_type))
+        Ok(format!(
+            "Service '{}' startup type set to {}. A currently running service was not stopped.",
+            service, start_type
+        ))
     } else {
         Err(String::from_utf8_lossy(&o.stderr).trim().to_string())
     }

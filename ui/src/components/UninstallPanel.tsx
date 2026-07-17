@@ -4,13 +4,12 @@ import ConfirmDialog from "./ConfirmDialog";
 import "./UninstallPanel.css";
 
 interface InstalledProgram {
+  id: string;
   name: string;
   publisher: string;
   version: string;
   install_date: string;
   size_bytes: number;
-  uninstall_string: string;
-  quiet_uninstall_string: string;
   install_location: string;
   registry_key: string;
   is_system: boolean;
@@ -23,6 +22,8 @@ interface Leftover {
 }
 
 interface ScanResult {
+  success: boolean;
+  scan_id: string;
   leftovers: Leftover[];
   total_size_bytes: number;
 }
@@ -41,10 +42,6 @@ function fmtBytes(b: number): string {
 // Stable identity for a program row. registry_key can be empty for some entries
 // (e.g. system VC++ redists), so fall back to a composite of name/version/publisher
 // to avoid duplicate React keys and mis-highlighting rows that share a name.
-function progId(p: InstalledProgram): string {
-  return p.registry_key || `${p.name}|${p.version}|${p.publisher}`;
-}
-
 type Step = "list" | "uninstalling" | "scanning" | "leftovers" | "cleaning" | "done";
 
 export default function UninstallPanel() {
@@ -88,19 +85,22 @@ export default function UninstallPanel() {
     setStep("uninstalling");
     setFeedback(null);
     try {
-      await invoke("uninstall_program", {
-        uninstallString: selected.uninstall_string,
-        quietUninstallString: selected.quiet_uninstall_string,
+      const result = await invoke<{ success: boolean; message: string }>("uninstall_program", {
+        programId: selected.id,
       });
+      if (!result.success) {
+        setFeedback(result.message || "The uninstaller failed. No cleanup was attempted.");
+        setStep("list");
+        return;
+      }
+      setPrograms((current) => current.filter((program) => program.id !== selected.id));
       setFeedback("Standard uninstall completed. Scanning for leftovers...");
     } catch (e) {
-      setFeedback(`Uninstall error: ${e}. Scanning for leftovers anyway...`);
+      setFeedback(`Uninstall error: ${e}. No cleanup was attempted.`);
+      setStep("list");
+      return;
     }
-    handleScan();
-  };
-
-  const handleScanOnly = () => {
-    handleScan();
+    await handleScan();
   };
 
   const handleScan = async () => {
@@ -108,11 +108,9 @@ export default function UninstallPanel() {
     setStep("scanning");
     try {
       const result = await invoke<ScanResult>("scan_leftovers", {
-        name: selected.name,
-        publisher: selected.publisher,
-        installLocation: selected.install_location,
-        registryKey: selected.registry_key,
+        programId: selected.id,
       });
+      if (!result.success) throw new Error("The leftover scan failed.");
       setScan(result);
       // Pre-check only files/registry; require a conscious choice to remove
       // services and scheduled tasks.
@@ -136,7 +134,7 @@ export default function UninstallPanel() {
     if (paths.length === 0) return;
     setStep("cleaning");
     try {
-      const result = await invoke<RemoveResult>("remove_leftovers", { paths });
+      const result = await invoke<RemoveResult>("remove_leftovers", { scanId: scan.scan_id, paths });
       setRemoveResults(result);
       setStep("done");
     } catch (e) {
@@ -195,9 +193,10 @@ export default function UninstallPanel() {
         <div className="program-list">
           {filtered.map((p) => (
             <button
-              key={progId(p)}
-              className={`program-item ${selected && progId(selected) === progId(p) ? "active" : ""}`}
+              key={p.id}
+              className={`program-item ${selected?.id === p.id ? "active" : ""}`}
               onClick={() => handleSelect(p)}
+              disabled={step !== "list"}
             >
               <div className="prog-name">{p.name}</div>
               <div className="prog-meta">
@@ -229,17 +228,10 @@ export default function UninstallPanel() {
               {selected.install_location && <DetailRow label="Location" value={selected.install_location} />}
             </div>
             <div className="action-buttons">
-              <button className="action-btn action-primary" onClick={() => setConfirmAction("uninstall")}
-                disabled={!selected.uninstall_string && !selected.quiet_uninstall_string}>
+              <button className="action-btn action-primary" onClick={() => setConfirmAction("uninstall")}>
                 Uninstall + Deep Clean
               </button>
-              <button className="action-btn action-secondary" onClick={handleScanOnly}>
-                Scan for Leftovers Only
-              </button>
             </div>
-            {!selected.uninstall_string && !selected.quiet_uninstall_string && (
-              <div className="no-uninstall-hint">No uninstall command found. Use "Scan for Leftovers" to find remaining files.</div>
-            )}
           </div>
         )}
 

@@ -311,7 +311,7 @@
 }
 .scan-btn.ghost:hover { border-color: var(--line-3); background: var(--bg-card-2); }
 
-.scan-live { margin-top: 12px; }
+.sfc-panel .scan-live { margin-top: 12px; }
 
 /* Progress bar */
 .scan-bar {

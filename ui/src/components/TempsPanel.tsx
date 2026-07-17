@@ -59,7 +59,7 @@ export default function TempsPanel() {
   }, []);
 
   useEffect(() => {
-    load();
+    queueMicrotask(load);
   }, [load]);
 
   useEffect(() => {

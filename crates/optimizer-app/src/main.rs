@@ -30,7 +30,7 @@ fn win_start_drag(window: tauri::Window) {
 }
 
 fn init_logging() {
-    use tracing_subscriber::{fmt, EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+    use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
     let log_dir = if crate::portable::is_portable() {
         crate::portable::portable_data_dir("cove-windows-optimizer").join("logs")
@@ -51,7 +51,10 @@ fn init_logging() {
         .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
         .init();
 
-    tracing::info!("Cove Windows Toolkit starting -log directory: {}", log_dir.display());
+    tracing::info!(
+        "Cove Windows Toolkit starting -log directory: {}",
+        log_dir.display()
+    );
 }
 
 /// Tauri sets the Windows window icon from a single flattened RGBA image, which
@@ -65,11 +68,11 @@ fn apply_crisp_window_icon(window: &tauri::WebviewWindow) {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::UI::Shell::ExtractIconExW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SendMessageW, ICON_BIG, ICON_SMALL, WM_SETICON,
+        ICON_BIG, ICON_SMALL, SendMessageW, WM_SETICON,
     };
 
     let hwnd = match window.hwnd() {
-        Ok(h) => h.0 as *mut core::ffi::c_void,
+        Ok(h) => h.0,
         Err(_) => return,
     };
     let exe = match std::env::current_exe() {

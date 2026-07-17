@@ -16,49 +16,24 @@ pub struct RestorePoint {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RestoreStatus {
+    pub known: bool,
     pub enabled: bool,
     pub message: String,
 }
 
 #[cfg(target_os = "windows")]
 pub fn get_restore_status() -> RestoreStatus {
-    
-    // Get-ComputerRestorePoint succeeds (empty) even when System Protection is
-    // OFF, and restore points / shadow copies aren't per-drive nor specific to
-    // System Restore. RPSessionInterval is the registry indicator: it is 0 when
-    // System Protection is disabled and non-zero when it is enabled.
-    let script = r#"$rp = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' -Name RPSessionInterval -ErrorAction SilentlyContinue).RPSessionInterval
-if ($rp -and [int]$rp -gt 0) { 'enabled' } else { 'disabled' }"#;
-    let output = optimizer_core::powershell(script).output();
-
-    match output {
-        Ok(out) => {
-            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            match text.as_str() {
-                "disabled" => RestoreStatus {
-                    enabled: false,
-                    message: "System Protection is disabled. Enable it in System Properties > System Protection.".to_string(),
-                },
-                "enabled" => RestoreStatus {
-                    enabled: true,
-                    message: "System Protection is enabled.".to_string(),
-                },
-                _ => RestoreStatus {
-                    enabled: false,
-                    message: "Could not determine System Protection status.".to_string(),
-                },
-            }
-        }
-        Err(e) => RestoreStatus {
-            enabled: false,
-            message: format!("Failed to check status: {}", e),
-        },
+    RestoreStatus {
+        known: false,
+        enabled: false,
+        message: "System Protection status is not exposed by a reliable per-volume query. Open System Protection to verify it.".into(),
     }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn get_restore_status() -> RestoreStatus {
     RestoreStatus {
+        known: false,
         enabled: true,
         message: "System Protection status (stub -not on Windows).".to_string(),
     }
@@ -66,7 +41,6 @@ pub fn get_restore_status() -> RestoreStatus {
 
 #[cfg(target_os = "windows")]
 pub fn list_restore_points() -> Vec<RestorePoint> {
-    
     let output = optimizer_core::powershell(
         "Get-ComputerRestorePoint | Select-Object SequenceNumber, Description, @{N='RestorePointType';E={ switch ([int]$_.RestorePointType) { 0 {'Application Install'} 1 {'Application Uninstall'} 10 {'Device Driver Install'} 12 {'Modify Settings'} 13 {'Cancelled Operation'} default {\"Type $($_.RestorePointType)\"} } }}, @{N='CreationTime';E={$_.ConvertToDateTime($_.CreationTime).ToString('o')}} | ConvertTo-Json -Compress",
     )
@@ -90,6 +64,46 @@ pub fn list_restore_points() -> Vec<RestorePoint> {
             }
         }
         Err(_) => Vec::new(),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestorePointReport {
+    pub complete: bool,
+    pub error: Option<String>,
+    pub points: Vec<RestorePoint>,
+}
+
+#[cfg(target_os = "windows")]
+pub fn list_restore_points_report() -> RestorePointReport {
+    let script = r#"$ErrorActionPreference='Stop'
+try {
+  $points = @(Get-ComputerRestorePoint -ErrorAction Stop | Select-Object SequenceNumber, Description, @{N='RestorePointType';E={ switch ([int]$_.RestorePointType) { 0 {'Application Install'} 1 {'Application Uninstall'} 10 {'Device Driver Install'} 12 {'Modify Settings'} 13 {'Cancelled Operation'} default {"Type $($_.RestorePointType)"} } }}, @{N='CreationTime';E={$_.ConvertToDateTime($_.CreationTime).ToString('o')}})
+  @{complete=$true;error=$null;points=$points} | ConvertTo-Json -Depth 4 -Compress
+} catch { @{complete=$false;error=$_.Exception.Message;points=@()} | ConvertTo-Json -Depth 4 -Compress }"#;
+    let output = match optimizer_core::powershell(script).output() {
+        Ok(output) => output,
+        Err(error) => {
+            return RestorePointReport {
+                complete: false,
+                error: Some(error.to_string()),
+                points: Vec::new(),
+            };
+        }
+    };
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|error| RestorePointReport {
+        complete: false,
+        error: Some(error.to_string()),
+        points: Vec::new(),
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn list_restore_points_report() -> RestorePointReport {
+    RestorePointReport {
+        complete: false,
+        error: Some("Restore points are unavailable on this platform.".into()),
+        points: Vec::new(),
     }
 }
 
@@ -119,7 +133,6 @@ pub fn list_restore_points() -> Vec<RestorePoint> {
 
 #[cfg(target_os = "windows")]
 pub fn create_restore_point(description: &str) -> Result<String, String> {
-    
     let script = format!(
         "Checkpoint-Computer -Description '{}' -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop",
         description.replace('\'', "''")
@@ -129,10 +142,16 @@ pub fn create_restore_point(description: &str) -> Result<String, String> {
         .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
 
     if output.status.success() {
-        Ok(format!("Restore point '{}' created successfully.", description))
+        Ok(format!(
+            "Restore point '{}' created successfully.",
+            description
+        ))
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("1440") || stderr.contains("frequency") || stderr.to_lowercase().contains("within the past") {
+        if stderr.contains("1440")
+            || stderr.contains("frequency")
+            || stderr.to_lowercase().contains("within the past")
+        {
             Err("Windows limits restore point creation to once every 24 hours. A restore point was already created recently.".to_string())
         } else if stderr.contains("disabled") || stderr.contains("ServiceDisabled") {
             Err("System Protection is disabled for this drive. Enable it in System Properties > System Protection, then try again.".to_string())
@@ -152,16 +171,20 @@ pub fn create_restore_point(description: &str) -> Result<String, String> {
 
 #[cfg(target_os = "windows")]
 pub fn enable_system_protection() -> Result<String, String> {
-    
-    let output = optimizer_core::powershell("Enable-ComputerRestore -Drive $env:SystemDrive -ErrorAction Stop")
-        .output()
-        .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
+    let output = optimizer_core::powershell(
+        "Enable-ComputerRestore -Drive $env:SystemDrive -ErrorAction Stop",
+    )
+    .output()
+    .map_err(|e| format!("Failed to run PowerShell: {}", e))?;
 
     if output.status.success() {
         Ok("System Protection enabled on the system drive.".to_string())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Failed to enable System Protection: {}", stderr.trim()))
+        Err(format!(
+            "Failed to enable System Protection: {}",
+            stderr.trim()
+        ))
     }
 }
 
@@ -172,7 +195,6 @@ pub fn enable_system_protection() -> Result<String, String> {
 
 #[cfg(target_os = "windows")]
 pub fn launch_system_restore() -> Result<String, String> {
-    
     optimizer_core::silent_cmd("rstrui.exe")
         .spawn()
         .map_err(|e| format!("Failed to launch System Restore: {}", e))?;

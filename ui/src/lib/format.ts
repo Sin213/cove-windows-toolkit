@@ -10,6 +10,7 @@ export function formatBytes(bytes: number): string {
 /** Format an ISO timestamp as relative ("2 hours ago") or absolute */
 export function timeAgo(iso: string): string {
   const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "Unknown";
   const now = Date.now();
   const diff = now - date.getTime();
 

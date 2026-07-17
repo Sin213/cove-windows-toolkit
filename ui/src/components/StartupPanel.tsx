@@ -18,6 +18,7 @@ export default function StartupPanel() {
   const [error, setError] = useState<string | null>(null);
   const [toggling, setToggling] = useState<Record<string, boolean>>({});
   const [pendingConfirm, setPendingConfirm] = useState<StartupItem | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<StartupItem[]>("get_startup_items")
@@ -29,7 +30,8 @@ export default function StartupPanel() {
   const handleToggle = async (item: StartupItem) => {
     setToggling((s) => ({ ...s, [item.id]: true }));
     try {
-      const res = await invoke<{ success: boolean }>("toggle_startup", {
+      setFeedback(null);
+      const res = await invoke<{ success: boolean; message?: string }>("toggle_startup", {
         id: item.id,
         enabled: !item.enabled,
       });
@@ -39,9 +41,10 @@ export default function StartupPanel() {
             it.id === item.id ? { ...it, enabled: !it.enabled } : it
           )
         );
-      }
+      } else setFeedback(res.message || "Startup change failed.");
     } catch (e) {
       console.error("Toggle failed:", e);
+      setFeedback(`Startup change failed: ${String(e)}`);
     } finally {
       setToggling((s) => ({ ...s, [item.id]: false }));
     }
@@ -55,6 +58,7 @@ export default function StartupPanel() {
 
   return (
     <div className="startup-panel">
+      {feedback && <div className="panel-error" role="alert">{feedback}</div>}
       <div className="startup-summary">
         <span>{enabledCount} enabled</span>
         <span className="sep">/</span>

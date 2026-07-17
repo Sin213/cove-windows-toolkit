@@ -43,9 +43,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "atk"
@@ -308,6 +308,12 @@ name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
+
+[[package]]
+name = "cfg_aliases"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "chrono"
@@ -766,7 +772,7 @@ version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "38e2275cc4e4fc009b0669731a1e5ab7ebf11f469eaede2bab9309a5b4d6057f"
 dependencies = [
- "memoffset 0.9.1",
+ "memoffset",
  "rustc_version",
 ]
 
@@ -1556,15 +1562,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ioctl-rs"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7970510895cee30b3e9128319f2cefd4bde883a39f38baa279567ba3a7eb97d"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1806,15 +1803,6 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
 name = "memoffset"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
-dependencies = [
- "autocfg",
-]
-
-[[package]]
-name = "memoffset"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
@@ -1851,7 +1839,7 @@ dependencies = [
 
 [[package]]
 name = "mod-bloatware"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1860,7 +1848,7 @@ dependencies = [
 
 [[package]]
 name = "mod-bsod"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1869,8 +1857,9 @@ dependencies = [
 
 [[package]]
 name = "mod-cleanup"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
+ "directories",
  "optimizer-core",
  "serde",
  "serde_json",
@@ -1878,7 +1867,7 @@ dependencies = [
 
 [[package]]
 name = "mod-diskhealth"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1887,7 +1876,7 @@ dependencies = [
 
 [[package]]
 name = "mod-drivers"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1896,7 +1885,7 @@ dependencies = [
 
 [[package]]
 name = "mod-eventlog"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1905,7 +1894,7 @@ dependencies = [
 
 [[package]]
 name = "mod-health"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1914,7 +1903,7 @@ dependencies = [
 
 [[package]]
 name = "mod-netdiag"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1923,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "mod-network"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1932,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "mod-performance"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1941,7 +1930,7 @@ dependencies = [
 
 [[package]]
 name = "mod-power"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1950,7 +1939,7 @@ dependencies = [
 
 [[package]]
 name = "mod-privacy"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1959,7 +1948,7 @@ dependencies = [
 
 [[package]]
 name = "mod-report"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -1969,7 +1958,7 @@ dependencies = [
 
 [[package]]
 name = "mod-restore"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -1979,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "mod-runtimes"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1988,7 +1977,7 @@ dependencies = [
 
 [[package]]
 name = "mod-security"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1997,7 +1986,7 @@ dependencies = [
 
 [[package]]
 name = "mod-services"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2006,16 +1995,17 @@ dependencies = [
 
 [[package]]
 name = "mod-sfc"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
  "serde_json",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "mod-startup"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2024,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "mod-sysinfo"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2033,7 +2023,7 @@ dependencies = [
 
 [[package]]
 name = "mod-temps"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2043,16 +2033,17 @@ dependencies = [
 
 [[package]]
 name = "mod-uninstall"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
  "serde_json",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "mod-updates"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -2062,7 +2053,7 @@ dependencies = [
 
 [[package]]
 name = "mod-visual"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2122,16 +2113,14 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nix"
-version = "0.25.1"
+version = "0.28.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f346ff70e7dbfd675fe90590b92d59ef2de15a8779ae305ebcbfd3f0caf59be4"
+checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
 dependencies = [
- "autocfg",
- "bitflags 1.3.2",
+ "bitflags 2.13.0",
  "cfg-if",
+ "cfg_aliases",
  "libc",
- "memoffset 0.6.5",
- "pin-utils",
 ]
 
 [[package]]
@@ -2383,7 +2372,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "optimizer-app"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "directories",
@@ -2422,12 +2411,13 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "uuid",
  "windows-sys 0.59.0",
 ]
 
 [[package]]
 name = "optimizer-core"
-version = "2.1.1"
+version = "2.2.0"
 dependencies = [
  "chrono",
  "serde",
@@ -2436,17 +2426,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "optimizer-helper"
-version = "2.1.1"
-dependencies = [
- "optimizer-core",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2569,12 +2549,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
-name = "pin-utils"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
-
-[[package]]
 name = "pkg-config"
 version = "0.3.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2582,9 +2556,9 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "plist"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "092791278e026273c1b65bbdcfbba3a300f2994c896bd01ab01da613c29c46f1"
+checksum = "7da1d65da6dd5d1e44199ac0f58712d241c0f439f80adea8924d832384087f85"
 dependencies = [
  "base64 0.22.1",
  "indexmap 2.14.0",
@@ -2621,9 +2595,9 @@ dependencies = [
 
 [[package]]
 name = "portable-pty"
-version = "0.8.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "806ee80c2a03dbe1a9fb9534f8d19e4c0546b790cde8fd1fea9d6390644cb0be"
+checksum = "b4a596a2b3d2752d94f51fac2d4a96737b8705dddd311a32b9af47211f08671e"
 dependencies = [
  "anyhow",
  "bitflags 1.3.2",
@@ -2633,7 +2607,7 @@ dependencies = [
  "libc",
  "log",
  "nix",
- "serial",
+ "serial2",
  "shared_library",
  "shell-words",
  "winapi",
@@ -2735,9 +2709,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.39.4"
+version = "0.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdcc8dd4e2f670d309a5f0e83fe36dfdc05af317008fea29144da1a2ac858e5e"
+checksum = "e660451e55124f798a69a5af3f49ccfbefbd41910eefd25caf2393e1f3473ec1"
 dependencies = [
  "memchr",
 ]
@@ -3116,45 +3090,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "serial"
-version = "0.4.0"
+name = "serial2"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1237a96570fc377c13baa1b88c7589ab66edced652e43ffb17088f003db3e86"
+checksum = "9eb6ea5562eeaed6936b8b54e086aa0f88b9e5b1bef45beb038e2519fa1185b1"
 dependencies = [
- "serial-core",
- "serial-unix",
- "serial-windows",
-]
-
-[[package]]
-name = "serial-core"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f46209b345401737ae2125fe5b19a77acce90cd53e1658cda928e4fe9a64581"
-dependencies = [
+ "cfg-if",
  "libc",
-]
-
-[[package]]
-name = "serial-unix"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f03fbca4c9d866e24a459cbca71283f545a37f8e3e002ad8c70593871453cab7"
-dependencies = [
- "ioctl-rs",
- "libc",
- "serial-core",
- "termios",
-]
-
-[[package]]
-name = "serial-windows"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15c6d3b776267a75d31bbdfd5d36c0ca051251caafc285827052bc53bcdc8162"
-dependencies = [
- "libc",
- "serial-core",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3707,15 +3650,6 @@ checksum = "c4790fc369d5a530f4b544b094e31388b9b3a37c0f4652ade4505945f5660d24"
 dependencies = [
  "new_debug_unreachable",
  "utf-8",
-]
-
-[[package]]
-name = "termios"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5d9cf598a6d7ce700a4e6a9199da127e6819a61e64b68609683cc9a01b5683a"
-dependencies = [
- "libc",
 ]
 
 [[package]]

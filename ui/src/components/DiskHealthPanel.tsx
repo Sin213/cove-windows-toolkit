@@ -8,7 +8,7 @@ interface DriveHealth {
   serial: string;
   interface_type: string;
   media_type: string;
-  size_bytes: number;
+  size_bytes: number | null;
   status: string;
   temperature_c: number | null;
   wear_percent: number | null;
@@ -16,7 +16,14 @@ interface DriveHealth {
   write_errors: number | null;
   power_on_hours: number | null;
   trim_enabled: boolean;
+  trim_known: boolean;
   health_rating: string;
+}
+
+interface DriveHealthReport {
+  complete: boolean;
+  errors: string[];
+  drives: DriveHealth[];
 }
 
 interface LargeFile {
@@ -28,8 +35,10 @@ interface LargeFile {
 
 interface DiskSpaceReport {
   drive: string;
-  total_bytes: number;
-  free_bytes: number;
+  complete: boolean;
+  errors: string[];
+  total_bytes: number | null;
+  free_bytes: number | null;
   largest_files: LargeFile[];
 }
 
@@ -42,10 +51,13 @@ interface ChkdskResult {
 }
 
 interface LastChkdskInfo {
+  complete: boolean;
+  error: string | null;
   found: boolean;
   timestamp: string | null;
   result_text: string | null;
   dirty_bit: boolean;
+  dirty_bit_known: boolean;
 }
 
 const RATING_ICON: Record<string, string> = {
@@ -60,7 +72,8 @@ const RATING_CLASS: Record<string, string> = {
   Critical: "rating-crit",
 };
 
-function formatBytes(bytes: number): string {
+function formatBytes(bytes: number | null): string {
+  if (bytes === null) return "Unknown";
   if (bytes === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
@@ -68,7 +81,7 @@ function formatBytes(bytes: number): string {
 }
 
 export default function DiskHealthPanel() {
-  const [drives, setDrives] = useState<DriveHealth[]>([]);
+  const [driveReport, setDriveReport] = useState<DriveHealthReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,11 +102,11 @@ export default function DiskHealthPanel() {
 
   useEffect(() => {
     Promise.all([
-      invoke<DriveHealth[]>("get_disk_health"),
+      invoke<DriveHealthReport>("get_disk_health"),
       invoke<LastChkdskInfo>("get_last_chkdsk"),
     ])
       .then(([d, c]) => {
-        setDrives(d);
+        setDriveReport(d);
         setLastChkdsk(c);
       })
       .catch((e) => setError(String(e)))
@@ -133,7 +146,7 @@ export default function DiskHealthPanel() {
     try {
       const result = await invoke<ChkdskResult>("run_chkdsk", {
         mode,
-        drive: "C",
+        drive: "",
       });
       setChkdskResult(result);
     } catch (e) {
@@ -147,9 +160,17 @@ export default function DiskHealthPanel() {
   if (loading)
     return <div className="panel-loading">Reading disk health...</div>;
   if (error) return <div className="panel-error">Error: {error}</div>;
+  if (!driveReport) return <div className="panel-error">Disk-health query returned no result.</div>;
+
+  const drives = driveReport.drives;
 
   return (
     <div className="diskhealth-panel">
+      {!driveReport.complete && (
+        <div className="panel-error">
+          Disk inventory is incomplete: {driveReport.errors.join("; ") || "query failed"}
+        </div>
+      )}
       {/* SMART / Drive Health Cards */}
       <div className="drive-cards">
         {drives.map((d, i) => (
@@ -221,9 +242,9 @@ export default function DiskHealthPanel() {
                 <div className="drive-stat">
                   <span className="stat-label">TRIM</span>
                   <span
-                    className={`stat-value ${d.trim_enabled ? "" : "stat-warn"}`}
+                    className={`stat-value ${d.trim_known && !d.trim_enabled ? "stat-warn" : ""}`}
                   >
-                    {d.trim_enabled ? "On" : "Off"}
+                    {d.trim_known ? (d.trim_enabled ? "On" : "Off") : "Unknown"}
                   </span>
                 </div>
               )}
@@ -238,7 +259,7 @@ export default function DiskHealthPanel() {
           <h3>Largest Files</h3>
           <button
             className="scan-btn"
-            onClick={() => loadDiskSpace("C")}
+            onClick={() => loadDiskSpace("")}
             disabled={spaceLoading}
           >
             {spaceLoading ? "Scanning..." : "Scan User Files"}
@@ -247,6 +268,12 @@ export default function DiskHealthPanel() {
 
         {spaceData && (
           <div className="space-content">
+            {!spaceData.complete && (
+              <div className="panel-error">
+                File scan is incomplete: {spaceData.errors.join("; ") || "query failed"}
+              </div>
+            )}
+            {spaceData.total_bytes !== null && spaceData.free_bytes !== null && (
             <div className="space-bar-container">
               <div className="space-bar-bg">
                 <div
@@ -265,6 +292,7 @@ export default function DiskHealthPanel() {
                 <span>Total: {formatBytes(spaceData.total_bytes)}</span>
               </div>
             </div>
+            )}
 
             <div className="file-list">
               {spaceData.largest_files.map((f, i) => (
@@ -292,6 +320,8 @@ export default function DiskHealthPanel() {
         {/* Last chkdsk info */}
         {lastChkdsk && (
           <div className="last-chkdsk">
+            {!lastChkdsk.complete && <div className="dirty-bit-warn">Disk-check history is incomplete: {lastChkdsk.error || "query failed"}</div>}
+            {!lastChkdsk.dirty_bit_known && <div className="dirty-bit-warn">Volume dirty-bit status is unknown.</div>}
             {lastChkdsk.dirty_bit && (
               <div className="dirty-bit-warn">
                 <span>{"⚠"}</span> Volume dirty bit is set -a chkdsk may

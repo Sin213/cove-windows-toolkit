@@ -12,12 +12,14 @@ interface PendingUpdate {
 }
 
 interface UpdateStatus {
-  last_check: string;
-  last_install: string;
+  complete: boolean;
+  query_error: string | null;
+  last_check: string | null;
+  last_install: string | null;
   service_status: string;
   pending_updates: PendingUpdate[];
   component_store_health: string;
-  days_since_last_update: number;
+  days_since_last_update: number | null;
 }
 
 interface ActionResult {
@@ -73,8 +75,12 @@ export default function UpdatesPanel() {
       {/* Status row */}
       <div className="update-status-row">
         <div className="status-field">
+          <span className="status-label">Last Check</span>
+          <span className="status-value">{data.last_check ? timeAgo(data.last_check) : "Unknown"}</span>
+        </div>
+        <div className="status-field">
           <span className="status-label">Last Install</span>
-          <span className="status-value">{timeAgo(data.last_install)}</span>
+          <span className="status-value">{data.last_install ? timeAgo(data.last_install) : "Unknown"}</span>
         </div>
         <div className="status-field">
           <span className="status-label">Service</span>
@@ -82,9 +88,10 @@ export default function UpdatesPanel() {
         </div>
         <div className="status-field">
           <span className="status-label">Days Since Update</span>
-          <span className="status-value">{data.days_since_last_update}</span>
+          <span className="status-value">{data.days_since_last_update ?? "Unknown"}</span>
         </div>
       </div>
+      {!data.complete && <div className="panel-error">Windows Update status is incomplete: {data.query_error || "query failed"}</div>}
 
       {/* Pending updates */}
       <div className="updates-section">
@@ -92,7 +99,7 @@ export default function UpdatesPanel() {
           Pending Updates ({data.pending_updates.length})
         </h3>
         {data.pending_updates.length === 0 ? (
-          <div className="up-to-date">System is up to date</div>
+          <div className="up-to-date">{data.complete ? "System is up to date" : "Pending update status is unknown"}</div>
         ) : (
           <div className="updates-list">
             {data.pending_updates.map((u, i) => (

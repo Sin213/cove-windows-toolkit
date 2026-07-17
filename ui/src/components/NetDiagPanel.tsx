@@ -44,6 +44,8 @@ interface WifiInfo {
 }
 
 interface NetDiagData {
+  complete: boolean;
+  errors: string[];
   adapter: Adapter | null;
   tests: TestResult[];
   wifi: WifiInfo | null;
@@ -92,6 +94,14 @@ export default function NetDiagPanel() {
   const [speedResult, setSpeedResult] = useState<SpeedTestResult | null>(null);
   const [pendingCmd, setPendingCmd] = useState<string | null>(null);
 
+  function detectCurrentDns(d: NetDiagData) {
+    if (!d.adapter?.dns?.length) return;
+    const primary = d.adapter.dns[0];
+    const secondary = d.adapter.dns[1] ?? "";
+    const match = DNS_PRESETS.find((p) => p.primary === primary && p.secondary === secondary);
+    if (match) setDnsPreset(match.id);
+  }
+
   const load = () => {
     setLoading(true);
     setError(null);
@@ -105,17 +115,13 @@ export default function NetDiagPanel() {
   };
 
   useEffect(() => {
-    load();
+    queueMicrotask(load);
+    // load is intentionally the mount-time request; refreshes are user-driven.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const detectCurrentDns = (d: NetDiagData) => {
-    if (!d.adapter?.dns?.length) return;
-    const primary = d.adapter.dns[0];
-    const match = DNS_PRESETS.find((p) => p.primary === primary);
-    if (match) setDnsPreset(match.id);
-  };
-
   const handleDnsChange = async (preset: string) => {
+    const previousPreset = dnsPreset;
     setDnsPreset(preset);
     setSettingDns(true);
     setFeedback(null);
@@ -123,7 +129,10 @@ export default function NetDiagPanel() {
     try {
       const res = await invoke<ActionResult>("set_dns", { preset });
       setFeedback({ type: res.success ? "success" : "error", message: res.message });
+      if (res.success) load();
+      else setDnsPreset(previousPreset);
     } catch (e) {
+      setDnsPreset(previousPreset);
       setFeedback({ type: "error", message: String(e) });
     } finally {
       setSettingDns(false);
@@ -154,6 +163,7 @@ export default function NetDiagPanel() {
 
   return (
     <div className="netdiag-panel">
+      {!data.complete && <div className="panel-error">Network diagnostics are incomplete: {data.errors.join("; ")}</div>}
       {/* Active adapter card */}
       {data.adapter && (
         <div className="adapter-card">

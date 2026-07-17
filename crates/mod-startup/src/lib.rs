@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Clone)]
 pub struct StartupItem {
@@ -12,8 +12,6 @@ pub struct StartupItem {
 
 #[cfg(target_os = "windows")]
 pub fn list_items() -> Vec<StartupItem> {
-    
-
     let ps = r#"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $enabledKeys = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run','HKLM:\Software\Microsoft\Windows\CurrentVersion\Run')
@@ -61,7 +59,9 @@ if (Test-Path $disabledFolder) {
                 let p: Vec<&str> = line.splitn(5, '|').collect();
                 if p.len() >= 5 {
                     let name = p[1].trim().to_string();
-                    if seen.contains(&name) { continue; }
+                    if seen.contains(&name) {
+                        continue;
+                    }
                     seen.insert(name.clone());
                     let cmd = p[3].trim().to_string();
                     let impact = estimate_impact(&name, &cmd);
@@ -91,7 +91,12 @@ fn estimate_impact(name: &str, _cmd: &str) -> String {
     if n.contains("security") || n.contains("defender") || n.contains("antivirus") {
         return "Low".into();
     }
-    if n.contains("steam") || n.contains("discord") || n.contains("teams") || n.contains("onedrive") || n.contains("spotify") {
+    if n.contains("steam")
+        || n.contains("discord")
+        || n.contains("teams")
+        || n.contains("onedrive")
+        || n.contains("spotify")
+    {
         return "High".into();
     }
     "Medium".into()
@@ -99,8 +104,6 @@ fn estimate_impact(name: &str, _cmd: &str) -> String {
 
 #[cfg(target_os = "windows")]
 pub fn toggle(name: &str, enabled: bool) -> Result<String, String> {
-    
-
     let action = if enabled { "enable" } else { "disable" };
     // Inject name/action as PS variables once (avoids brittle positional format
     // substitution and lets the body be a plain raw string).
@@ -181,11 +184,16 @@ if ($found) { Write-Output 'OK' } else { Write-Output 'NOTFOUND' }
 "#;
     let ps = format!("{}{}", prefix, body);
 
-    let o = optimizer_core::powershell(&ps).output()
+    let o = optimizer_core::powershell(&ps)
+        .output()
         .map_err(|e| e.to_string())?;
     let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
     if result == "OK" {
-        Ok(format!("Startup item '{}' {}", name, if enabled { "enabled" } else { "disabled" }))
+        Ok(format!(
+            "Startup item '{}' {}",
+            name,
+            if enabled { "enabled" } else { "disabled" }
+        ))
     } else {
         Err(format!("Startup item '{}' not found", name))
     }
@@ -193,5 +201,163 @@ if ($found) { Write-Output 'OK' } else { Write-Output 'NOTFOUND' }
 
 #[cfg(not(target_os = "windows"))]
 pub fn toggle(_name: &str, _enabled: bool) -> Result<String, String> {
+    Ok("[stub] Toggled".into())
+}
+
+/// Structured startup inventory with stable source-aware identities. This is
+/// the API used by the application; the legacy line protocol above remains only
+/// for compatibility with older callers.
+#[cfg(target_os = "windows")]
+pub fn list_items_v2() -> Result<Vec<StartupItem>, String> {
+    #[derive(Deserialize)]
+    struct Envelope {
+        items: Vec<RawStartupItem>,
+    }
+    #[derive(Deserialize)]
+    struct RawStartupItem {
+        name: String,
+        path: String,
+        command: String,
+        enabled: bool,
+    }
+
+    let script = r#"
+$ErrorActionPreference = 'Stop'
+$items = @()
+$enabled = @(
+  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run',
+  'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run'
+)
+$disabled = @($enabled | ForEach-Object { $_ -replace 'Run$','Run_Disabled' })
+foreach ($entry in @(@($enabled,$true), @($disabled,$false))) {
+  $paths = $entry[0]; $isEnabled = $entry[1]
+  foreach ($path in $paths) {
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $key = Get-Item -LiteralPath $path -ErrorAction Stop
+    foreach ($name in $key.GetValueNames()) {
+      $value = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+      $items += [pscustomobject]@{ name=$name; path=$path; command=[string]$value; enabled=[bool]$isEnabled }
+    }
+  }
+}
+foreach ($folder in @([Environment]::GetFolderPath('Startup'), [Environment]::GetFolderPath('CommonStartup'))) {
+  if (-not $folder) { continue }
+  foreach ($file in Get-ChildItem -LiteralPath $folder -File -ErrorAction SilentlyContinue) {
+    $items += [pscustomobject]@{ name=$file.BaseName; path=$file.FullName; command=$file.FullName; enabled=$true }
+  }
+  $off = Join-Path $folder 'Disabled'
+  foreach ($file in Get-ChildItem -LiteralPath $off -File -ErrorAction SilentlyContinue) {
+    $items += [pscustomobject]@{ name=$file.BaseName; path=$file.FullName; command=$file.FullName; enabled=$false }
+  }
+}
+@{ items=@($items) } | ConvertTo-Json -Depth 4 -Compress
+"#;
+    let output = optimizer_core::powershell(script)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let envelope: Envelope = serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+    Ok(envelope
+        .items
+        .into_iter()
+        .map(|raw| StartupItem {
+            id: startup_id(&raw.path, &raw.name),
+            impact: estimate_impact(&raw.name, &raw.command),
+            name: raw.name,
+            path: raw.path,
+            command: raw.command,
+            enabled: raw.enabled,
+        })
+        .collect())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn list_items_v2() -> Result<Vec<StartupItem>, String> {
+    Ok(Vec::new())
+}
+
+fn startup_id(path: &str, name: &str) -> String {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    path.to_ascii_lowercase().hash(&mut hasher);
+    name.to_ascii_lowercase().hash(&mut hasher);
+    format!("startup.{:016x}", hasher.finish())
+}
+
+#[cfg(target_os = "windows")]
+pub fn toggle_by_id(id: &str, enabled: bool) -> Result<String, String> {
+    let item = list_items_v2()?
+        .into_iter()
+        .find(|item| item.id == id)
+        .ok_or_else(|| "Startup item selection expired; refresh the list.".to_string())?;
+    if item.enabled == enabled {
+        return Ok(format!(
+            "Startup item '{}' was already {}.",
+            item.name,
+            if enabled { "enabled" } else { "disabled" }
+        ));
+    }
+    let quote = |value: &str| value.replace('\'', "''");
+    let script = if item.path.starts_with("HK") {
+        let source = quote(&item.path);
+        let destination_path = if enabled {
+            item.path.replace("Run_Disabled", "Run")
+        } else {
+            item.path.replace("Run", "Run_Disabled")
+        };
+        let destination = quote(&destination_path);
+        format!(
+            r#"
+$ErrorActionPreference='Stop'; $src='{source}'; $dst='{destination}'; $name='{name}'
+$key=Get-Item -LiteralPath $src -ErrorAction Stop
+$kind=$key.GetValueKind($name)
+$raw=$key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+if (-not (Test-Path -LiteralPath $dst)) {{ New-Item -Path $dst -Force -ErrorAction Stop | Out-Null }}
+New-ItemProperty -LiteralPath $dst -Name $name -Value $raw -PropertyType $kind -Force -ErrorAction Stop | Out-Null
+Remove-ItemProperty -LiteralPath $src -Name $name -Force -ErrorAction Stop
+"#,
+            name = quote(&item.name)
+        )
+    } else {
+        let source = quote(&item.path);
+        let parent = std::path::Path::new(&item.path)
+            .parent()
+            .ok_or("Invalid startup path.")?;
+        let destination = if enabled {
+            parent
+                .parent()
+                .ok_or("Invalid disabled startup path.")?
+                .to_path_buf()
+        } else {
+            parent.join("Disabled")
+        };
+        format!(
+            r#"
+$ErrorActionPreference='Stop'; $src='{source}'; $dst='{destination}'
+if (-not (Test-Path -LiteralPath $dst)) {{ New-Item -ItemType Directory -Path $dst -Force -ErrorAction Stop | Out-Null }}
+Move-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
+"#,
+            destination = quote(&destination.to_string_lossy())
+        )
+    };
+    let output = optimizer_core::powershell(&script)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(format!(
+            "Startup item '{}' {}.",
+            item.name,
+            if enabled { "enabled" } else { "disabled" }
+        ))
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn toggle_by_id(_id: &str, _enabled: bool) -> Result<String, String> {
     Ok("[stub] Toggled".into())
 }

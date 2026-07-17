@@ -1,11 +1,9 @@
 name: release
 
 on:
-  # Tag-triggered auto-release is intentionally disabled. mod-temps embeds two
-  # git-ignored binaries (PawnIO_setup.exe, LibreHardwareMonitor.zip) that are
-  # local-only build inputs, so a fresh CI clone cannot compile. Releases are
-  # built locally and uploaded with `gh release`. This workflow remains available
-  # for manual runs only, in case those binaries are ever made available to CI.
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -66,23 +64,15 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version "^2"
 
-      - name: Patch version
+      - name: Verify release version is consistent
         shell: pwsh
         run: |
-          $conf = Get-Content crates/optimizer-app/tauri.conf.json | ConvertFrom-Json
-          $conf.version = $env:VERSION
-          $conf | ConvertTo-Json -Depth 10 | Set-Content crates/optimizer-app/tauri.conf.json
-
-      - name: Download LibreHardwareMonitor
-        shell: pwsh
-        run: |
-          $lhmUrl = "https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases/latest/download/LibreHardwareMonitor.zip"
-          $destPath = "crates/mod-temps/resources/LibreHardwareMonitor.zip"
-
-          Write-Host "Downloading LHM ZIP to $destPath"
-          Invoke-WebRequest -Uri $lhmUrl -OutFile $destPath -UseBasicParsing
-
-          Write-Host "LHM ZIP size: $((Get-Item $destPath).Length / 1MB) MB"
+          $workspaceVersion = (Select-String -Path Cargo.toml -Pattern '^version = "([^"]+)"$').Matches[0].Groups[1].Value
+          $tauriVersion = (Get-Content crates/optimizer-app/tauri.conf.json | ConvertFrom-Json).version
+          $uiVersion = (Get-Content ui/package.json | ConvertFrom-Json).version
+          if ($env:VERSION -ne $workspaceVersion -or $tauriVersion -ne $workspaceVersion -or $uiVersion -ne $workspaceVersion) {
+            throw "Release version mismatch: requested=$env:VERSION workspace=$workspaceVersion tauri=$tauriVersion ui=$uiVersion"
+          }
 
       - name: Build frontend
         run: pnpm --prefix ui build
@@ -106,7 +96,7 @@ jobs:
             Copy-Item $nsis.FullName "release/Cove-Windows-Toolkit-$env:VERSION-Setup.exe"
           }
 
-          # Portable exe (LHM is embedded in the binary)
+          # The -Portable filename activates portable storage mode at runtime.
           $exe = "target/release/optimizer-app.exe"
           if (Test-Path $exe) {
             Copy-Item $exe "release/Cove-Windows-Toolkit-$env:VERSION-Portable.exe"
@@ -140,15 +130,13 @@ jobs:
         with:
           path: artifacts
 
-      - name: Collect release assets and generate SHA256 sidecars
+      - name: Collect release assets and generate checksums
         run: |
           mkdir -p release
           find artifacts -type f \( -name '*-Setup.exe' -o -name '*-Portable.exe' \) -exec cp {} release/ \;
           cd release
-          for f in *.exe; do
-            [ -e "$f" ] && sha256sum "$f" > "$f.sha256"
-          done
-          cat *.sha256
+          sha256sum *.exe > checksums-sha256.txt
+          cat checksums-sha256.txt
 
       - name: Attach to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -165,5 +153,5 @@ jobs:
             | `Cove-Windows-Toolkit-${{ env.VERSION }}-Setup.exe` | Windows Installer |
             | `Cove-Windows-Toolkit-${{ env.VERSION }}-Portable.exe` | Portable (no install) |
 
-            Each file includes a `.sha256` sidecar for verification.
+            Verify downloads with `checksums-sha256.txt`.
           make_latest: true

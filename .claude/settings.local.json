@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo check *)",
+      "Bash(npx tsc *)",
+      "Bash(rtk read *)",
+      "Bash(git pull *)",
+      "Bash(rg -l \"event\" --iglob \"*.py\" --iglob \"*.js\" --iglob \"*.ts\" -i)"
+    ]
+  }
+}

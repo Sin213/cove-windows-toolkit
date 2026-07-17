@@ -14,10 +14,9 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>
-        <!-- Cove is a system maintenance toolkit: DISM, SFC, Defender, network
-             resets, registry tweaks, and CPU temperature sensors all require
-             administrator rights. Always elevate on launch. -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- Keep the renderer at the caller's normal integrity level. Individual
+             privileged operations must use narrowly scoped authorization. -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

@@ -1,5 +1,7 @@
 pub fn generate_html_report(title: &str, sections: &[(&str, &str)]) -> String {
-    let mut html = format!(r#"<!DOCTYPE html>
+    let title = escape_html(title);
+    let mut html = format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -24,56 +26,101 @@ td {{ padding: 6px 8px; border-bottom: 1px solid #1c1e26; }}
 <body>
 <h1>{title}</h1>
 <div class="meta">Generated on {{TIMESTAMP}} by Cove Windows Toolkit</div>
-"#);
+"#
+    );
 
     let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     html = html.replace("{TIMESTAMP}", &timestamp);
 
     for (heading, content) in sections {
-        let content_html = content
-            .replace('<', "&lt;")
-            .replace('>', "&gt;")
-            .replace('\n', "<br>");
+        let content_html = escape_html(content).replace('\n', "<br>");
         html.push_str(&format!(
             "<div class=\"section\"><h2>{}</h2><pre>{}</pre></div>\n",
-            heading, content_html
+            escape_html(heading),
+            content_html
         ));
     }
 
-    html.push_str("<div class=\"footer\">Cove Windows Toolkit &mdash; Confidential</div>\n</body></html>");
+    html.push_str(
+        "<div class=\"footer\">Cove Windows Toolkit &mdash; Confidential</div>\n</body></html>",
+    );
     html
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 pub fn generate_full_report(data: &FullReportData) -> String {
     let mut sections = Vec::new();
 
     // Health
-    sections.push(("System Health".to_string(), format!(
-        "Score: {}/100\n{}",
-        data.health_score,
-        data.health_findings.join("\n")
-    )));
+    sections.push((
+        "System Health".to_string(),
+        format!(
+            "Score: {}\n{}",
+            data.health_score
+                .map(|score| format!("{score}/100"))
+                .unwrap_or_else(|| "Unknown (incomplete scan)".into()),
+            data.health_findings.join("\n")
+        ),
+    ));
 
     // Drivers
-    sections.push(("Drivers".to_string(), format!(
-        "Total: {}  |  Unsigned: {}  |  Outdated: {}\n{}",
-        data.driver_total, data.driver_unsigned, data.driver_outdated,
-        if data.driver_issues.is_empty() { "No issues found.".to_string() } else { data.driver_issues.join("\n") }
-    )));
+    sections.push((
+        "Drivers".to_string(),
+        format!(
+            "Total: {}  |  Unsigned: {}  |  Outdated: {}\n{}",
+            data.driver_total,
+            data.driver_unsigned,
+            data.driver_outdated
+                .map(|count| count.to_string())
+                .unwrap_or_else(|| "Unknown".into()),
+            if data.driver_issues.is_empty() {
+                "No issues found.".to_string()
+            } else {
+                data.driver_issues.join("\n")
+            }
+        ),
+    ));
 
     // Events
-    sections.push(("Event Logs (System)".to_string(), format!(
-        "Critical: {}  |  Error: {}  |  Warning: {}\n{}",
-        data.event_critical, data.event_error, data.event_warning,
-        if data.recent_events.is_empty() { "No recent critical/error events.".to_string() } else { data.recent_events.join("\n") }
-    )));
+    sections.push((
+        "Event Logs (System)".to_string(),
+        format!(
+            "Critical: {}  |  Error: {}  |  Warning: {}\n{}",
+            data.event_critical,
+            data.event_error,
+            data.event_warning,
+            if data.recent_events.is_empty() {
+                "No recent critical/error events.".to_string()
+            } else {
+                data.recent_events.join("\n")
+            }
+        ),
+    ));
 
     // Updates
-    sections.push(("Windows Update".to_string(), format!(
-        "Service: {}  |  Pending: {}\n{}",
-        data.update_service, data.pending_updates.len(),
-        if data.pending_updates.is_empty() { "System is up to date.".to_string() } else { data.pending_updates.join("\n") }
-    )));
+    sections.push((
+        "Windows Update".to_string(),
+        format!(
+            "Service: {}  |  Pending: {}\n{}",
+            data.update_service,
+            data.pending_updates.len(),
+            if !data.update_complete {
+                "Update status is unknown because the query was incomplete.".to_string()
+            } else if data.pending_updates.is_empty() {
+                "System is up to date.".to_string()
+            } else {
+                data.pending_updates.join("\n")
+            }
+        ),
+    ));
 
     // Temperatures
     if !data.temperatures.is_empty() {
@@ -96,26 +143,41 @@ pub fn generate_full_report(data: &FullReportData) -> String {
     // Activation
     sections.push(("Windows Activation".to_string(), data.activation.clone()));
 
-    let refs: Vec<(&str, &str)> = sections.iter().map(|(h, c)| (h.as_str(), c.as_str())).collect();
+    let refs: Vec<(&str, &str)> = sections
+        .iter()
+        .map(|(h, c)| (h.as_str(), c.as_str()))
+        .collect();
     generate_html_report("System Diagnostic Report", &refs)
 }
 
 pub struct FullReportData {
-    pub health_score: u64,
+    pub health_score: Option<u64>,
     pub health_findings: Vec<String>,
     pub driver_total: u64,
     pub driver_unsigned: u64,
-    pub driver_outdated: u64,
+    pub driver_outdated: Option<u64>,
     pub driver_issues: Vec<String>,
     pub event_critical: u64,
     pub event_error: u64,
     pub event_warning: u64,
     pub recent_events: Vec<String>,
     pub update_service: String,
+    pub update_complete: bool,
     pub pending_updates: Vec<String>,
     pub temperatures: Vec<String>,
     pub disk_health: Vec<String>,
     pub runtimes: Vec<String>,
     pub security_summary: String,
     pub activation: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::escape_html;
+
+    #[test]
+    fn html_escape_handles_all_markup_delimiters() {
+        assert_eq!(escape_html("<&\"'>"), "&lt;&amp;&quot;&#39;&gt;");
+        assert_eq!(escape_html("A &amp; B"), "A &amp;amp; B");
+    }
 }

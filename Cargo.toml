@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/optimizer-core",
-    "crates/optimizer-helper",
     "crates/optimizer-app",
     "crates/mod-visual",
     "crates/mod-cleanup",
@@ -31,7 +30,7 @@ members = [
 ]
 
 [workspace.package]
-version = "2.1.2"
+version = "2.2.0"
 edition = "2024"
 license = "MIT"
 authors = ["Cove"]

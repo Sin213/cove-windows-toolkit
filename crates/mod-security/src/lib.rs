@@ -29,26 +29,28 @@ pub struct SecurityStatus {
 #[derive(Serialize)]
 pub struct ScanResult {
     pub success: bool,
-    pub threats_found: u32,
+    pub threats_found: Option<u32>,
     pub message: String,
 }
 
 #[derive(Serialize)]
 pub struct HeuristicResult {
+    pub complete: bool,
+    pub errors: Vec<String>,
     pub findings: Vec<HeuristicFinding>,
     pub scan_time_ms: u64,
 }
 
 #[cfg(target_os = "windows")]
 pub fn get_defender_status() -> DefenderStatus {
-    
-
     let ps = r#"
 try {
     $s = Get-MpComputerStatus -ErrorAction Stop
     $age = ((Get-Date) - $s.AntivirusSignatureLastUpdated).Days
-    $scanTime = if ($s.LastQuickScanEndTime) { $s.LastQuickScanEndTime.ToString('o') } else { 'Never' }
-    $scanType = if (-not $s.LastQuickScanEndTime -and -not $s.LastFullScanEndTime) { 'None' } elseif ($s.LastQuickScanEndTime -gt $s.LastFullScanEndTime) { 'Quick' } else { 'Full' }
+    if ($age -lt 0) { throw 'Defender signature timestamp is in the future' }
+    if (-not $s.LastQuickScanEndTime -and -not $s.LastFullScanEndTime) { $scanTime='Never'; $scanType='None' }
+    elseif ($s.LastQuickScanEndTime -gt $s.LastFullScanEndTime) { $scanTime=$s.LastQuickScanEndTime.ToString('o'); $scanType='Quick' }
+    else { $scanTime=$s.LastFullScanEndTime.ToString('o'); $scanType='Full' }
     Write-Output "OK|$($s.RealTimeProtectionEnabled)|$age|$scanTime|$scanType"
 } catch {
     Write-Output 'ERR'
@@ -95,7 +97,13 @@ pub fn run_scan(scan_type: &str) -> ScanResult {
     let scan_flag = match scan_type {
         "quick" => "QuickScan",
         "full" => "FullScan",
-        _ => "QuickScan",
+        _ => {
+            return ScanResult {
+                success: false,
+                threats_found: None,
+                message: format!("Unknown scan type: {scan_type}"),
+            };
+        }
     };
 
     let ps = format!(
@@ -107,13 +115,28 @@ pub fn run_scan(scan_type: &str) -> ScanResult {
         Ok(o) => {
             let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
             if result == "OK" {
-                ScanResult { success: true, threats_found: 0, message: format!("{} scan started. Check Windows Security for results.", scan_flag) }
+                ScanResult {
+                    success: true,
+                    threats_found: None,
+                    message: format!(
+                        "{} scan started. Threat results are not known until Defender finishes.",
+                        scan_flag
+                    ),
+                }
             } else {
                 let msg = result.strip_prefix("FAIL|").unwrap_or(&result);
-                ScanResult { success: false, threats_found: 0, message: msg.to_string() }
+                ScanResult {
+                    success: false,
+                    threats_found: None,
+                    message: msg.to_string(),
+                }
             }
         }
-        Err(e) => ScanResult { success: false, threats_found: 0, message: format!("Failed to start scan: {}", e) },
+        Err(e) => ScanResult {
+            success: false,
+            threats_found: None,
+            message: format!("Failed to start scan: {}", e),
+        },
     }
 }
 
@@ -121,8 +144,8 @@ pub fn run_scan(scan_type: &str) -> ScanResult {
 pub fn run_scan(_scan_type: &str) -> ScanResult {
     ScanResult {
         success: true,
-        threats_found: 0,
-        message: "[stub] No threats detected.".into(),
+        threats_found: None,
+        message: "[stub] Scan started; results are unknown.".into(),
     }
 }
 
@@ -140,6 +163,7 @@ pub fn run_heuristics_with_progress<F: FnMut(u32, u32, &str)>(mut progress: F) -
     let total = 3u32;
     let start = Instant::now();
     let mut findings = Vec::new();
+    let mut errors = Vec::new();
 
     // Check processes running from temp dirs
     progress(1, total, "Checking processes in temp/download folders…");
@@ -148,7 +172,9 @@ Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\L
     Select-Object Id, ProcessName, Path |
     ForEach-Object { Write-Output "$($_.Id)|$($_.ProcessName)|$($_.Path)" }
 "#;
-    if let Ok(o) = optimizer_core::powershell(ps_procs).output() {
+    if let Ok(o) = optimizer_core::powershell(ps_procs).output()
+        && o.status.success()
+    {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             let parts: Vec<&str> = line.splitn(3, '|').collect();
@@ -161,41 +187,82 @@ Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\L
                 });
             }
         }
+    } else {
+        errors.push("Could not inspect running process paths.".into());
     }
 
     // Check hosts file modification
     progress(2, total, "Inspecting the hosts file…");
-    let hosts_path = r"C:\Windows\System32\drivers\etc\hosts";
-    if let Ok(contents) = std::fs::read_to_string(hosts_path) {
-        let extra_entries: Vec<&str> = contents.lines()
+    let hosts_path = optimizer_core::windows_directory().join(r"System32\drivers\etc\hosts");
+    if let Ok(bytes) = std::fs::read(&hosts_path) {
+        let contents = if bytes.starts_with(&[0xFF, 0xFE]) {
+            let words = bytes[2..]
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect::<Vec<_>>();
+            String::from_utf16_lossy(&words)
+        } else if bytes.starts_with(&[0xFE, 0xFF]) {
+            let words = bytes[2..]
+                .chunks_exact(2)
+                .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                .collect::<Vec<_>>();
+            String::from_utf16_lossy(&words)
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let extra_entries: Vec<&str> = contents
+            .lines()
             .filter(|l| {
                 let trimmed = l.trim();
-                !trimmed.is_empty() && !trimmed.starts_with('#') && trimmed != "127.0.0.1       localhost" && trimmed != "::1             localhost"
+                !trimmed.is_empty()
+                    && !trimmed.starts_with('#')
+                    && trimmed != "127.0.0.1       localhost"
+                    && trimmed != "::1             localhost"
             })
             .collect();
         if !extra_entries.is_empty() {
             findings.push(HeuristicFinding {
                 severity: "Warning".into(),
-                title: format!("Hosts file modified ({} extra entries)", extra_entries.len()),
-                detail: extra_entries.iter().take(5).cloned().collect::<Vec<&str>>().join("; "),
+                title: format!(
+                    "Hosts file modified ({} extra entries)",
+                    extra_entries.len()
+                ),
+                detail: extra_entries
+                    .iter()
+                    .take(5)
+                    .cloned()
+                    .collect::<Vec<&str>>()
+                    .join("; "),
                 category: "integrity".into(),
             });
         }
+    } else {
+        errors.push(format!(
+            "Could not read hosts file at {}.",
+            hosts_path.display()
+        ));
     }
 
     // Check browser extension count
     progress(3, total, "Counting browser extensions…");
     let ps_ext = r#"
 $count = @{}
-$chromePath = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Extensions"
-if (Test-Path $chromePath) { $count['Chrome'] = (Get-ChildItem $chromePath -Directory -ErrorAction SilentlyContinue).Count }
-$edgePath = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Extensions"
-if (Test-Path $edgePath) { $count['Edge'] = (Get-ChildItem $edgePath -Directory -ErrorAction SilentlyContinue).Count }
+foreach ($browser in @(@('Chrome', "$env:LOCALAPPDATA\Google\Chrome\User Data"), @('Edge', "$env:LOCALAPPDATA\Microsoft\Edge\User Data"))) {
+  if (Test-Path -LiteralPath $browser[1]) {
+    $count[$browser[0]] = @(Get-ChildItem -LiteralPath $browser[1] -Directory -ErrorAction Stop | ForEach-Object {
+      $ext = Join-Path $_.FullName 'Extensions'; if (Test-Path -LiteralPath $ext) { Get-ChildItem -LiteralPath $ext -Directory -ErrorAction Stop }
+    }).Count
+  }
+}
+$firefox = Join-Path $env:APPDATA 'Mozilla\Firefox\Profiles'
+if (Test-Path -LiteralPath $firefox) { $count['Firefox profiles'] = @(Get-ChildItem -LiteralPath $firefox -Directory -ErrorAction Stop | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'extensions.json') }).Count }
 $total = ($count.Values | Measure-Object -Sum).Sum
 $detail = ($count.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }) -join ', '
 Write-Output "$total|$detail"
 "#;
-    if let Ok(o) = optimizer_core::powershell(ps_ext).output() {
+    if let Ok(o) = optimizer_core::powershell(ps_ext).output()
+        && o.status.success()
+    {
         let stdout = String::from_utf8_lossy(&o.stdout).trim().to_string();
         let parts: Vec<&str> = stdout.splitn(2, '|').collect();
         if parts.len() == 2 {
@@ -210,16 +277,25 @@ Write-Output "$total|$detail"
                 });
             }
         }
+    } else {
+        errors.push("Could not enumerate browser profiles and extensions.".into());
     }
 
     progress(total, total, "Done");
     let elapsed = start.elapsed().as_millis() as u64;
-    HeuristicResult { findings, scan_time_ms: elapsed }
+    HeuristicResult {
+        complete: errors.is_empty(),
+        errors,
+        findings,
+        scan_time_ms: elapsed,
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn run_heuristics() -> HeuristicResult {
     HeuristicResult {
+        complete: true,
+        errors: Vec::new(),
         findings: vec![
             HeuristicFinding {
                 severity: "Warning".into(),

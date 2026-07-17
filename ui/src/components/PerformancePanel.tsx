@@ -13,6 +13,8 @@ interface PerformanceTweak {
   current_value: string | null;
   optimized_value: string;
   warning: string | null;
+  applied: boolean;
+  can_undo: boolean;
 }
 
 export default function PerformancePanel() {
@@ -25,7 +27,10 @@ export default function PerformancePanel() {
 
   useEffect(() => {
     invoke<PerformanceTweak[]>("get_performance_tweaks")
-      .then(setTweaks)
+      .then((data) => {
+        setTweaks(data);
+        setApplied(Object.fromEntries(data.map((tweak) => [tweak.id, tweak.applied])));
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -33,10 +38,11 @@ export default function PerformancePanel() {
   const handleApply = async (tweak: PerformanceTweak) => {
     setApplying((s) => ({ ...s, [tweak.id]: true }));
     try {
-      await invoke("apply_performance_tweak", { id: tweak.id });
-      setApplied((s) => ({ ...s, [tweak.id]: true }));
+      const result = await invoke<{ success: boolean; message?: string }>("apply_performance_tweak", { id: tweak.id });
+      if (result.success) setApplied((s) => ({ ...s, [tweak.id]: true }));
+      else setError(result.message || "Failed to apply tweak.");
     } catch (e) {
-      console.error("Apply failed:", e);
+      setError(String(e));
     } finally {
       setApplying((s) => ({ ...s, [tweak.id]: false }));
     }
@@ -45,10 +51,11 @@ export default function PerformancePanel() {
   const handleUndo = async (tweak: PerformanceTweak) => {
     setApplying((s) => ({ ...s, [tweak.id]: true }));
     try {
-      await invoke("undo_performance_tweak", { id: tweak.id });
-      setApplied((s) => ({ ...s, [tweak.id]: false }));
+      const result = await invoke<{ success: boolean; message?: string }>("undo_performance_tweak", { id: tweak.id });
+      if (result.success) setApplied((s) => ({ ...s, [tweak.id]: false }));
+      else setError(result.message || "Failed to undo tweak.");
     } catch (e) {
-      console.error("Undo failed:", e);
+      setError(String(e));
     } finally {
       setApplying((s) => ({ ...s, [tweak.id]: false }));
     }

@@ -588,7 +588,7 @@ const MOCKS: Record<string, unknown> = {
   },
 
   // ── BSOD ─────────────────────────────────────────────────────────────
-  get_bsod_dumps: [
+  get_bsod_dumps: { complete: true, error: null, scanned_paths: ["C:\\Windows\\Minidump"], dumps: [
     {
       file: "C:\\Windows\\Minidump\\060726-12500-01.dmp",
       date: "2026-06-07T02:14:22Z",
@@ -616,7 +616,7 @@ const MOCKS: Record<string, unknown> = {
       description: "Minidump found. Use WinDbg or BlueScreenView for bug check analysis.",
       recommendation: "Update drivers and run memory diagnostics if crashes are frequent.",
     },
-  ],
+  ] },
 
   // ── Network Diagnostics ──────────────────────────────────────────────
   get_network_diagnostics: {
@@ -714,10 +714,11 @@ const MOCKS: Record<string, unknown> = {
 
   // ── System Restore ────────────────────────────────────────────────────
   get_restore_status: {
+    known: true,
     enabled: true,
     message: "System Protection is enabled.",
   },
-  get_restore_points: [
+  get_restore_points: { complete: true, error: null, points: [
     {
       sequence_number: 42,
       description: "Windows Update",
@@ -736,10 +737,23 @@ const MOCKS: Record<string, unknown> = {
       restore_point_type: "System Checkpoint",
       creation_time: "2026-06-05T03:00:00-05:00",
     },
-  ],
+  ] },
   create_restore_point: { success: true, message: "Restore point created successfully." },
   enable_system_protection: { success: true, message: "System Protection enabled on the system drive." },
   launch_system_restore: { success: true, message: "System Restore wizard launched." },
+
+  get_bloatware: {
+    complete: true,
+    error: null,
+    apps: [
+      { package_name: "Microsoft.BingWeather", display_name: "MSN Weather", publisher: "", category: "games_and_ads", installed: true },
+      { package_name: "Microsoft.GetHelp", display_name: "Get Help", publisher: "", category: "utilities", installed: true },
+    ],
+  },
+  remove_bloatware: [
+    { package_name: "Microsoft.BingWeather", success: true, message: "Removed" },
+    { package_name: "Microsoft.GetHelp", success: true, message: "Removed" },
+  ],
 
   // ── Uninstaller ──────────────────────────────────────────────────────
   get_installed_programs: [
@@ -749,9 +763,11 @@ const MOCKS: Record<string, unknown> = {
     { name: "Steam", publisher: "Valve Corporation", version: "2.10.91.91", install_date: "2026-04-10", size_bytes: 734003200, uninstall_string: "\"C:\\Program Files (x86)\\Steam\\uninstall.exe\"", quiet_uninstall_string: "", install_location: "C:\\Program Files (x86)\\Steam", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam", is_system: false },
     { name: "7-Zip 24.08 (x64)", publisher: "Igor Pavlov", version: "24.08", install_date: "2026-03-20", size_bytes: 5242880, uninstall_string: "\"C:\\Program Files\\7-Zip\\Uninstall.exe\"", quiet_uninstall_string: "", install_location: "C:\\Program Files\\7-Zip", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\7-Zip", is_system: false },
     { name: "Microsoft Visual C++ 2015-2022 Redistributable (x64)", publisher: "Microsoft Corporation", version: "14.38.33135", install_date: "2026-01-15", size_bytes: 25165824, uninstall_string: "", quiet_uninstall_string: "", install_location: "", registry_key: "", is_system: true },
-  ],
+  ].map((program, index) => ({ ...program, id: `mock-program-${index}` })),
   uninstall_program: { success: true, message: "Uninstall completed.", output: "" },
   scan_leftovers: {
+    success: true,
+    scan_id: "mock-scan-1",
     leftovers: [
       { path: "C:\\ProgramData\\SignalRGB", category: "Folder", size_bytes: 15728640 },
       { path: "C:\\Users\\User\\AppData\\Local\\SignalRGB", category: "Folder", size_bytes: 8388608 },
@@ -809,12 +825,18 @@ const MOCKS: Record<string, unknown> = {
       { sensor: "WD Blue SN570", category: "Disk", temperature_c: 35, max_c: 70, critical_c: 75 },
     ],
     warnings: [],
+    lhm_status: "Optional CPU temperature provider is not installed.",
   },
 
   // ── DISM / SFC ───────────────────────────────────────────────────────
   check_admin_status: {
     is_admin: true,
     message: "Running with administrator privileges.",
+  },
+  start_scan: { success: true, message: "Scan started." },
+  get_scan_progress: {
+    running: false, started: true, percent: 100, phase: "Completed", output_tail: [],
+    done: true, success: true, summary: "Scan completed successfully.", exit_code: 0,
   },
   run_dism_scan: {
     tool: "DISM",
@@ -853,6 +875,12 @@ const MOCKS: Record<string, unknown> = {
     ],
     directx: { version: "12.0", feature_level: "12_1", download_url: "https://www.microsoft.com/en-us/download/details.aspx?id=35" },
     java: [],
+    coverage: {
+      dotnet: { complete: true, errors: [] },
+      vcredist: { complete: true, errors: [] },
+      directx: { complete: true, errors: [] },
+      java: { complete: true, errors: [] },
+    },
   },
   open_url: { success: true },
   export_report: { success: true, path: "C:\\Users\\CS\\AppData\\Local\\cove\\optimizer\\reports\\report-20260610-120000.html", filename: "report-20260610-120000.html" },
@@ -865,6 +893,7 @@ const MOCKS: Record<string, unknown> = {
       definitions_age_days: 1,
       last_scan: "2026-06-08T14:30:00Z",
       last_scan_type: "Quick",
+      known: true,
     },
     heuristic_findings: [],
     scan_available: true,
@@ -875,6 +904,8 @@ const MOCKS: Record<string, unknown> = {
     message: "No threats detected.",
   },
   run_heuristic_scan: {
+    complete: true,
+    errors: [],
     findings: [
       { severity: "Warning", title: "Unsigned process with network activity", detail: "notepad++.exe (PID 4521) - unsigned, 2 active connections", category: "process" },
       { severity: "Warning", title: "Hosts file modified (3 extra entries)", detail: "127.0.0.1 ads.example.com; 127.0.0.1 tracker.example.com; 127.0.0.1 malware.example.com", category: "integrity" },
@@ -882,9 +913,19 @@ const MOCKS: Record<string, unknown> = {
     ],
     scan_time_ms: 3200,
   },
+  start_security_scan: { success: true, message: "Scan started." },
+  get_security_scan: {
+    running: false, started: true, kind: "quick", indeterminate: true, percent: 100,
+    step: 3, total: 3, phase: "Completed", elapsed_secs: 4, done: true, success: true,
+    threats_found: 0, findings: [], message: "Scan completed.",
+  },
+  open_windows_security: { success: true, message: "Windows Security opened." },
 
   // ── Disk Health ──────────────────────────────────────────────────────
-  get_disk_health: [
+  get_disk_health: {
+    complete: true,
+    errors: [],
+    drives: [
     {
       model: "Samsung SSD 980 PRO 1TB",
       serial: "S6B1NJ0T123456",
@@ -898,6 +939,7 @@ const MOCKS: Record<string, unknown> = {
       write_errors: 0,
       power_on_hours: 8760,
       trim_enabled: true,
+      trim_known: true,
       health_rating: "Good",
     },
     {
@@ -913,11 +955,15 @@ const MOCKS: Record<string, unknown> = {
       write_errors: 0,
       power_on_hours: 4380,
       trim_enabled: true,
+      trim_known: true,
       health_rating: "Good",
     },
-  ],
+    ],
+  },
   get_disk_space: {
     drive: "C:",
+    complete: true,
+    errors: [],
     total_bytes: 500_000_000_000,
     free_bytes: 185_000_000_000,
     largest_files: [
@@ -936,10 +982,13 @@ const MOCKS: Record<string, unknown> = {
     output: "Stage 1: Examining basic file system structure ...\n  262144 file records processed.\nStage 2: Examining file name linkage ...\n  302426 index entries processed.\nStage 3: Examining security descriptors ...\n  Security descriptor verification completed.\nWindows has scanned the file system and found no problems.\nNo further action is required.",
   },
   get_last_chkdsk: {
+    complete: true,
+    error: null,
     found: true,
     timestamp: "2026-06-01T03:15:00-05:00",
     result_text: "Checking file system on C:. Windows has checked the file system and found no problems. No further action is required.",
     dirty_bit: false,
+    dirty_bit_known: true,
   },
 
   // ── Run All Diagnostics ─────────────────────────────────────────────
@@ -978,18 +1027,19 @@ const MOCKS: Record<string, unknown> = {
   ],
   run_preset: {
     success: true,
+    partial: false,
     total: 8,
     succeeded: 8,
     failed: 0,
     results: [
-      { action_id: "visual.transparency", display_name: "Disable Transparency", success: true },
-      { action_id: "visual.animations", display_name: "Disable Animations", success: true },
-      { action_id: "visual.taskbar_anim", display_name: "Disable Taskbar Animations", success: true },
-      { action_id: "perf.game_bar", display_name: "Disable Game Bar", success: true },
-      { action_id: "perf.game_dvr", display_name: "Disable Game DVR", success: true },
-      { action_id: "priv.advertising_id", display_name: "Disable Advertising ID", success: true },
-      { action_id: "priv.feedback", display_name: "Disable Feedback Prompts", success: true },
-      { action_id: "priv.tips", display_name: "Disable Tips and Suggestions", success: true },
+      { action_id: "visual.transparency", display_name: "Disable Transparency", success: true, message: "Applied" },
+      { action_id: "visual.animations", display_name: "Disable Animations", success: true, message: "Applied" },
+      { action_id: "visual.taskbar_anim", display_name: "Disable Taskbar Animations", success: true, message: "Applied" },
+      { action_id: "perf.game_bar", display_name: "Disable Game Bar", success: true, message: "Applied" },
+      { action_id: "perf.game_dvr", display_name: "Disable Game DVR", success: true, message: "Applied" },
+      { action_id: "priv.advertising_id", display_name: "Disable Advertising ID", success: true, message: "Applied" },
+      { action_id: "priv.feedback", display_name: "Disable Feedback Prompts", success: true, message: "Applied" },
+      { action_id: "priv.tips", display_name: "Disable Tips and Suggestions", success: true, message: "Applied" },
     ],
   },
 
@@ -1017,7 +1067,7 @@ const MOCKS: Record<string, unknown> = {
   undo_tweak: { success: true, message: "Reverted" },
   apply_batch: { success: true, applied: 6 },
   toggle_startup: { success: true, message: "Toggled" },
-  run_cleanup: { success: true, message: "Cleaned", cleaned: 0 },
+  run_cleanup: { success: true, message: "Cleaned", cleaned: 1, results: [{ id: "clean.user_temp", success: true, message: "Cleaned 12 MB" }] },
   set_power_plan: { success: true, message: "Power plan changed." },
   set_power_timeout: { success: true, message: "Timeout updated." },
   apply_service_change: { success: true, message: "Applied" },
@@ -1038,6 +1088,5 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
     // Deep-clone to prevent mutation of mock data
     return JSON.parse(JSON.stringify(MOCKS[cmd])) as T;
   }
-  console.warn(`[tauri-mock] No mock for command: ${cmd}`);
-  return {} as T;
+  throw new Error(`[tauri-mock] No mock is defined for command: ${cmd}`);
 }

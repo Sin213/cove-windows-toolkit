@@ -18,6 +18,12 @@ interface RemoveResult {
   message: string;
 }
 
+interface BloatwareReport {
+  complete: boolean;
+  error: string | null;
+  apps: BloatwareApp[];
+}
+
 const CATEGORY_ORDER = [
   "games_and_ads",
   "communication",
@@ -44,8 +50,14 @@ export default function BloatwarePanel() {
   const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
-    invoke<BloatwareApp[]>("get_bloatware")
-      .then(setApps)
+    invoke<BloatwareReport>("get_bloatware")
+      .then((report) => {
+        if (!report.complete) {
+          setError(report.error || "The AppX inventory could not be queried.");
+          return;
+        }
+        setApps(report.apps);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -83,6 +95,7 @@ export default function BloatwarePanel() {
       setResults((prev) => ({ ...prev, ...map }));
     } catch (e) {
       console.error("Bloatware removal failed:", e);
+      setError(`Removal failed: ${String(e)}`);
     } finally {
       setRemoving(false);
     }

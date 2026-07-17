@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Clone)]
 pub struct AdapterInfo {
@@ -13,7 +13,7 @@ pub struct AdapterInfo {
     pub signal: Option<i32>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct TestResult {
     pub name: String,
     pub status: String,
@@ -32,6 +32,8 @@ pub struct WifiInfo {
 
 #[derive(Serialize)]
 pub struct NetDiagReport {
+    pub complete: bool,
+    pub errors: Vec<String>,
     pub adapter: Option<AdapterInfo>,
     pub tests: Vec<TestResult>,
     pub wifi: Option<WifiInfo>,
@@ -39,15 +41,36 @@ pub struct NetDiagReport {
 
 #[cfg(target_os = "windows")]
 pub fn run_diagnostics() -> NetDiagReport {
-    let adapter = get_primary_adapter();
-    let tests = run_connectivity_tests();
-    let wifi = get_wifi_info();
-    NetDiagReport { adapter, tests, wifi }
+    let mut errors = Vec::new();
+    let adapter = get_primary_adapter().unwrap_or_else(|error| {
+        errors.push(error);
+        None
+    });
+    let tests = run_connectivity_tests().unwrap_or_else(|error| {
+        errors.push(error);
+        Vec::new()
+    });
+    // netsh's WLAN labels are localized and cannot be parsed reliably. Keep the
+    // field unknown until a native WLAN API implementation is available.
+    let wifi = None;
+    NetDiagReport {
+        complete: errors.is_empty(),
+        errors,
+        adapter,
+        tests,
+        wifi,
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn run_diagnostics() -> NetDiagReport {
-    NetDiagReport { adapter: None, tests: Vec::new(), wifi: None }
+    NetDiagReport {
+        complete: false,
+        errors: vec!["Network diagnostics are unavailable on this platform.".into()],
+        adapter: None,
+        tests: Vec::new(),
+        wifi: None,
+    }
 }
 
 #[derive(Serialize)]
@@ -62,86 +85,158 @@ pub struct SpeedTestResult {
 #[cfg(target_os = "windows")]
 pub fn run_speed_test() -> SpeedTestResult {
     let ps = r#"
-$url = 'http://speedtest.tele2.net/10MB.zip'
-$tmp = "$env:TEMP\cove_speedtest.tmp"
+$ErrorActionPreference = 'Stop'
+$url = 'https://speed.cloudflare.com/__down?bytes=10000000'
+$limit = 10000000
+$client = [System.Net.Http.HttpClient]::new()
+$cancel = [System.Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(20))
 try {
-    # HttpWebRequest enforces a connect + read/write timeout so a dead/slow link
-    # can't hang the test (WebClient.DownloadFile has no timeout).
-    $req = [System.Net.HttpWebRequest]::Create($url)
-    $req.Timeout = 15000
-    $req.ReadWriteTimeout = 15000
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $resp = $req.GetResponse()
-    $in = $resp.GetResponseStream()
-    $out = [System.IO.File]::Create($tmp)
-    $in.CopyTo($out)
-    $out.Close(); $in.Close(); $resp.Close()
+    $resp = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $cancel.Token).GetAwaiter().GetResult()
+    $resp.EnsureSuccessStatusCode() | Out-Null
+    $stream = $resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+    $buffer = New-Object byte[] 65536
+    [long]$size = 0
+    while ($size -lt $limit) {
+      $want = [Math]::Min($buffer.Length, $limit - $size)
+      $read = $stream.ReadAsync($buffer, 0, $want, $cancel.Token).GetAwaiter().GetResult()
+      if ($read -eq 0) { break }
+      $size += $read
+    }
     $sw.Stop()
-    $size = (Get-Item $tmp -ErrorAction SilentlyContinue).Length
-    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-    if ($null -eq $size) { $size = 0 }
+    if ($size -ne $limit) { throw "Server returned only $size of $limit bytes" }
     $ms = $sw.ElapsedMilliseconds
-    $mbps = if ($ms -gt 0) { [math]::Round(($size * 8) / ($ms * 1000), 2) } else { 0 }
-    Write-Output "OK|$mbps|$size|$ms|$url"
+    if ($ms -le 0) { throw 'Invalid elapsed time' }
+    $mbps = [math]::Round(($size * 8) / ($ms * 1000), 2)
+    @{ status='ok'; download_mbps=$mbps; bytes_downloaded=$size; duration_ms=$ms; test_url=$url } | ConvertTo-Json -Compress
 } catch {
-    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-    Write-Output "FAIL|0|0|0|$url"
+    @{ status='fail'; download_mbps=0; bytes_downloaded=0; duration_ms=0; test_url=$url } | ConvertTo-Json -Compress
+} finally {
+    $client.Dispose(); $cancel.Dispose()
 }
 "#;
-    if let Ok(o) = optimizer_core::powershell(ps).output() {
-        let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
-        let p: Vec<&str> = line.split('|').collect();
-        if p.len() >= 5 && p[0] == "OK" {
-            return SpeedTestResult {
-                download_mbps: p[1].parse().unwrap_or(0.0),
-                bytes_downloaded: p[2].parse().unwrap_or(0),
-                duration_ms: p[3].parse().unwrap_or(0),
-                test_url: p[4].to_string(),
-                status: "ok".into(),
-            };
-        }
+    if let Ok(o) = optimizer_core::powershell(ps).output()
+        && let Ok(result) = serde_json::from_slice::<serde_json::Value>(&o.stdout)
+        && result.get("status").and_then(|v| v.as_str()) == Some("ok")
+    {
+        return SpeedTestResult {
+            download_mbps: result
+                .get("download_mbps")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+            bytes_downloaded: result
+                .get("bytes_downloaded")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            duration_ms: result
+                .get("duration_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0),
+            test_url: result
+                .get("test_url")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            status: "ok".into(),
+        };
     }
-    SpeedTestResult { download_mbps: 0.0, bytes_downloaded: 0, duration_ms: 0, test_url: String::new(), status: "fail".into() }
+    SpeedTestResult {
+        download_mbps: 0.0,
+        bytes_downloaded: 0,
+        duration_ms: 0,
+        test_url: String::new(),
+        status: "fail".into(),
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn run_speed_test() -> SpeedTestResult {
-    SpeedTestResult { download_mbps: 0.0, bytes_downloaded: 0, duration_ms: 0, test_url: String::new(), status: "stub".into() }
-}
-
-#[cfg(target_os = "windows")]
-fn get_primary_adapter() -> Option<AdapterInfo> {
-    let ps = r#"
-$a = Get-NetAdapter | Where-Object { $_.ifOperStatus -eq 'Up' } | Select-Object -First 1
-if (-not $a) { exit 0 }
-$cfg = Get-NetIPConfiguration -InterfaceIndex $a.ifIndex -ErrorAction SilentlyContinue
-$dns = ($cfg.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | ForEach-Object { $_.ServerAddresses }) -join ','
-$ip = if ($cfg.IPv4Address) { $cfg.IPv4Address.IPAddress } else { '' }
-$gw = if ($cfg.IPv4DefaultGateway) { $cfg.IPv4DefaultGateway.NextHop } else { '' }
-Write-Output "$($a.Name)|$($a.InterfaceDescription)|$($a.LinkSpeed)|$ip|$gw|$dns|$($a.Status)"
-"#;
-    if let Ok(o) = optimizer_core::powershell(ps).output() {
-        let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
-        let p: Vec<&str> = line.split('|').collect();
-        if p.len() >= 7 {
-            let dns: Vec<String> = p[5].split(',').filter(|s| !s.is_empty()).map(|s| s.trim().to_string()).collect();
-            return Some(AdapterInfo {
-                name: p[0].trim().to_string(),
-                adapter_type: if p[1].to_lowercase().contains("wi-fi") || p[1].to_lowercase().contains("wireless") { "Wi-Fi".into() } else { "Ethernet".into() },
-                speed: p[2].trim().to_string(),
-                ip: p[3].trim().to_string(),
-                gateway: p[4].trim().to_string(),
-                dns,
-                status: p[6].trim().to_string(),
-                signal: None,
-            });
-        }
+    SpeedTestResult {
+        download_mbps: 0.0,
+        bytes_downloaded: 0,
+        duration_ms: 0,
+        test_url: String::new(),
+        status: "stub".into(),
     }
-    None
 }
 
 #[cfg(target_os = "windows")]
-fn run_connectivity_tests() -> Vec<TestResult> {
+fn get_primary_adapter() -> Result<Option<AdapterInfo>, String> {
+    let ps = r#"
+$ErrorActionPreference='Stop'
+$route = Get-NetRoute -DestinationPrefix @('0.0.0.0/0','::/0') -ErrorAction Stop | Where-Object State -eq 'Alive' | Sort-Object RouteMetric,InterfaceMetric | Select-Object -First 1
+if (-not $route) { @{adapter=$null} | ConvertTo-Json -Compress; exit }
+$a = Get-NetAdapter -InterfaceIndex $route.InterfaceIndex -ErrorAction Stop
+$cfg = Get-NetIPConfiguration -InterfaceIndex $a.ifIndex -ErrorAction Stop
+$dns = @($cfg.DNSServer | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ })
+$ips = @($cfg.IPv4Address.IPAddress) + @($cfg.IPv6Address.IPAddress) | Where-Object { $_ }
+$gateways = @($cfg.IPv4DefaultGateway.NextHop) + @($cfg.IPv6DefaultGateway.NextHop) | Where-Object { $_ }
+@{adapter=@{name=$a.Name; description=$a.InterfaceDescription; speed=[string]$a.LinkSpeed; ip=($ips -join ', '); gateway=($gateways -join ', '); dns=$dns; status=[string]$a.Status}} | ConvertTo-Json -Depth 4 -Compress
+"#;
+    let output = optimizer_core::powershell(ps)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+    let Some(adapter) = value.get("adapter").filter(|v| !v.is_null()) else {
+        return Ok(None);
+    };
+    let description = adapter
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+    Ok(Some(AdapterInfo {
+        name: adapter
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        adapter_type: if description.to_ascii_lowercase().contains("wireless")
+            || description.to_ascii_lowercase().contains("wi-fi")
+        {
+            "Wi-Fi".into()
+        } else {
+            "Ethernet".into()
+        },
+        speed: adapter
+            .get("speed")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        ip: adapter
+            .get("ip")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        gateway: adapter
+            .get("gateway")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        dns: adapter
+            .get("dns")
+            .and_then(|v| v.as_array())
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        status: adapter
+            .get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .to_string(),
+        signal: None,
+    }))
+}
+
+#[cfg(target_os = "windows")]
+fn run_connectivity_tests() -> Result<Vec<TestResult>, String> {
     let ps = r#"
 # Gateway ping - use .NET to avoid console popup
 $gw = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1).IPv4DefaultGateway.NextHop
@@ -150,21 +245,21 @@ if ($gw) {
         $pinger = New-Object System.Net.NetworkInformation.Ping
         $reply = $pinger.Send($gw, 2000)
         if ($reply.Status -eq 'Success') {
-            Write-Output "TEST|Gateway Ping|ok|$($reply.RoundtripTime)|$gw reachable"
+            $tests += [pscustomobject]@{name='Gateway Ping';status='ok';latency_ms=$reply.RoundtripTime;detail="$gw replied"}
         } else {
-            Write-Output "TEST|Gateway Ping|fail|0|$gw unreachable ($($reply.Status))"
+            $tests += [pscustomobject]@{name='Gateway Ping';status='unknown';latency_ms=$null;detail="No ICMP reply from $gw ($($reply.Status)); the gateway may block ping"}
         }
-    } catch { Write-Output "TEST|Gateway Ping|fail|0|$gw unreachable" }
-} else { Write-Output "TEST|Gateway Ping|fail|0|No default gateway" }
+    } catch { $tests += [pscustomobject]@{name='Gateway Ping';status='unknown';latency_ms=$null;detail=$_.Exception.Message} }
+} else { $tests += [pscustomobject]@{name='Gateway Ping';status='fail';latency_ms=$null;detail='No default gateway'} }
 
 # DNS resolution
 try {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $resolved = [System.Net.Dns]::GetHostAddresses('google.com') | Select-Object -First 1
+    $resolved = [System.Net.Dns]::GetHostAddresses('example.com') | Select-Object -First 1
     $sw.Stop()
-    Write-Output "TEST|DNS Resolution|ok|$($sw.ElapsedMilliseconds)|Resolved google.com to $($resolved.IPAddressToString)"
+    $tests += [pscustomobject]@{name='DNS Resolution';status='ok';latency_ms=$sw.ElapsedMilliseconds;detail="Resolved example.com to $($resolved.IPAddressToString)"}
 } catch {
-    Write-Output "TEST|DNS Resolution|fail|0|DNS resolution failed"
+    $tests += [pscustomobject]@{name='DNS Resolution';status='fail';latency_ms=$null;detail='DNS resolution failed'}
 }
 
 # Internet connectivity
@@ -172,40 +267,36 @@ try {
     $sw2 = [System.Diagnostics.Stopwatch]::StartNew()
     $web = Invoke-WebRequest -Uri 'http://www.msftconnecttest.com/connecttest.txt' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
     $sw2.Stop()
-    if ($web.StatusCode -eq 200) {
-        Write-Output "TEST|Internet Connectivity|ok|$($sw2.ElapsedMilliseconds)|Connected"
+    if ($web.StatusCode -eq 200 -and $web.Content.Trim() -eq 'Microsoft Connect Test') {
+        $tests += [pscustomobject]@{name='Internet Connectivity';status='ok';latency_ms=$sw2.ElapsedMilliseconds;detail='Connected'}
     } else {
-        Write-Output "TEST|Internet Connectivity|fail|$($sw2.ElapsedMilliseconds)|HTTP $($web.StatusCode)"
+        $tests += [pscustomobject]@{name='Internet Connectivity';status='fail';latency_ms=$sw2.ElapsedMilliseconds;detail='Unexpected response; a captive portal may be intercepting traffic'}
     }
 } catch {
-    Write-Output "TEST|Internet Connectivity|fail|0|Internet unreachable"
+    $tests += [pscustomobject]@{name='Internet Connectivity';status='fail';latency_ms=$null;detail='Internet check failed'}
 }
+$tests | ConvertTo-Json -Compress
 "#;
-
-    let mut tests = Vec::new();
-    if let Ok(o) = optimizer_core::powershell(ps).output() {
-        let stdout = String::from_utf8_lossy(&o.stdout);
-        for line in stdout.lines() {
-            if !line.starts_with("TEST|") { continue; }
-            let p: Vec<&str> = line.splitn(5, '|').collect();
-            if p.len() >= 5 {
-                tests.push(TestResult {
-                    name: p[1].trim().to_string(),
-                    status: p[2].trim().to_string(),
-                    latency_ms: p[3].trim().parse().ok(),
-                    detail: p[4].trim().to_string(),
-                });
-            }
-        }
+    let output = optimizer_core::powershell(&format!("$tests=@();{ps}"))
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
-    tests
+    serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())
 }
 
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 fn get_wifi_info() -> Option<WifiInfo> {
-    let o = optimizer_core::silent_cmd("netsh").args(["wlan", "show", "interfaces"]).output().ok()?;
+    let o = optimizer_core::silent_cmd("netsh")
+        .args(["wlan", "show", "interfaces"])
+        .output()
+        .ok()?;
     let stdout = String::from_utf8_lossy(&o.stdout);
-    if !stdout.contains("SSID") { return None; }
+    if !stdout.contains("SSID") {
+        return None;
+    }
 
     let mut ssid = String::new();
     let mut channel = 0u32;
@@ -221,15 +312,34 @@ fn get_wifi_info() -> Option<WifiInfo> {
             // line in this section that contains a percent sign. Matching the value
             // instead of the English "Signal" label keeps this locale-independent.
             if let Some(rest) = line.split(':').nth(1) {
-                signal = rest.trim().trim_end_matches('%').trim().parse().unwrap_or(signal);
+                signal = rest
+                    .trim()
+                    .trim_end_matches('%')
+                    .trim()
+                    .parse()
+                    .unwrap_or(signal);
             }
         } else if line.starts_with("Channel") {
-            channel = line.split(':').nth(1).unwrap_or("").trim().parse().unwrap_or(0);
+            channel = line
+                .split(':')
+                .nth(1)
+                .unwrap_or("")
+                .trim()
+                .parse()
+                .unwrap_or(0);
         }
     }
 
-    if ssid.is_empty() { return None; }
+    if ssid.is_empty() {
+        return None;
+    }
     let freq = if channel > 14 { "5 GHz" } else { "2.4 GHz" };
     let dbm = (signal as i32) / 2 - 100;
-    Some(WifiInfo { ssid, channel, frequency: freq.into(), signal_dbm: dbm, signal_quality: signal })
+    Some(WifiInfo {
+        ssid,
+        channel,
+        frequency: freq.into(),
+        signal_dbm: dbm,
+        signal_quality: signal,
+    })
 }

@@ -16,42 +16,74 @@ pub struct VisualTweak {
 
 pub fn get_tweaks() -> Vec<VisualTweak> {
     let definitions = vec![
-        ("visual.transparency", "Disable Transparency", "Turn off window transparency effects to reduce GPU load",
-         "Visual Effects", "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-         "EnableTransparency", "0"),
-        ("visual.animations", "Disable Minimize/Maximize Animations", "Remove window animation effects",
-         "Visual Effects", "Control Panel\\Desktop\\WindowMetrics",
-         "MinAnimate", "0"),
-        ("visual.taskbar_anim", "Disable Taskbar Animations", "Stop taskbar button animations",
-         "Visual Effects", "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
-         "TaskbarAnimations", "0"),
-        ("visual.peek", "Disable Aero Peek", "Turn off desktop peek on taskbar hover",
-         "Visual Effects", "Software\\Microsoft\\Windows\\DWM",
-         "EnableAeroPeek", "0"),
-        ("visual.shadows", "Disable Icon Shadows", "Remove text shadows under desktop icons",
-         "Visual Effects", "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
-         "ListviewShadow", "0"),
+        (
+            "visual.transparency",
+            "Disable Transparency",
+            "Turn off window transparency effects to reduce GPU load",
+            "Visual Effects",
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+            "EnableTransparency",
+            "0",
+        ),
+        (
+            "visual.animations",
+            "Disable Minimize/Maximize Animations",
+            "Remove window animation effects",
+            "Visual Effects",
+            "Control Panel\\Desktop\\WindowMetrics",
+            "MinAnimate",
+            "0",
+        ),
+        (
+            "visual.taskbar_anim",
+            "Disable Taskbar Animations",
+            "Stop taskbar button animations",
+            "Visual Effects",
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+            "TaskbarAnimations",
+            "0",
+        ),
+        (
+            "visual.peek",
+            "Disable Aero Peek",
+            "Turn off desktop peek on taskbar hover",
+            "Visual Effects",
+            "Software\\Microsoft\\Windows\\DWM",
+            "EnableAeroPeek",
+            "0",
+        ),
+        (
+            "visual.shadows",
+            "Disable Icon Shadows",
+            "Remove text shadows under desktop icons",
+            "Visual Effects",
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+            "ListviewShadow",
+            "0",
+        ),
     ];
 
-    definitions.into_iter().map(|(id, name, desc, cat, path, reg_name, opt_val)| {
-        let current = read_registry_value(path, reg_name);
-        VisualTweak {
-            id: id.to_string(),
-            name: name.to_string(),
-            description: desc.to_string(),
-            category: cat.to_string(),
-            safety_tier: SafetyTier::Green,
-            registry_path: format!("HKCU\\{}", path),
-            registry_name: reg_name.to_string(),
-            current_value: current,
-            optimized_value: opt_val.to_string(),
-        }
-    }).collect()
+    definitions
+        .into_iter()
+        .map(|(id, name, desc, cat, path, reg_name, opt_val)| {
+            let current = read_registry_value(path, reg_name);
+            VisualTweak {
+                id: id.to_string(),
+                name: name.to_string(),
+                description: desc.to_string(),
+                category: cat.to_string(),
+                safety_tier: SafetyTier::Green,
+                registry_path: format!("HKCU\\{}", path),
+                registry_name: reg_name.to_string(),
+                current_value: current,
+                optimized_value: opt_val.to_string(),
+            }
+        })
+        .collect()
 }
 
 #[cfg(target_os = "windows")]
 fn read_registry_value(path: &str, name: &str) -> Option<String> {
-    
     let full_path = format!("HKCU\\{}", path);
     let ps = format!(
         "try {{ $v = (Get-ItemProperty -Path 'Registry::{}' -Name '{}' -ErrorAction Stop).'{}'; Write-Output $v }} catch {{ Write-Output 'NOTFOUND' }}",
@@ -59,7 +91,9 @@ fn read_registry_value(path: &str, name: &str) -> Option<String> {
     );
     if let Ok(o) = optimizer_core::powershell(&ps).output() {
         let val = String::from_utf8_lossy(&o.stdout).trim().to_string();
-        if val != "NOTFOUND" && !val.is_empty() { return Some(val); }
+        if val != "NOTFOUND" && !val.is_empty() {
+            return Some(val);
+        }
     }
     None
 }
@@ -73,15 +107,25 @@ fn read_registry_value(_path: &str, _name: &str) -> Option<String> {
 pub fn apply_tweak(path: &str, name: &str, value: &str) -> Result<String, String> {
     // MinAnimate (Control Panel\Desktop\WindowMetrics) is conventionally REG_SZ; the rest are DWORD.
     let (ty, val) = if name == "MinAnimate" {
-        ("String", format!("'{}'", value.replace('\'', "''")))
+        if !matches!(value, "0" | "1") {
+            return Err("Invalid saved value for MinAnimate.".into());
+        }
+        ("String", format!("'{value}'"))
     } else {
-        ("DWord", value.to_string())
+        let parsed = value
+            .parse::<u32>()
+            .map_err(|_| "Invalid saved DWORD value.".to_string())?;
+        ("DWord", parsed.to_string())
     };
     let ps = format!(
         "try {{ Set-ItemProperty -Path 'Registry::{path}' -Name '{name}' -Value {val} -Type {ty} -Force -ErrorAction Stop; Write-Output 'OK' }} catch {{ New-Item -Path 'Registry::{path}' -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path 'Registry::{path}' -Name '{name}' -Value {val} -Type {ty} -Force -ErrorAction Stop; Write-Output 'OK' }}",
-        path = path, name = name, val = val, ty = ty
+        path = path,
+        name = name,
+        val = val,
+        ty = ty
     );
-    let o = optimizer_core::powershell(&ps).output()
+    let o = optimizer_core::powershell(&ps)
+        .output()
         .map_err(|e| e.to_string())?;
     if String::from_utf8_lossy(&o.stdout).trim() == "OK" {
         Ok(format!("Applied: {} = {}", name, value))

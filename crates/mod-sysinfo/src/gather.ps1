@@ -1,28 +1,28 @@
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Continue'
+$errors = @()
+function Get-CoveCim([string]$class, [string]$namespace = 'root\cimv2') {
+    try { @(Get-CimInstance -ClassName $class -Namespace $namespace -ErrorAction Stop) }
+    catch { $script:errors += "${class}: $($_.Exception.Message)"; @() }
+}
 
-$os = Get-CimInstance Win32_OperatingSystem
-$cs = Get-CimInstance Win32_ComputerSystem
-$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-$bb = Get-CimInstance Win32_BaseBoard
-$bios = Get-CimInstance Win32_BIOS
-$gpu = @(Get-CimInstance Win32_VideoController)
-$mon = @(Get-CimInstance WmiMonitorID -Namespace root\wmi 2>$null)
-$disk = @(Get-CimInstance Win32_DiskDrive)
-$vol = @(Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 })
-$audio = @(Get-CimInstance Win32_SoundDevice)
-$net = @(Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true })
-$netcfg = @(Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true })
-$mem = @(Get-CimInstance Win32_PhysicalMemory)
-$memArr = @(Get-CimInstance Win32_PhysicalMemoryArray)
+$os = Get-CoveCim Win32_OperatingSystem | Select-Object -First 1
+$cs = Get-CoveCim Win32_ComputerSystem | Select-Object -First 1
+$cpus = @(Get-CoveCim Win32_Processor); $cpu = $cpus | Select-Object -First 1
+$bb = Get-CoveCim Win32_BaseBoard | Select-Object -First 1
+$bios = Get-CoveCim Win32_BIOS | Select-Object -First 1
+$gpu = @(Get-CoveCim Win32_VideoController)
+$mon = @(Get-CoveCim WmiMonitorID 'root\wmi')
+$disk = @(Get-CoveCim Win32_DiskDrive)
+$physical = @(try { Get-PhysicalDisk -ErrorAction Stop } catch { $errors += "PhysicalDisk: $($_.Exception.Message)" })
+$vol = @(Get-CoveCim Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 })
+$audio = @(Get-CoveCim Win32_SoundDevice)
+$net = @(Get-CoveCim Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true })
+$netcfg = @(Get-CoveCim Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -eq $true })
+$mem = @(Get-CoveCim Win32_PhysicalMemory)
+$memArr = @(Get-CoveCim Win32_PhysicalMemoryArray | Where-Object { $_.Use -eq 3 })
 
-# CPU temperature via MSAcpi_ThermalZoneTemperature (requires admin)
+# ACPI thermal zones are not CPU-package sensors, so do not label one as CPU.
 $cpuTemp = $null
-try {
-    $tz = Get-CimInstance MSAcpi_ThermalZoneTemperature -Namespace root\wmi -ErrorAction Stop | Select-Object -First 1
-    if ($tz.CurrentTemperature) {
-        $cpuTemp = [math]::Round(($tz.CurrentTemperature - 2732) / 10.0, 1)
-    }
-} catch {}
 
 # Map partition letters to disk indices
 $partMap = @{}
@@ -48,12 +48,9 @@ foreach ($d in $disk) {
             }
         }
     }
-    $mt = 'HDD'
-    if ($d.MediaType -match 'SSD|Solid') { $mt = 'SSD' }
-    elseif ($d.Model -match 'NVMe|SSD') { $mt = 'SSD' }
-    $iface = ''
-    if ($d.InterfaceType) { $iface = $d.InterfaceType }
-    if ($d.Model -match 'NVMe') { $iface = 'NVMe' }
+    $pd = $physical | Where-Object { $_.FriendlyName -eq $d.Model -or ($_.SerialNumber -and $_.SerialNumber.Trim() -eq $d.SerialNumber.Trim()) } | Select-Object -First 1
+    $mt = if ($pd -and $pd.MediaType) { [string]$pd.MediaType } else { 'Unknown' }
+    $iface = if ($pd -and $pd.BusType) { [string]$pd.BusType } elseif ($d.InterfaceType) { [string]$d.InterfaceType } else { 'Unknown' }
     $storageArr += @{
         model = if ($d.Model) { $d.Model.Trim() } else { 'Unknown' }
         interface_type = $iface
@@ -78,7 +75,7 @@ Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-
 
 $gpuArr = @()
 foreach ($g in $gpu) {
-    $vram = if ($g.Name -and $gpuMem.ContainsKey([string]$g.Name)) { $gpuMem[[string]$g.Name] } else { [long]$g.AdapterRAM }
+    $vram = if ($g.Name -and $gpuMem.ContainsKey([string]$g.Name)) { $gpuMem[[string]$g.Name] } elseif ([uint64]$g.AdapterRAM -lt 4294967295) { [uint64]$g.AdapterRAM } else { 0 }
     $gpuArr += @{
         name = if ($g.Name) { $g.Name } else { 'Unknown' }
         driver_version = if ($g.DriverVersion) { $g.DriverVersion } else { '' }
@@ -95,14 +92,7 @@ foreach ($m in $mon) {
     $name = if ($mfr) { "$mfr $mdl" } else { $mdl }
     $monArr += @{ name = $name; resolution = '' }
 }
-# Fill resolution from VideoController if available
-for ($i = 0; $i -lt $gpu.Count -and $i -lt $monArr.Count; $i++) {
-    $g = $gpu[$i]
-    if ($g.CurrentHorizontalResolution -and $g.CurrentVerticalResolution) {
-        $hz = if ($g.CurrentRefreshRate) { "@$($g.CurrentRefreshRate)Hz" } else { '' }
-        $monArr[$i].resolution = "$($g.CurrentHorizontalResolution)x$($g.CurrentVerticalResolution)$hz"
-    }
-}
+# Do not pair monitor identities to unrelated video-controller array indices.
 if ($monArr.Count -eq 0 -and $gpu.Count -gt 0) {
     foreach ($g in $gpu) {
         if ($g.CurrentHorizontalResolution) {
@@ -192,9 +182,11 @@ foreach ($ma in $memArr) { $slotsTotal += $ma.MemoryDevices }
 if ($slotsTotal -eq 0) { $slotsTotal = $mem.Count }
 
 # Arch
-$archStr = switch ($cpu.AddressWidth) { 64 { '64-bit' }; 32 { '32-bit' }; default { "$($cpu.AddressWidth)-bit" } }
+$archStr = if ($os.OSArchitecture) { [string]$os.OSArchitecture } else { switch ([int]$cpu.Architecture) { 9 {'x64'} 12 {'ARM64'} 0 {'x86'} default {'Unknown'} } }
 
 $result = @{
+    complete = ($errors.Count -eq 0)
+    errors = @($errors)
     os = @{
         name = $os.Caption -replace 'Microsoft ',''
         version = $(if ($dv = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name DisplayVersion -ErrorAction SilentlyContinue).DisplayVersion) { $dv } else { (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -Name ReleaseId -ErrorAction SilentlyContinue).ReleaseId })
@@ -205,8 +197,8 @@ $result = @{
     }
     cpu = @{
         name = if ($cpu.Name) { $cpu.Name.Trim() } else { '' }
-        cores = [int]$cpu.NumberOfCores
-        threads = [int]$cpu.NumberOfLogicalProcessors
+        cores = [int](($cpus | Measure-Object NumberOfCores -Sum).Sum)
+        threads = [int](($cpus | Measure-Object NumberOfLogicalProcessors -Sum).Sum)
         base_clock_mhz = $(if ($bm = (Get-ItemProperty 'HKLM:\HARDWARE\DESCRIPTION\System\CentralProcessor\0' -Name '~MHz' -ErrorAction SilentlyContinue).'~MHz') { [int]$bm } else { [int]$cpu.MaxClockSpeed })
         max_clock_mhz = [int]$cpu.MaxClockSpeed
         architecture = $archStr

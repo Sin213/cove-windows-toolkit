@@ -207,7 +207,7 @@
   transition: color 0.16s, border-color 0.16s, background 0.16s;
 }
 .card:hover .card-icon { color: var(--accent-bright); border-color: var(--accent-line); background: var(--accent-soft); }
-.card-title { font-size: 14.5px; font-weight: 600; color: var(--ink); }
+.dashboard .card-title { font-size: 14.5px; font-weight: 600; color: var(--ink); }
 .card-desc { font-size: 12.5px; color: var(--ink-2); line-height: 1.45; }
 .card-badge {
   font-size: 11px;

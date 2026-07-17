@@ -76,8 +76,8 @@ export default function SecurityPanel() {
       .then(setData)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-    pollDef();
-    pollHeur();
+    queueMicrotask(pollDef);
+    queueMicrotask(pollHeur);
   }, []);
 
   const anyRunning = !!defScan?.running || !!heurScan?.running;

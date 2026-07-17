@@ -8,31 +8,98 @@ pub struct CleanupTarget {
     pub size_bytes: u64,
     pub file_count: u64,
     pub safety: String,
+    pub scan_error: Option<String>,
 }
 
 #[cfg(target_os = "windows")]
 pub fn scan_targets() -> Vec<CleanupTarget> {
+    let windows = optimizer_core::windows_directory();
+    let local = directories::BaseDirs::new().map(|dirs| dirs.data_local_dir().to_path_buf());
     let targets: Vec<(&str, &str, String, &str)> = vec![
-        ("clean.user_temp", "User Temp Files", expand_env("%TEMP%"), "green"),
-        ("clean.system_temp", "System Temp Files", expand_env("%SystemRoot%\\Temp"), "green"),
-        ("clean.prefetch", "Prefetch Cache", expand_env("%SystemRoot%\\Prefetch"), "green"),
-        ("clean.thumbnails", "Thumbnail Cache", expand_env("%LocalAppData%\\Microsoft\\Windows\\Explorer"), "green"),
-        ("clean.error_reports", "Error Reports", expand_env("%LocalAppData%\\Microsoft\\Windows\\WER"), "green"),
-        ("clean.wu_cache", "Windows Update Cache", expand_env("%SystemRoot%\\SoftwareDistribution\\Download"), "yellow"),
-        ("clean.delivery_opt", "Delivery Optimization", expand_env("%SystemRoot%\\SoftwareDistribution\\DeliveryOptimization"), "yellow"),
+        (
+            "clean.user_temp",
+            "User Temp Files",
+            local
+                .as_ref()
+                .map(|p| p.join("Temp"))
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into(),
+            "green",
+        ),
+        (
+            "clean.system_temp",
+            "System Temp Files",
+            windows.join("Temp").to_string_lossy().into(),
+            "green",
+        ),
+        (
+            "clean.prefetch",
+            "Prefetch Cache",
+            windows.join("Prefetch").to_string_lossy().into(),
+            "green",
+        ),
+        (
+            "clean.thumbnails",
+            "Thumbnail Cache",
+            local
+                .as_ref()
+                .map(|p| p.join(r"Microsoft\Windows\Explorer"))
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into(),
+            "green",
+        ),
+        (
+            "clean.error_reports",
+            "Error Reports",
+            local
+                .as_ref()
+                .map(|p| p.join(r"Microsoft\Windows\WER"))
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into(),
+            "green",
+        ),
+        (
+            "clean.wu_cache",
+            "Windows Update Cache",
+            windows
+                .join(r"SoftwareDistribution\Download")
+                .to_string_lossy()
+                .into(),
+            "yellow",
+        ),
+        (
+            "clean.delivery_opt",
+            "Delivery Optimization",
+            windows
+                .join(r"SoftwareDistribution\DeliveryOptimization")
+                .to_string_lossy()
+                .into(),
+            "yellow",
+        ),
     ];
 
-    targets.into_iter().map(|(id, name, path, safety)| {
-        let (size, count) = measure_dir(&path);
-        CleanupTarget {
-            id: id.to_string(),
-            name: name.to_string(),
-            path,
-            size_bytes: size,
-            file_count: count,
-            safety: safety.to_string(),
-        }
-    }).collect()
+    targets
+        .into_iter()
+        .map(|(id, name, path, safety)| {
+            let measurement = measure_dir(&path);
+            let (size, count, scan_error) = match measurement {
+                Ok((size, count)) => (size, count, None),
+                Err(error) => (0, 0, Some(error)),
+            };
+            CleanupTarget {
+                id: id.to_string(),
+                name: name.to_string(),
+                path,
+                size_bytes: size,
+                file_count: count,
+                safety: safety.to_string(),
+                scan_error,
+            }
+        })
+        .collect()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -41,28 +108,15 @@ pub fn scan_targets() -> Vec<CleanupTarget> {
 }
 
 #[cfg(target_os = "windows")]
-fn expand_env(path: &str) -> String {
-    let mut result = path.to_string();
-    for var in ["%TEMP%", "%SystemRoot%", "%LocalAppData%", "%ProgramData%"] {
-        let name = var.trim_matches('%');
-        if let Ok(val) = std::env::var(name) {
-            result = result.replace(var, &val);
-        }
-    }
-    result
-}
-
-#[cfg(target_os = "windows")]
-fn measure_dir(path: &str) -> (u64, u64) {
-    
-
+fn measure_dir(path: &str) -> Result<(u64, u64), String> {
     // Escape single quotes so profile paths containing an apostrophe
     // (e.g. C:\Users\O'Brien\...) don't break the single-quoted PS strings.
     let safe = path.replace('\'', "''");
     let ps = format!(
         r#"
-if (-not (Test-Path '{}')) {{ Write-Output '0|0'; exit }}
-$files = Get-ChildItem -Path '{}' -Recurse -File -Force -ErrorAction SilentlyContinue
+if (-not (Test-Path -LiteralPath '{}')) {{ Write-Output '0|0'; exit }}
+$ErrorActionPreference='Stop'
+$files = Get-ChildItem -LiteralPath '{}' -Recurse -File -Force -ErrorAction Stop
 $size = ($files | Measure-Object -Property Length -Sum).Sum
 $count = ($files | Measure-Object).Count
 if ($null -eq $size) {{ $size = 0 }}
@@ -77,10 +131,10 @@ Write-Output "$size|$count"
         if parts.len() >= 2 {
             let size: u64 = parts[0].trim().parse().unwrap_or(0);
             let count: u64 = parts[1].trim().parse().unwrap_or(0);
-            return (size, count);
+            return Ok((size, count));
         }
     }
-    (0, 0)
+    Err("Could not measure this cleanup target.".into())
 }
 
 #[cfg(target_os = "windows")]
@@ -109,18 +163,17 @@ pub fn clean_targets(_ids: &[String]) -> Vec<(String, bool, String)> {
 
 #[cfg(target_os = "windows")]
 fn clean_directory(path: &str) -> Result<String, String> {
-    
-
     // Escape single quotes so profile paths containing an apostrophe
     // (e.g. C:\Users\O'Brien\...) don't break the single-quoted PS strings.
     let safe = path.replace('\'', "''");
     let ps = format!(
         r#"
-if (-not (Test-Path '{}')) {{ Write-Output 'PATH_MISSING'; exit }}
-$before = (Get-ChildItem -Path '{}' -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+if (-not (Test-Path -LiteralPath '{}')) {{ Write-Output 'PATH_MISSING'; exit }}
+$ErrorActionPreference='Stop'
+$before = (Get-ChildItem -LiteralPath '{}' -Recurse -File -Force -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum
 if ($null -eq $before) {{ $before = 0 }}
-Get-ChildItem -Path '{}' -Recurse -File -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
-$after = (Get-ChildItem -Path '{}' -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
+Get-ChildItem -LiteralPath '{}' -Recurse -File -Force -ErrorAction Stop | Remove-Item -Force -ErrorAction Stop
+$after = (Get-ChildItem -LiteralPath '{}' -Recurse -File -Force -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum
 if ($null -eq $after) {{ $after = 0 }}
 $freed = $before - $after
 Write-Output "OK|$freed"
@@ -128,11 +181,12 @@ Write-Output "OK|$freed"
         safe, safe, safe, safe
     );
 
-    let o = optimizer_core::powershell(&ps).output()
+    let o = optimizer_core::powershell(&ps)
+        .output()
         .map_err(|e| e.to_string())?;
     let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
-    if line.starts_with("OK|") {
-        let freed: u64 = line[3..].trim().parse().unwrap_or(0);
+    if let Some(value) = line.strip_prefix("OK|") {
+        let freed: u64 = value.trim().parse().unwrap_or(0);
         let mb = freed / (1024 * 1024);
         Ok(format!("Cleaned {} MB", mb))
     } else {

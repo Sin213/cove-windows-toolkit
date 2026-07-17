@@ -6,9 +6,6 @@ $leftovers = @()
 # match core OS folders/keys/services and offer them for deletion.
 $generic = @('microsoft','windows','intel','google','nvidia','amd','realtek','common','program','programs','corporation','corp','inc','llc','ltd','gmbh','system','systems','update','updater','app','apps','data','user','default','driver','drivers','software','technologies','technology','solutions','x64','x86','win32','win64','the')
 $terms = @($name)
-if ($publisher -and $publisher -ne $name -and ($generic -notcontains $publisher.ToLower())) { $terms += $publisher }
-$firstWord = ($name -split '\s')[0]
-if ($firstWord.Length -ge 4 -and $firstWord -ne $name -and ($generic -notcontains $firstWord.ToLower())) { $terms += $firstWord }
 
 # Match on WORD BOUNDARIES so a term like "Cove" matches "cove-nexus" but not
 # unrelated words like "Auto-Discovery" (dis-COVE-ry) - matching that loosely
@@ -17,7 +14,7 @@ $patterns = @()
 foreach ($t in $terms) { if ($t) { $patterns += ('\b' + [regex]::Escape($t) + '\b') } }
 function Test-Term([string]$text) {
     if (-not $text) { return $false }
-    foreach ($p in $patterns) { if ($text -match $p) { return $true } }
+    foreach ($t in $terms) { if ($text.Equals($t, [System.StringComparison]::OrdinalIgnoreCase)) { return $true } }
     return $false
 }
 

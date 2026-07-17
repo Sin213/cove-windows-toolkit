@@ -11,6 +11,7 @@ interface CleanupTarget {
   size_bytes: number;
   file_count: number;
   safety: string;
+  scan_error: string | null;
 }
 
 export default function CleanupPanel() {
@@ -21,6 +22,7 @@ export default function CleanupPanel() {
   const [cleaning, setCleaning] = useState(false);
   const [cleaned, setCleaned] = useState<Record<string, boolean>>({});
   const [showConfirm, setShowConfirm] = useState(false);
+  const [results, setResults] = useState<Record<string, { success: boolean; message: string }>>({});
 
   useEffect(() => {
     invoke<CleanupTarget[]>("get_cleanup_targets")
@@ -29,7 +31,7 @@ export default function CleanupPanel() {
         // Select all green (safe) targets by default
         const sel: Record<string, boolean> = {};
         data.forEach((t) => {
-          if (t.safety === "green") sel[t.id] = true;
+          if (t.safety === "green" && !t.scan_error) sel[t.id] = true;
         });
         setSelected(sel);
       })
@@ -65,17 +67,19 @@ export default function CleanupPanel() {
     setCleaning(true);
     try {
       const ids = selectedTargets.map((t) => t.id);
-      const res = await invoke<{ success: boolean; results: { id: string; success: boolean }[] }>(
+      const res = await invoke<{ success: boolean; results: { id: string; success: boolean; message: string }[] }>(
         "run_cleanup",
         { ids }
       );
       // Mark only the targets that actually succeeded, per-result.
       const ok = new Set((res.results || []).filter((r) => r.success).map((r) => r.id));
+      setResults(Object.fromEntries((res.results || []).map((r) => [r.id, r])));
       for (const t of selectedTargets) {
         if (ok.has(t.id)) setCleaned((s) => ({ ...s, [t.id]: true }));
       }
     } catch (e) {
       console.error("Cleanup failed:", e);
+      setError(`Cleanup failed: ${String(e)}`);
     } finally {
       setCleaning(false);
     }
@@ -118,6 +122,11 @@ export default function CleanupPanel() {
           </button>
         </div>
       </div>
+      {Object.entries(results).map(([id, result]) => (
+        <div key={id} className={result.success ? "panel-success" : "panel-error"} role="status">
+          {targets.find((target) => target.id === id)?.name || id}: {result.message}
+        </div>
+      ))}
 
       <div className="cleanup-list">
         {targets.map((target) => (
@@ -129,12 +138,13 @@ export default function CleanupPanel() {
               type="checkbox"
               checked={!!selected[target.id]}
               onChange={() => toggle(target.id)}
-              disabled={cleaned[target.id]}
+              disabled={cleaned[target.id] || !!target.scan_error}
               className="cleanup-check"
             />
             <div className="cleanup-info">
               <div className="cleanup-name">{target.name}</div>
               <div className="cleanup-path">{target.path}</div>
+              {target.scan_error && <div className="panel-error">Scan failed: {target.scan_error}</div>}
             </div>
             <div className="cleanup-meta">
               <span className={`safety-badge safety-${target.safety}`}>{target.safety}</span>

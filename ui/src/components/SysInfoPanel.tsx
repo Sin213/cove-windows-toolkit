@@ -14,6 +14,7 @@ interface DriveInfo { model: string; interface_type: string; media_type: string;
 interface AudioDevice { name: string; status: string; }
 interface NetworkAdapter { name: string; adapter_type: string; mac: string; speed: string; ip: string; status: string; }
 interface FullSystemInfo {
+  complete: boolean; errors: string[];
   os: OsInfo; cpu: CpuInfo; ram: RamInfo; motherboard: MotherboardInfo;
   graphics: GpuInfo[]; monitors: MonitorInfo[]; storage: DriveInfo[];
   audio: AudioDevice[]; network: NetworkAdapter[];
@@ -93,6 +94,7 @@ export default function SysInfoPanel() {
         ))}
       </div>
       <div className="sysinfo-content">
+        {!info.complete && <div className="panel-error">Some system information could not be read: {info.errors.join("; ")}</div>}
         {section === "summary" && <SummaryView info={info} />}
         {section === "os" && <OsView os={info.os} />}
         {section === "cpu" && <CpuView cpu={info.cpu} />}

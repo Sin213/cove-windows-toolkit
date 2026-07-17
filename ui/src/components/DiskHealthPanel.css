@@ -97,7 +97,7 @@
   letter-spacing: 1.2px;
 }
 
-.stat-value {
+.disk-health-panel .stat-value {
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
@@ -105,7 +105,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.stat-value.stat-warn {
+.disk-health-panel .stat-value.stat-warn {
   color: var(--yellow);
 }
 

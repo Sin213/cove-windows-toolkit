@@ -38,6 +38,7 @@ export default function PowerPanel() {
   const [disk, setDisk] = useState(0);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [pendingPlan, setPendingPlan] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     invoke<PowerData>("get_power_info")
@@ -53,6 +54,8 @@ export default function PowerPanel() {
   }, []);
 
   const handlePlanChange = async (guid: string) => {
+    if (updating) return;
+    setUpdating(true);
     const prev = selectedPlan;
     setSelectedPlan(guid);
     setFeedback(null);
@@ -67,10 +70,14 @@ export default function PowerPanel() {
     } catch (e) {
       setSelectedPlan(prev);
       setFeedback({ type: "error", message: String(e) });
+    } finally {
+      setUpdating(false);
     }
   };
 
   const handleTimeout = async (setting: string, minutes: number) => {
+    if (updating) return;
+    setUpdating(true);
     setFeedback(null);
     // Remember the previous value so we can roll back the optimistic update if
     // the apply fails — otherwise the dropdown would show a timeout that was
@@ -95,6 +102,8 @@ export default function PowerPanel() {
     } catch (e) {
       restore();
       setFeedback({ type: "error", message: String(e) });
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -118,6 +127,7 @@ export default function PowerPanel() {
               key={plan.guid}
               className={`plan-card ${selectedPlan === plan.guid ? "active" : ""}`}
               onClick={() => setPendingPlan(plan.guid)}
+              disabled={updating}
             >
               <span className="plan-name">{plan.name}</span>
               {selectedPlan === plan.guid && (
@@ -135,16 +145,19 @@ export default function PowerPanel() {
             label="Turn off display"
             value={display}
             onChange={(v) => handleTimeout("display", v)}
+            disabled={updating}
           />
           <TimeoutRow
             label="Sleep after"
             value={sleep}
             onChange={(v) => handleTimeout("sleep", v)}
+            disabled={updating}
           />
           <TimeoutRow
             label="Turn off hard disk"
             value={disk}
             onChange={(v) => handleTimeout("disk", v)}
+            disabled={updating}
           />
         </div>
       </div>
@@ -163,7 +176,7 @@ export default function PowerPanel() {
   );
 }
 
-function TimeoutRow({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+function TimeoutRow({ label, value, onChange, disabled }: { label: string; value: number; onChange: (v: number) => void; disabled: boolean }) {
   return (
     <div className="setting-row">
       <span className="setting-label">{label}</span>
@@ -171,6 +184,7 @@ function TimeoutRow({ label, value, onChange }: { label: string; value: number; 
         className="timeout-select"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
+        disabled={disabled}
       >
         {TIMEOUT_OPTIONS.map((m) => (
           <option key={m} value={m}>{fmtTimeout(m)}</option>

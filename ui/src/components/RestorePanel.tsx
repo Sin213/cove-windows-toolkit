@@ -11,6 +11,7 @@ interface RestorePoint {
 }
 
 interface RestoreStatus {
+  known: boolean;
   enabled: boolean;
   message: string;
 }
@@ -36,18 +37,19 @@ export default function RestorePanel() {
     setError(null);
     Promise.all([
       invoke<RestoreStatus>("get_restore_status"),
-      invoke<RestorePoint[]>("get_restore_points"),
+      invoke<{ complete: boolean; error: string | null; points: RestorePoint[] }>("get_restore_points"),
     ])
       .then(([s, p]) => {
         setStatus(s);
-        setPoints(p);
+        setPoints(p.points);
+        if (!p.complete) setError(p.error || "Restore-point query failed.");
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    load();
+    queueMicrotask(load);
   }, []);
 
   const handleCreate = () => {
@@ -100,7 +102,7 @@ export default function RestorePanel() {
       <div className={`restore-status ${status?.enabled ? "status-enabled" : "status-disabled"}`}>
         <span className="status-icon">{status?.enabled ? "✔" : "⚠"}</span>
         <span className="status-text">{status?.message}</span>
-        {!status?.enabled && (
+        {status?.known && !status.enabled && (
           <button className="enable-btn" onClick={handleEnable} disabled={enabling}>
             {enabling ? "Enabling..." : "Enable System Protection"}
           </button>

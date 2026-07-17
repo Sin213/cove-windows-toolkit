@@ -9,7 +9,8 @@ interface Props {
 }
 
 interface HealthReport {
-  score: number;
+  score: number | null;
+  complete: boolean;
   findings: { severity: string }[];
 }
 
@@ -34,9 +35,11 @@ interface Preset {
 
 interface PresetResult {
   success: boolean;
+  partial: boolean;
   total: number;
   succeeded: number;
   failed: number;
+  results: { action_id: string; display_name: string; success: boolean; message: string }[];
 }
 
 interface CategoryCard {
@@ -112,7 +115,7 @@ const DIAGNOSTIC_CARDS: CategoryCard[] = [
   {
     id: "health",
     title: "System Health",
-    description: "Disk, RAM, CPU, SMART - quick triage",
+    description: "System drive space and available RAM - quick triage",
     icon: "♥",
     section: "diagnose",
   },
@@ -263,7 +266,9 @@ export default function Dashboard({ onNavigate }: Props) {
         const warnings = report.findings.filter(
           (f) => f.severity === "Warning" || f.severity === "Critical"
         ).length;
-        if (warnings === 0) {
+        if (!report.complete || report.score === null) {
+          setStatusText("Health is unknown because one or more checks could not be completed.");
+        } else if (warnings === 0) {
           setStatusText("All checks passed. System looks healthy.");
         } else {
           setStatusText(
@@ -286,6 +291,9 @@ export default function Dashboard({ onNavigate }: Props) {
     setDiagError(null);
     try {
       const result = await invoke<DiagResult>("run_all_diagnostics");
+      if (!result || !Array.isArray(result.modules) || typeof result.overall_severity !== "string") {
+        throw new Error("The backend returned an invalid diagnostics result.");
+      }
       setDiagResult(result);
     } catch (e) {
       console.error("Diagnostics failed:", e);
@@ -301,6 +309,9 @@ export default function Dashboard({ onNavigate }: Props) {
     setPresetError(null);
     try {
       const result = await invoke<PresetResult>("run_preset", { id: preset.id });
+      if (!Array.isArray(result.results) || typeof result.success !== "boolean") {
+        throw new Error("The backend returned an invalid preset result.");
+      }
       setPresetResult(result);
     } catch (e) {
       console.error("Preset failed:", e);
@@ -340,7 +351,7 @@ export default function Dashboard({ onNavigate }: Props) {
         <span>{statusText}</span>
       </div>
 
-      {/* Run All Diagnostics + Export */}
+      {/* Core diagnostics + export */}
       <div className="diag-batch-section">
         <div className="diag-batch-actions">
           <button
@@ -348,7 +359,7 @@ export default function Dashboard({ onNavigate }: Props) {
             onClick={handleRunDiag}
             disabled={diagRunning}
           >
-            {diagRunning ? "Running Diagnostics..." : "Run All Diagnostics"}
+            {diagRunning ? "Running Diagnostics..." : "Run Core Diagnostics"}
           </button>
           <button
             className="export-btn"
@@ -433,13 +444,18 @@ export default function Dashboard({ onNavigate }: Props) {
             ))}
           </div>
           {presetResult && (
-            <div className="preset-result">
+            <div className="preset-result" role={presetResult.success ? "status" : "alert"}>
               <span className="preset-result-icon">
                 {presetResult.failed === 0 ? "✔" : "⚠"}
               </span>
               <span>
                 {presetResult.succeeded} of {presetResult.total} actions applied
                 {presetResult.failed > 0 && ` (${presetResult.failed} failed)`}
+                {presetResult.results.filter((r) => !r.success).map((r) => (
+                  <span key={r.action_id} className="preset-failure-detail">
+                    {r.display_name}: {r.message}
+                  </span>
+                ))}
               </span>
             </div>
           )}

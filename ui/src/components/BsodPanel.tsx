@@ -20,8 +20,11 @@ export default function BsodPanel() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    invoke<BsodDump[]>("get_bsod_dumps")
-      .then(setDumps)
+    invoke<{ complete: boolean; error: string | null; scanned_paths: string[]; dumps: BsodDump[] }>("get_bsod_dumps")
+      .then((result) => {
+        setDumps(result.dumps);
+        if (!result.complete) setError(result.error || "Crash dump scan was incomplete.");
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);

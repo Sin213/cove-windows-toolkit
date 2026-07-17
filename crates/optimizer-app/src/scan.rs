@@ -34,15 +34,15 @@ struct FinishGuard<'a>(&'a str);
 impl Drop for FinishGuard<'_> {
     fn drop(&mut self) {
         let mut g = scans().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(p) = g.get_mut(self.0) {
-            if p.running {
-                p.running = false;
-                p.done = true;
-                p.success = false;
-                p.phase = "Failed (internal error)".into();
-                if p.summary.is_empty() {
-                    p.summary = "The scan ended unexpectedly.".into();
-                }
+        if let Some(p) = g.get_mut(self.0)
+            && p.running
+        {
+            p.running = false;
+            p.done = true;
+            p.success = false;
+            p.phase = "Failed (internal error)".into();
+            if p.summary.is_empty() {
+                p.summary = "The scan ended unexpectedly.".into();
             }
         }
     }
@@ -50,7 +50,12 @@ impl Drop for FinishGuard<'_> {
 
 #[tauri::command]
 pub fn get_scan_progress(tool: String) -> ScanProgress {
-    scans().lock().unwrap_or_else(|e| e.into_inner()).get(&tool).cloned().unwrap_or_default()
+    scans()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get(&tool)
+        .cloned()
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -60,10 +65,8 @@ pub fn start_scan(tool: String) -> serde_json::Value {
     }
     {
         let mut g = scans().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(p) = g.get(&tool) {
-            if p.running {
-                return serde_json::json!({ "success": false, "message": "A scan is already running." });
-            }
+        if g.values().any(|progress| progress.running) {
+            return serde_json::json!({ "success": false, "message": "Another Windows servicing operation is already running." });
         }
         g.insert(
             tool.clone(),
@@ -101,8 +104,15 @@ fn run_scan_thread(key: &str) {
             let d = run_one("dism", key, 0.0, 0.5, "DISM");
             let s = run_one("sfc", key, 50.0, 0.5, "SFC");
             let success = d.0 && s.0;
-            let summary = format!("DISM — {}   ·   SFC — {}", d.2, s.2);
-            finish(key, success, s.1, &summary, s.3);
+            let summary = format!(
+                "DISM (exit {}) — {} · SFC (exit {}) — {}",
+                d.1, d.2, s.1, s.2
+            );
+            let mut lines = vec![format!("DISM exit code: {}", d.1)];
+            lines.extend(d.3);
+            lines.push(format!("SFC exit code: {}", s.1));
+            lines.extend(s.3);
+            finish(key, success, if d.0 { s.1 } else { d.1 }, &summary, lines);
         }
         _ => {}
     }
@@ -113,8 +123,14 @@ fn run_scan_thread(key: &str) {
 /// run). Using a ConPTY makes SFC/DISM emit their normal smooth console progress
 /// (they suppress it when stdout is a plain redirected pipe).
 #[cfg(target_os = "windows")]
-fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, i32, String, Vec<String>) {
-    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+fn run_one(
+    tool: &str,
+    key: &str,
+    base: f32,
+    scale: f32,
+    label: &str,
+) -> (bool, i32, String, Vec<String>) {
+    use portable_pty::{CommandBuilder, PtySize, native_pty_system};
     use std::io::Read;
 
     let (exe_name, args): (&str, &[&str]) = match tool {
@@ -128,7 +144,12 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
     let program = format!("{}\\System32\\{}", sysroot, exe_name);
 
     let sys = native_pty_system();
-    let pair = match sys.openpty(PtySize { rows: 50, cols: 220, pixel_width: 0, pixel_height: 0 }) {
+    let pair = match sys.openpty(PtySize {
+        rows: 50,
+        cols: 220,
+        pixel_width: 0,
+        pixel_height: 0,
+    }) {
         Ok(p) => p,
         Err(e) => return (false, -1, format!("PTY error: {}", e), Vec::new()),
     };
@@ -139,7 +160,14 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
     }
     let mut child = match pair.slave.spawn_command(cmd) {
         Ok(c) => c,
-        Err(e) => return (false, -1, format!("Failed to start {}: {}", program, e), Vec::new()),
+        Err(e) => {
+            return (
+                false,
+                -1,
+                format!("Failed to start {}: {}", program, e),
+                Vec::new(),
+            );
+        }
     };
     let reader = match pair.master.try_clone_reader() {
         Ok(r) => r,
@@ -191,9 +219,24 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
         }
     });
 
-    let status = child.wait();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60);
+    let mut timed_out = false;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(500))
+            }
+            Ok(None) => {
+                timed_out = true;
+                let _ = child.kill();
+                break child.wait();
+            }
+            Err(error) => break Err(error),
+        }
+    };
     let code = status.as_ref().map(|s| s.exit_code() as i32).unwrap_or(-1);
-    let success = status.as_ref().map(|s| s.success()).unwrap_or(false);
+    let success = status.as_ref().map(|s| s.success()).unwrap_or(false) && !timed_out;
     drop(pair.master); // closes the ConPTY -> the reader thread sees EOF
     let _ = reader_thread.join();
 
@@ -208,7 +251,13 @@ fn run_one(tool: &str, key: &str, base: f32, scale: f32, label: &str) -> (bool, 
 
 #[cfg(not(target_os = "windows"))]
 fn run_scan_thread(key: &str) {
-    finish(key, true, 0, "[stub] scan completed (not on Windows).", vec!["[stub] scan output".into()]);
+    finish(
+        key,
+        true,
+        0,
+        "[stub] scan completed (not on Windows).",
+        vec!["[stub] scan output".into()],
+    );
 }
 
 /// Strip ANSI/VT escape sequences (cursor moves, colors, OSC) and NULs, leaving
@@ -251,7 +300,7 @@ fn strip_vt(s: &str) -> String {
 }
 
 fn split_lines(text: &str) -> Vec<String> {
-    text.split(|c| c == '\r' || c == '\n')
+    text.split(['\r', '\n'])
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
@@ -272,14 +321,17 @@ fn last_percent(text: &str) -> Option<f32> {
             if p.is_ascii_digit() {
                 seen_digit = true;
                 j -= 1;
-            } else if p == '.' && seen_digit {
+            } else if (p == '.' || p == ',') && seen_digit {
                 j -= 1;
             } else {
                 break;
             }
         }
         if seen_digit {
-            let s: String = chars[j..i].iter().collect();
+            let s: String = chars[j..i]
+                .iter()
+                .map(|c| if *c == ',' { '.' } else { *c })
+                .collect();
             if let Ok(v) = s.parse::<f32>() {
                 last = Some(v);
             }
@@ -294,7 +346,14 @@ fn update(key: &str, text: &str, base: f32, scale: f32, label: &str) {
     let line = segs.last().cloned().unwrap_or_default();
     // Parse the percent from only the most recent lines, not the whole 16 KB
     // window, so a stale higher percentage can't make the bar jump/stick.
-    let recent = segs.iter().rev().take(3).rev().cloned().collect::<Vec<_>>().join("\n");
+    let recent = segs
+        .iter()
+        .rev()
+        .take(3)
+        .rev()
+        .cloned()
+        .collect::<Vec<_>>()
+        .join("\n");
     let pct = last_percent(&recent);
     let mut g = scans().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(p) = g.get_mut(key) {
@@ -306,7 +365,11 @@ fn update(key: &str, text: &str, base: f32, scale: f32, label: &str) {
             }
         }
         if !line.is_empty() {
-            p.phase = if label.is_empty() { line } else { format!("{} · {}", label, line) };
+            p.phase = if label.is_empty() {
+                line
+            } else {
+                format!("{} · {}", label, line)
+            };
         }
         p.output_tail = tail;
     }
@@ -328,7 +391,11 @@ fn finish(tool: &str, success: bool, code: i32, summary: &str, lines: Vec<String
     if !tail.is_empty() {
         p.output_tail = tail;
     }
-    p.phase = if success { "Completed".into() } else { "Finished with issues".into() };
+    p.phase = if success {
+        "Completed".into()
+    } else {
+        "Finished with issues".into()
+    };
 }
 
 fn summarize(tool: &str, output: &str, code: i32) -> String {
@@ -339,7 +406,8 @@ fn summarize(tool: &str, output: &str, code: i32) -> String {
         } else if lower.contains("successfully repaired") {
             "Corrupted files were found and successfully repaired.".into()
         } else if lower.contains("unable to fix") {
-            "Corrupted files found but could not be repaired. Run DISM first, then SFC again.".into()
+            "Corrupted files found but could not be repaired. Run DISM first, then SFC again."
+                .into()
         } else if code != 0 {
             format!("SFC finished with exit code {}.", code)
         } else {
@@ -354,10 +422,27 @@ fn summarize(tool: &str, output: &str, code: i32) -> String {
     {
         "Component store is healthy. No repairs needed.".into()
     } else if lower.contains("source files could not be found") {
-        "Corruption found but repair files are unavailable. Run Windows Update first, then retry.".into()
+        "Corruption found but repair files are unavailable. Run Windows Update first, then retry."
+            .into()
     } else if code != 0 {
         format!("DISM finished with exit code {}.", code)
     } else {
         "DISM scan completed.".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{last_percent, strip_vt};
+
+    #[test]
+    fn progress_parser_accepts_locale_decimal_separator() {
+        assert_eq!(last_percent("Verification 42,5% complete"), Some(42.5));
+        assert_eq!(last_percent("10%\n75.0%"), Some(75.0));
+    }
+
+    #[test]
+    fn terminal_control_sequences_are_removed() {
+        assert_eq!(strip_vt("\u{1b}[31mError\u{1b}[0m"), "Error");
     }
 }

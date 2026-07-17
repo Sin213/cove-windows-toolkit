@@ -11,6 +11,8 @@ interface VisualTweak {
   safety_tier: string;
   current_value: string | null;
   optimized_value: string;
+  applied: boolean;
+  can_undo: boolean;
 }
 
 export default function VisualPanel() {
@@ -23,7 +25,10 @@ export default function VisualPanel() {
 
   useEffect(() => {
     invoke<VisualTweak[]>("get_visual_tweaks")
-      .then(setTweaks)
+      .then((data) => {
+        setTweaks(data);
+        setApplied(Object.fromEntries(data.map((tweak) => [tweak.id, tweak.applied])));
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);

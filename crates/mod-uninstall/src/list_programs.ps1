@@ -7,16 +7,12 @@ $paths = @(
 )
 
 $programs = @()
-$seen = @{}
 
 foreach ($path in $paths) {
     $items = Get-ItemProperty $path -ErrorAction SilentlyContinue
     foreach ($item in $items) {
         $name = $item.DisplayName
         if (-not $name -or $name.Length -lt 2) { continue }
-        if ($seen[$name]) { continue }
-        $seen[$name] = $true
-
         $sizeBytes = 0
         if ($item.EstimatedSize) { $sizeBytes = [long]$item.EstimatedSize * 1024 }
 
@@ -39,6 +35,10 @@ foreach ($path in $paths) {
         $regKey = if ($item.PSPath) {
             $item.PSPath -replace '^Microsoft\.PowerShell\.Core\\Registry::', '' -replace '^HKEY_LOCAL_MACHINE', 'HKLM' -replace '^HKEY_CURRENT_USER', 'HKCU'
         } else { '' }
+
+        # Registry identity, not display name, distinguishes per-user/machine,
+        # x86/x64, and side-by-side installations with the same friendly name.
+        if (-not $regKey) { continue }
 
         $programs += @{
             name = $name

@@ -16,8 +16,8 @@ pub struct TempReport {
     pub lhm_status: String,
 }
 
-#[cfg(target_os = "windows")]
-mod windows {
+#[cfg(all(target_os = "windows", any()))]
+mod legacy_windows {
     use super::*;
 
     const LHM_ZIP: &[u8] = include_bytes!("../resources/LibreHardwareMonitor.zip");
@@ -50,8 +50,7 @@ mod windows {
 
     /// Message shown when the driver was just installed but CPU temps aren't
     /// readable yet (the fresh driver needs a restart to come up).
-    const RESTART_MSG: &str =
-        "CPU temperature driver (PawnIO) was just installed. Restart Cove to enable CPU temperature readings.";
+    const RESTART_MSG: &str = "CPU temperature driver (PawnIO) was just installed. Restart Cove to enable CPU temperature readings.";
 
     /// Install the bundled PawnIO driver if it isn't already present. Requires
     /// admin (the app ships with a requireAdministrator manifest). The silent
@@ -83,7 +82,11 @@ mod windows {
 
     fn lhm_dir() -> Option<std::path::PathBuf> {
         let local_app = std::env::var("LOCALAPPDATA").ok()?;
-        Some(std::path::PathBuf::from(local_app).join("CoveToolkit").join("lhm"))
+        Some(
+            std::path::PathBuf::from(local_app)
+                .join("CoveToolkit")
+                .join("lhm"),
+        )
     }
 
     fn extract_lhm_if_needed() -> Option<std::path::PathBuf> {
@@ -97,12 +100,12 @@ mod windows {
         std::fs::create_dir_all(&dir).ok()?;
 
         let output = optimizer_core::powershell(&format!(
-                "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
-                zip_path.display(),
-                dir.display()
-            ))
-            .output()
-            .ok()?;
+            "Expand-Archive -Path '{}' -DestinationPath '{}' -Force",
+            zip_path.display(),
+            dir.display()
+        ))
+        .output()
+        .ok()?;
 
         let _ = std::fs::remove_file(&zip_path);
 
@@ -114,7 +117,8 @@ mod windows {
     }
 
     fn build_sensor_script(lhm_dir: &str) -> String {
-        format!(r#"
+        format!(
+            r#"
 $ErrorActionPreference = 'Stop'
 $lhmDir = '{lhm_dir}'
 
@@ -161,7 +165,9 @@ foreach ($hw in $computer.Hardware) {{
 $computer.Close()
 
 @{{ readings = @($readings); warnings = @(); lhm_status = 'active' }} | ConvertTo-Json -Depth 3 -Compress
-"#, lhm_dir = lhm_dir)
+"#,
+            lhm_dir = lhm_dir
+        )
     }
 
     fn probe_lhm_dll() -> Result<TempReport, String> {
@@ -193,7 +199,11 @@ $computer.Close()
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("Sensor query failed (dir={}): {}", dir_str, stderr.trim()));
+            return Err(format!(
+                "Sensor query failed (dir={}): {}",
+                dir_str,
+                stderr.trim()
+            ));
         }
 
         let json = String::from_utf8_lossy(&output.stdout);
@@ -207,7 +217,10 @@ $computer.Close()
 
     fn probe_nvidia_smi() -> Vec<TempReading> {
         let out = optimizer_core::silent_cmd("nvidia-smi")
-            .args(["--query-gpu=temperature.gpu,name", "--format=csv,noheader,nounits"])
+            .args([
+                "--query-gpu=temperature.gpu,name",
+                "--format=csv,noheader,nounits",
+            ])
             .output();
         let output = match out {
             Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
@@ -248,12 +261,11 @@ $computer.Close()
             Ok(c) => c,
             Err(_) => return Vec::new(),
         };
-        let zones: Vec<AcpiThermalZone> = match conn.raw_query(
-            "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"
-        ) {
-            Ok(z) => z,
-            Err(_) => return Vec::new(),
-        };
+        let zones: Vec<AcpiThermalZone> =
+            match conn.raw_query("SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature") {
+                Ok(z) => z,
+                Err(_) => return Vec::new(),
+            };
 
         let mut readings = Vec::new();
         for z in &zones {
@@ -307,7 +319,9 @@ $computer.Close()
                 // Try fallbacks, but include the error so user can report it
                 let mut fallback = try_fallback_probes();
                 if fallback.readings.is_empty() {
-                    fallback.warnings.push(format!("Sensor library error: {}", e));
+                    fallback
+                        .warnings
+                        .push(format!("Sensor library error: {}", e));
                 }
                 if let Some(note) = cpu_note(&fallback.readings) {
                     fallback.warnings.push(note);
@@ -343,6 +357,94 @@ $computer.Close()
 }
 
 #[cfg(target_os = "windows")]
+mod windows {
+    use super::*;
+
+    fn round1(value: f64) -> f64 {
+        (value * 10.0).round() / 10.0
+    }
+
+    fn nvidia_readings() -> Vec<TempReading> {
+        let output = match optimizer_core::silent_cmd("nvidia-smi")
+            .args([
+                "--query-gpu=temperature.gpu,name",
+                "--format=csv,noheader,nounits",
+            ])
+            .output()
+        {
+            Ok(output) if output.status.success() => output,
+            _ => return Vec::new(),
+        };
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                let (temperature, name) = line.split_once(',')?;
+                let temperature_c = temperature.trim().parse::<f64>().ok()?;
+                Some(TempReading {
+                    sensor: name.trim().to_string(),
+                    category: "GPU".into(),
+                    temperature_c: round1(temperature_c),
+                    max_c: Some(93.0),
+                    critical_c: Some(100.0),
+                })
+            })
+            .collect()
+    }
+
+    fn acpi_readings() -> Vec<TempReading> {
+        use wmi::{COMLibrary, WMIConnection};
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct ThermalZone {
+            current_temperature: u32,
+        }
+
+        let Ok(com) = COMLibrary::new() else {
+            return Vec::new();
+        };
+        let Ok(connection) = WMIConnection::with_namespace_path("root\\wmi", com) else {
+            return Vec::new();
+        };
+        let Ok(zones): Result<Vec<ThermalZone>, _> =
+            connection.raw_query("SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature")
+        else {
+            return Vec::new();
+        };
+        zones
+            .into_iter()
+            .filter_map(|zone| {
+                let temperature_c = round1((f64::from(zone.current_temperature) - 2732.0) / 10.0);
+                (temperature_c > 0.0 && temperature_c < 150.0).then_some(TempReading {
+                    sensor: "ACPI thermal zone".into(),
+                    category: "System".into(),
+                    temperature_c,
+                    max_c: None,
+                    critical_c: None,
+                })
+            })
+            .collect()
+    }
+
+    pub fn collect_temps_impl() -> TempReport {
+        let mut readings = nvidia_readings();
+        readings.extend(acpi_readings());
+        let mut warnings = vec![
+            "CPU sensor provider is not installed. Cove does not install kernel drivers during diagnostics."
+                .into(),
+        ];
+        if readings.is_empty() {
+            warnings.push("No read-only temperature sensors were available.".into());
+        }
+        TempReport {
+            readings,
+            warnings,
+            lhm_status: "optional-provider-missing".into(),
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 pub fn collect_temps() -> TempReport {
     windows::collect_temps_impl()
 }
@@ -351,15 +453,69 @@ pub fn collect_temps() -> TempReport {
 pub fn collect_temps() -> TempReport {
     TempReport {
         readings: vec![
-            TempReading { sensor: "CPU Package".into(), category: "CPU".into(), temperature_c: 52.0, max_c: Some(100.0), critical_c: Some(105.0) },
-            TempReading { sensor: "CPU Core #0".into(), category: "CPU".into(), temperature_c: 48.0, max_c: Some(100.0), critical_c: Some(105.0) },
-            TempReading { sensor: "CPU Core #1".into(), category: "CPU".into(), temperature_c: 51.0, max_c: Some(100.0), critical_c: Some(105.0) },
-            TempReading { sensor: "CPU Core #2".into(), category: "CPU".into(), temperature_c: 49.0, max_c: Some(100.0), critical_c: Some(105.0) },
-            TempReading { sensor: "CPU Core #3".into(), category: "CPU".into(), temperature_c: 53.0, max_c: Some(100.0), critical_c: Some(105.0) },
-            TempReading { sensor: "GPU Core".into(), category: "GPU".into(), temperature_c: 45.0, max_c: Some(93.0), critical_c: Some(100.0) },
-            TempReading { sensor: "GPU Hot Spot".into(), category: "GPU".into(), temperature_c: 58.0, max_c: Some(93.0), critical_c: Some(100.0) },
-            TempReading { sensor: "Samsung SSD 980 PRO".into(), category: "Disk".into(), temperature_c: 38.0, max_c: Some(70.0), critical_c: Some(75.0) },
-            TempReading { sensor: "WD Blue SN570".into(), category: "Disk".into(), temperature_c: 35.0, max_c: Some(70.0), critical_c: Some(75.0) },
+            TempReading {
+                sensor: "CPU Package".into(),
+                category: "CPU".into(),
+                temperature_c: 52.0,
+                max_c: Some(100.0),
+                critical_c: Some(105.0),
+            },
+            TempReading {
+                sensor: "CPU Core #0".into(),
+                category: "CPU".into(),
+                temperature_c: 48.0,
+                max_c: Some(100.0),
+                critical_c: Some(105.0),
+            },
+            TempReading {
+                sensor: "CPU Core #1".into(),
+                category: "CPU".into(),
+                temperature_c: 51.0,
+                max_c: Some(100.0),
+                critical_c: Some(105.0),
+            },
+            TempReading {
+                sensor: "CPU Core #2".into(),
+                category: "CPU".into(),
+                temperature_c: 49.0,
+                max_c: Some(100.0),
+                critical_c: Some(105.0),
+            },
+            TempReading {
+                sensor: "CPU Core #3".into(),
+                category: "CPU".into(),
+                temperature_c: 53.0,
+                max_c: Some(100.0),
+                critical_c: Some(105.0),
+            },
+            TempReading {
+                sensor: "GPU Core".into(),
+                category: "GPU".into(),
+                temperature_c: 45.0,
+                max_c: Some(93.0),
+                critical_c: Some(100.0),
+            },
+            TempReading {
+                sensor: "GPU Hot Spot".into(),
+                category: "GPU".into(),
+                temperature_c: 58.0,
+                max_c: Some(93.0),
+                critical_c: Some(100.0),
+            },
+            TempReading {
+                sensor: "Samsung SSD 980 PRO".into(),
+                category: "Disk".into(),
+                temperature_c: 38.0,
+                max_c: Some(70.0),
+                critical_c: Some(75.0),
+            },
+            TempReading {
+                sensor: "WD Blue SN570".into(),
+                category: "Disk".into(),
+                temperature_c: 35.0,
+                max_c: Some(70.0),
+                critical_c: Some(75.0),
+            },
         ],
         warnings: Vec::new(),
         lhm_status: "active".into(),

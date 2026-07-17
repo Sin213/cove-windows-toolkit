@@ -35,7 +35,10 @@ export default function ServicesPanel() {
 
   useEffect(() => {
     invoke<ServicesData>("get_services_tweaks")
-      .then(setData)
+      .then((response) => {
+        setData(response);
+        setApplied(Object.fromEntries([...response.conservative, ...response.advanced].map((item) => [item.id, item.current === item.optimized])));
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -45,6 +48,10 @@ export default function ServicesPanel() {
       const res = await invoke<{ success: boolean; message?: string }>("apply_service_change", { id: svc.id });
       if (res.success) {
         setApplied((s) => ({ ...s, [svc.id]: true }));
+        setData((current) => current ? {
+          conservative: current.conservative.map((item) => item.id === svc.id ? { ...item, current: item.optimized } : item),
+          advanced: current.advanced.map((item) => item.id === svc.id ? { ...item, current: item.optimized } : item),
+        } : current);
       } else {
         setError(res.message || "Service change failed.");
       }

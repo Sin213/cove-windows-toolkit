@@ -8,16 +8,17 @@ interface DiffChanges {
   new_programs: string[];
   removed_programs: string[];
   new_bloatware: string[];
-  health_score_change: number;
-  disk_free_change: number;
-  temp_size_change: number;
-  critical_event_change: number;
-  warning_event_change: number;
+  health_score_change: number | null;
+  disk_free_change: number | null;
+  temp_size_change: number | null;
+  critical_event_change: number | null;
+  warning_event_change: number | null;
 }
 
 interface DiffData {
   has_previous: boolean;
   previous_timestamp?: string;
+  error?: string;
   changes?: DiffChanges;
 }
 
@@ -29,11 +30,14 @@ function formatBytes(b: number): string {
 }
 
 function formatTimestamp(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
+  const value = new Date(iso);
+  return Number.isNaN(value.getTime()) ? "Unknown" : value.toLocaleString();
+}
+
+function metric(value: number | null, formatter: (value: number) => string = String): string {
+  if (value === null) return "Unknown";
+  if (value === 0) return "No change";
+  return `${value > 0 ? "+" : ""}${formatter(value)}`;
 }
 
 export default function DiffPanel() {
@@ -52,11 +56,15 @@ export default function DiffPanel() {
 
   const handleSnapshot = async () => {
     setSnapping(true);
+    setError(null);
     try {
-      await invoke("take_snapshot");
+      const result = await invoke<{ success: boolean; message?: string }>("take_snapshot");
+      if (!result.success) throw new Error(result.message || "Snapshot save failed.");
       setSnapDone(true);
+      setData(await invoke<DiffData>("get_machine_diff"));
     } catch (e) {
       console.error("Snapshot failed:", e);
+      setError(String(e));
     } finally {
       setSnapping(false);
     }
@@ -72,7 +80,7 @@ export default function DiffPanel() {
         <div className="diff-first-visit">
           <div className="diff-first-visit-icon">📋</div>
           <h2>First visit to this machine</h2>
-          <p>No previous snapshot found. A baseline snapshot will be saved when you run diagnostics or take a snapshot manually.</p>
+          <p>No previous snapshot found. Take a baseline snapshot manually to compare future machine state.</p>
           <button className="diff-snapshot-btn" onClick={handleSnapshot} disabled={snapping || snapDone}>
             {snapDone ? "Snapshot Saved" : snapping ? "Saving..." : "Take Baseline Snapshot"}
           </button>
@@ -86,28 +94,28 @@ export default function DiffPanel() {
   const metrics: { label: string; value: string; direction: "positive" | "negative" | "neutral" }[] = [
     {
       label: "Health Score",
-      value: c.health_score_change === 0 ? "No change" : `${c.health_score_change > 0 ? "+" : ""}${c.health_score_change}`,
-      direction: c.health_score_change > 0 ? "positive" : c.health_score_change < 0 ? "negative" : "neutral",
+      value: metric(c.health_score_change),
+      direction: c.health_score_change !== null && c.health_score_change > 0 ? "positive" : c.health_score_change !== null && c.health_score_change < 0 ? "negative" : "neutral",
     },
     {
       label: "Free Disk Space",
-      value: c.disk_free_change === 0 ? "No change" : `${c.disk_free_change > 0 ? "+" : ""}${formatBytes(c.disk_free_change)}`,
-      direction: c.disk_free_change > 0 ? "positive" : c.disk_free_change < 0 ? "negative" : "neutral",
+      value: metric(c.disk_free_change, formatBytes),
+      direction: c.disk_free_change !== null && c.disk_free_change > 0 ? "positive" : c.disk_free_change !== null && c.disk_free_change < 0 ? "negative" : "neutral",
     },
     {
       label: "Temp File Size",
-      value: c.temp_size_change === 0 ? "No change" : `${c.temp_size_change > 0 ? "+" : ""}${formatBytes(c.temp_size_change)}`,
-      direction: c.temp_size_change > 0 ? "negative" : c.temp_size_change < 0 ? "positive" : "neutral",
+      value: metric(c.temp_size_change, formatBytes),
+      direction: c.temp_size_change !== null && c.temp_size_change > 0 ? "negative" : c.temp_size_change !== null && c.temp_size_change < 0 ? "positive" : "neutral",
     },
     {
       label: "Critical Events",
-      value: c.critical_event_change === 0 ? "No change" : `${c.critical_event_change > 0 ? "+" : ""}${c.critical_event_change}`,
-      direction: c.critical_event_change > 0 ? "negative" : c.critical_event_change < 0 ? "positive" : "neutral",
+      value: metric(c.critical_event_change),
+      direction: c.critical_event_change !== null && c.critical_event_change > 0 ? "negative" : c.critical_event_change !== null && c.critical_event_change < 0 ? "positive" : "neutral",
     },
     {
       label: "Warning Events",
-      value: c.warning_event_change === 0 ? "No change" : `${c.warning_event_change > 0 ? "+" : ""}${c.warning_event_change}`,
-      direction: c.warning_event_change > 0 ? "negative" : c.warning_event_change < 0 ? "positive" : "neutral",
+      value: metric(c.warning_event_change),
+      direction: c.warning_event_change !== null && c.warning_event_change > 0 ? "negative" : c.warning_event_change !== null && c.warning_event_change < 0 ? "positive" : "neutral",
     },
   ];
 

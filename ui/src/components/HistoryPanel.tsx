@@ -10,6 +10,7 @@ interface ChangeEntry {
   name: string;
   tier: string;
   status: string;
+  can_undo: boolean;
 }
 
 export default function HistoryPanel() {
@@ -17,6 +18,7 @@ export default function HistoryPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [undoing, setUndoing] = useState<Record<number, boolean>>({});
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<ChangeEntry[]>("get_change_history")
@@ -28,14 +30,16 @@ export default function HistoryPanel() {
   const handleUndo = async (entry: ChangeEntry) => {
     setUndoing((s) => ({ ...s, [entry.id]: true }));
     try {
-      const res = await invoke<{ success: boolean }>("undo_change", { id: entry.id });
+      setFeedback(null);
+      const res = await invoke<{ success: boolean; message?: string }>("undo_change", { id: entry.id });
       if (res.success) {
         setEntries((prev) =>
           prev.map((e) => (e.id === entry.id ? { ...e, status: "undone" } : e))
         );
       }
+      else setFeedback(res.message || "Undo failed.");
     } catch (e) {
-      console.error("Undo failed:", e);
+      setFeedback(`Undo failed: ${String(e)}`);
     } finally {
       setUndoing((s) => ({ ...s, [entry.id]: false }));
     }
@@ -57,6 +61,7 @@ export default function HistoryPanel() {
 
   return (
     <div className="history-panel">
+      {feedback && <div className="panel-error">{feedback}</div>}
       <div className="history-list">
         {entries.map((entry) => {
           const isUndone = entry.status === "undone";
@@ -86,7 +91,7 @@ export default function HistoryPanel() {
                 </div>
               </div>
               <div className="history-actions">
-                {!isUndone && entry.status === "committed" && (
+                {entry.can_undo && !isUndone && entry.status === "committed" && (
                   <button
                     className="undo-btn"
                     onClick={() => handleUndo(entry)}

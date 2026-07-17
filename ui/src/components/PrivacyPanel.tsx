@@ -41,7 +41,11 @@ export default function PrivacyPanel() {
 
   useEffect(() => {
     invoke<PrivacyData>("get_privacy_tweaks")
-      .then(setData)
+      .then((response) => {
+        setData(response);
+        const items = [...response.basic, ...response.standard, ...response.advanced];
+        setApplied(Object.fromEntries(items.map((item) => [item.id, item.current === item.optimized])));
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -57,6 +61,11 @@ export default function PrivacyPanel() {
       });
       if (res.success) {
         setApplied((s) => ({ ...s, [tweak.id]: true }));
+        setData((current) => current ? {
+          basic: current.basic.map((item) => item.id === tweak.id ? { ...item, current: item.optimized } : item),
+          standard: current.standard.map((item) => item.id === tweak.id ? { ...item, current: item.optimized } : item),
+          advanced: current.advanced.map((item) => item.id === tweak.id ? { ...item, current: item.optimized } : item),
+        } : current);
       } else {
         setError(res.message || "Failed to apply tweak.");
       }
