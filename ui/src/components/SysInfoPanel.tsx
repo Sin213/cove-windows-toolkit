@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import { openExternal } from "../lib/openExternal";
+import Icon from "./Icon";
 import "./SysInfoPanel.css";
 
 interface OsInfo { name: string; version: string; build: string; arch: string; install_date: string; last_boot: string; }
 interface CpuInfo { name: string; cores: number; threads: number; base_clock_mhz: number; max_clock_mhz: number; architecture: string; temperature_c: number | null; }
 interface RamModule { capacity_bytes: number; speed_mhz: number; manufacturer: string; part_number: string; slot: string; }
 interface RamInfo { total_bytes: number; available_bytes: number; speed_mhz: number; slots_used: number; slots_total: number; ram_type: string; modules: RamModule[]; }
-interface MotherboardInfo { manufacturer: string; product: string; serial: string; bios_vendor: string; bios_version: string; bios_date: string; }
+interface MotherboardInfo { manufacturer: string; product: string; serial: string; bios_vendor: string; bios_version: string; bios_date: string; product_url?: string | null; }
 interface GpuInfo { name: string; driver_version: string; vram_bytes: number; status: string; }
 interface MonitorInfo { name: string; resolution: string; }
 interface PartitionInfo { letter: string; label: string; size_bytes: number; free_bytes: number; filesystem: string; }
@@ -109,7 +111,31 @@ export default function SysInfoPanel() {
   );
 }
 
-function Row({ label, value, color }: { label: string; value: string; color?: string }) {
+function MoboProductLink({ product, url }: { product: string; url: string }) {
+  const [error, setError] = useState<string | null>(null);
+  const handleClick = async () => {
+    setError(null);
+    const res = await openExternal(url);
+    if (!res.ok) setError(res.message);
+  };
+  return (
+    <span className="mobo-link-wrap">
+      <button
+        type="button"
+        className="mobo-link"
+        onClick={handleClick}
+        title={url}
+        aria-label={`Open the ${product} product page in your browser`}
+      >
+        {product}
+        <Icon name="external-link" size={11} className="mobo-link-icon" />
+      </button>
+      {error && <span role="alert" className="mobo-link-error">{error}</span>}
+    </span>
+  );
+}
+
+function Row({ label, value, color }: { label: string; value: React.ReactNode; color?: string }) {
   return (
     <div className="info-row">
       <span className="info-label">{label}</span>
@@ -149,7 +175,12 @@ function SummaryView({ info }: { info: FullSystemInfo }) {
         <div className="summary-sub">{info.ram.ram_type} {info.ram.speed_mhz} MT/s - {info.ram.slots_used}/{info.ram.slots_total} slots</div>
       </SectionCard>
       <SectionCard title="Motherboard" icon="▣">
-        <div className="summary-value">{info.motherboard.manufacturer} {info.motherboard.product}</div>
+        <div className="summary-value">
+          {info.motherboard.manufacturer}{" "}
+          {info.motherboard.product_url
+            ? <MoboProductLink product={info.motherboard.product} url={info.motherboard.product_url} />
+            : info.motherboard.product}
+        </div>
       </SectionCard>
       <SectionCard title="Graphics" icon="🖵">
         {info.graphics.map((g, i) => (
@@ -240,7 +271,12 @@ function MoboView({ mb }: { mb: MotherboardInfo }) {
   return (
     <div className="detail-section">
       <Row label="Manufacturer" value={mb.manufacturer} />
-      <Row label="Model" value={mb.product} />
+      <Row
+        label="Model"
+        value={mb.product_url
+          ? <MoboProductLink product={mb.product} url={mb.product_url} />
+          : mb.product}
+      />
       <Row label="Serial" value={mb.serial} />
       <div className="subsection-title">BIOS</div>
       <Row label="Vendor" value={mb.bios_vendor} />
