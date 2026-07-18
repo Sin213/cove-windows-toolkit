@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+mod link;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FullSystemInfo {
     #[serde(default)]
@@ -66,6 +68,8 @@ pub struct MotherboardInfo {
     pub bios_vendor: String,
     pub bios_version: String,
     pub bios_date: String,
+    #[serde(default)]
+    pub product_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -121,7 +125,10 @@ pub struct NetworkAdapter {
 pub fn collect() -> FullSystemInfo {
     let json = run_ps(include_str!("gather.ps1"));
     match serde_json::from_str::<FullSystemInfo>(&json) {
-        Ok(info) => info,
+        Ok(mut info) => {
+            enrich(&mut info);
+            info
+        }
         Err(e) => {
             eprintln!("sysinfo parse error: {e}\n{json}");
             FullSystemInfo {
@@ -135,7 +142,15 @@ pub fn collect() -> FullSystemInfo {
 
 #[cfg(not(target_os = "windows"))]
 pub fn collect() -> FullSystemInfo {
-    stub_info()
+    let mut info = stub_info();
+    enrich(&mut info);
+    info
+}
+
+/// Post-processing applied to collected data on every platform.
+fn enrich(info: &mut FullSystemInfo) {
+    info.motherboard.product_url =
+        link::motherboard_product_url(&info.motherboard.manufacturer, &info.motherboard.product);
 }
 
 #[cfg(target_os = "windows")]
@@ -194,12 +209,13 @@ fn stub_info() -> FullSystemInfo {
             ],
         },
         motherboard: MotherboardInfo {
-            manufacturer: "ASUS".into(),
-            product: "ROG STRIX Z690-A".into(),
+            manufacturer: "ASUSTeK COMPUTER INC.".into(),
+            product: "PRIME B650M-A AX6 II".into(),
             serial: "XXXXXXXXXXXX".into(),
             bios_vendor: "American Megatrends Inc.".into(),
-            bios_version: "2103".into(),
+            bios_version: "3067".into(),
             bios_date: "2025-08-15".into(),
+            product_url: None,
         },
         graphics: vec![GpuInfo {
             name: "NVIDIA GeForce RTX 3070".into(),
@@ -256,5 +272,48 @@ fn stub_info() -> FullSystemInfo {
                 status: "Disconnected".into(),
             },
         ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn motherboard_deserializes_without_product_url() {
+        // Shape of the object gather.ps1 emits: no product_url field.
+        let json = r#"{
+            "manufacturer": "ASUSTeK COMPUTER INC.",
+            "product": "PRIME B650M-A AX6 II",
+            "serial": "123",
+            "bios_vendor": "American Megatrends Inc.",
+            "bios_version": "3067",
+            "bios_date": "2025-08-15"
+        }"#;
+        let mb: MotherboardInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(mb.product_url, None);
+    }
+
+    #[test]
+    fn motherboard_serializes_none_as_null() {
+        let v = serde_json::to_value(MotherboardInfo::default()).unwrap();
+        assert!(v["product_url"].is_null());
+    }
+
+    #[test]
+    fn full_sysinfo_roundtrip_with_product_url() {
+        let info = FullSystemInfo {
+            motherboard: MotherboardInfo {
+                product_url: Some("https://example.com/board/".to_string()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&info).unwrap();
+        let back: FullSystemInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            back.motherboard.product_url.as_deref(),
+            Some("https://example.com/board/")
+        );
     }
 }
