@@ -41,11 +41,11 @@ const TOOLS: ToolEntry[] = [
     description: "Configurable Windows RAM stress test for detecting memory errors and unstable timings.",
   },
   {
-    id: "malwarebytes",
-    name: "Malwarebytes",
-    category: "Malware removal",
-    url: "https://www.malwarebytes.com/mwb-download",
-    description: "Malware scanning and removal utility for finding threats and potentially unwanted programs.",
+    id: "adwcleaner",
+    name: "AdwCleaner",
+    category: "Adware removal",
+    url: "https://www.malwarebytes.com/adwcleaner",
+    description: "Portable adware and PUP cleaner that removes unwanted toolbars, browser hijackers, and bundled junk software.",
   },
 ];
 
