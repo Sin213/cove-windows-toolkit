@@ -11,7 +11,7 @@ Grab the latest build from the [Releases page](https://github.com/Sin213/cove-wi
 - **`Cove-Windows-Toolkit-{version}-Setup.exe`** - guided installer with a Start-menu shortcut and uninstaller.
 - **`Cove-Windows-Toolkit-{version}-Portable.exe`** - single file, no install; just run it.
 
-Requires Windows 10/11. The app runs elevated (administrator) - accept the UAC prompt so diagnostics and repairs can reach system data. Optionally verify your download against `checksums-sha256.txt`.
+Requires Windows 10/11. The app runs elevated (administrator) - accept the UAC prompt so diagnostics and repairs can reach system data. Optionally verify your download against each artifact's `.sha256` sidecar file.
 
 ## What It Does
 
@@ -39,7 +39,8 @@ Requires Windows 10/11. The app runs elevated (administrator) - accept the UAC p
 **System Tools:**
 - Deep uninstaller with leftover scanning
 - Bloatware removal
-- Full system info (Speccy-style)
+- Full system info (Speccy-style), with recognized motherboard models linking to the manufacturer's product page
+- Tools tab with curated links to trusted third-party utilities (OCCT, Prime95, FurMark, TestMem5, MemTest86, HWiNFO, CPU-Z, GPU-Z, Display Driver Uninstaller, AdwCleaner) - links only, nothing is downloaded or installed by Cove
 - DISM / SFC repair
 - System restore management
 - What Changed diff (compare machine state between visits)
