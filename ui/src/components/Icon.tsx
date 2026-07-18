@@ -176,6 +176,21 @@ const ICON_PATHS: Record<string, ReactNode> = {
     </>
   ),
   spark: <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />,
+  tools: (
+    <>
+      <rect x="3" y="8" width="18" height="12" rx="2" />
+      <path d="M9 8V6a3 3 0 0 1 6 0v2" />
+      <path d="M3 13h7M14 13h7" />
+      <rect x="10" y="11.5" width="4" height="3" rx="0.8" />
+    </>
+  ),
+  "external-link": (
+    <>
+      <path d="M14 4h6v6" />
+      <path d="M20 4l-9 9" />
+      <path d="M19 13.5V18a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4.5" />
+    </>
+  ),
 };
 
 interface IconProps {

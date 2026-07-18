@@ -797,7 +797,12 @@ const MOCKS: Record<string, unknown> = {
       { capacity_bytes: 17179869184, speed_mhz: 3200, manufacturer: "Corsair", part_number: "CMK32GX4M2E3200C16", slot: "DIMM 1" },
       { capacity_bytes: 17179869184, speed_mhz: 3200, manufacturer: "Corsair", part_number: "CMK32GX4M2E3200C16", slot: "DIMM 3" },
     ]},
-    motherboard: { manufacturer: "ASUS", product: "ROG STRIX Z690-A", serial: "XXXXXXXXXXXX", bios_vendor: "American Megatrends Inc.", bios_version: "2103", bios_date: "2025-08-15" },
+    motherboard: {
+      manufacturer: "ASUSTeK COMPUTER INC.", product: "PRIME B650M-A AX6 II",
+      serial: "XXXXXXXXXXXX", bios_vendor: "American Megatrends Inc.",
+      bios_version: "3067", bios_date: "2025-08-15",
+      product_url: "https://www.asus.com/motherboards-components/motherboards/prime/prime-b650m-a-ax6-ii/",
+    },
     graphics: [{ name: "NVIDIA GeForce RTX 3070", driver_version: "537.70", vram_bytes: 8589934592, status: "OK" }],
     monitors: [{ name: "Generic PnP Monitor", resolution: "2560x1440@165Hz" }],
     storage: [{ model: "Samsung SSD 980 PRO 1TB", interface_type: "NVMe", media_type: "SSD", size_bytes: 1000204886016, status: "OK", partitions: [
