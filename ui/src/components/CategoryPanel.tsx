@@ -25,6 +25,7 @@ import DiffPanel from "./DiffPanel";
 import SecurityPanel from "./SecurityPanel";
 import RuntimesPanel from "./RuntimesPanel";
 import DiskHealthPanel from "./DiskHealthPanel";
+import ToolsPanel from "./ToolsPanel";
 
 interface Props {
   view: View;
@@ -139,6 +140,10 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     title: "Change History",
     description: "View and undo all changes made by the optimizer.",
   },
+  tools: {
+    title: "Tools",
+    description: "Trusted third-party stress-testing and diagnostic utilities. Links open the official vendor site in your browser.",
+  },
 };
 
 const PANELS: Record<string, React.ComponentType> = {
@@ -165,6 +170,7 @@ const PANELS: Record<string, React.ComponentType> = {
   diskhealth: DiskHealthPanel,
   diff: DiffPanel,
   history: HistoryPanel,
+  tools: ToolsPanel,
 };
 
 export default function CategoryPanel({ view, onBack }: Props) {

@@ -18,6 +18,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: "⌂", section: "system" },
+  { id: "tools", label: "Tools", icon: "🛠", section: "system" },
   { id: "performance", label: "Performance", icon: "⏱", section: "optimize" },
   { id: "visual", label: "Visual Effects", icon: "◑", section: "optimize" },
   { id: "privacy", label: "Privacy", icon: "◉", section: "optimize" },

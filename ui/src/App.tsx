@@ -7,6 +7,7 @@ import CategoryPanel from "./components/CategoryPanel";
 
 export type View =
   | "dashboard"
+  | "tools"
   | "visual"
   | "privacy"
   | "services"
