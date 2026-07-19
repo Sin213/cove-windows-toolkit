@@ -91,15 +91,17 @@ jobs:
           $bundlePath = "target/release/bundle"
 
           # NSIS installer
-          $nsis = Get-ChildItem -Path "$bundlePath/nsis" -Filter "*.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($nsis) {
-            Copy-Item $nsis.FullName "release/Cove-Windows-Toolkit-$env:VERSION-Setup.exe"
+          $nsis = Join-Path $bundlePath "nsis/Cove Windows Toolkit_$($env:VERSION)_x64-setup.exe"
+          if (-not (Test-Path -LiteralPath $nsis)) {
+            throw "Expected NSIS installer was not produced: $nsis"
           }
+          Copy-Item -LiteralPath $nsis -Destination "release/Cove-Windows-Toolkit-$env:VERSION-Setup.exe"
 
           $exe = "target/release/optimizer-app.exe"
-          if (Test-Path $exe) {
-            Copy-Item $exe "release/Cove-Windows-Toolkit-$env:VERSION-Portable.exe"
+          if (-not (Test-Path -LiteralPath $exe)) {
+            throw "Expected portable executable was not produced: $exe"
           }
+          Copy-Item -LiteralPath $exe -Destination "release/Cove-Windows-Toolkit-$env:VERSION-Portable.exe"
 
           Get-ChildItem release/
 
@@ -107,14 +109,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-setup
-          path: release/*-Setup.exe
+          path: release/Cove-Windows-Toolkit-${{ env.VERSION }}-Setup.exe
           if-no-files-found: error
 
       - name: Upload Portable exe
         uses: actions/upload-artifact@v4
         with:
           name: windows-portable
-          path: release/*-Portable.exe
+          path: release/Cove-Windows-Toolkit-${{ env.VERSION }}-Portable.exe
           if-no-files-found: error
 
   publish-release:
@@ -132,9 +134,13 @@ jobs:
       - name: Collect release assets
         run: |
           mkdir -p release
-          find artifacts -type f \( -name '*-Setup.exe' -o -name '*-Portable.exe' \) -exec cp {} release/ \;
+          setup="artifacts/windows-setup/Cove-Windows-Toolkit-${VERSION}-Setup.exe"
+          portable="artifacts/windows-portable/Cove-Windows-Toolkit-${VERSION}-Portable.exe"
+          test -f "$setup"
+          test -f "$portable"
+          cp "$setup" "$portable" release/
           cd release
-          for file in *.exe; do
+          for file in "Cove-Windows-Toolkit-${VERSION}-Setup.exe" "Cove-Windows-Toolkit-${VERSION}-Portable.exe"; do
             sha256sum "$file" > "$file.sha256"
           done
 

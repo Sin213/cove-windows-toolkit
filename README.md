@@ -138,7 +138,7 @@ Or run manually from the Actions tab with a version number.
 Each release includes:
 - `Cove-Windows-Toolkit-{version}-Setup.exe` - NSIS installer
 - `Cove-Windows-Toolkit-{version}-Portable.exe` - Single-file portable
-- `checksums-sha256.txt` - SHA256 verification
+- A matching `.sha256` sidecar for each executable
 
 ## Tech Stack
 
