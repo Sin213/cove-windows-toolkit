@@ -1839,7 +1839,7 @@ dependencies = [
 
 [[package]]
 name = "mod-bloatware"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1848,7 +1848,7 @@ dependencies = [
 
 [[package]]
 name = "mod-bsod"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1857,7 +1857,7 @@ dependencies = [
 
 [[package]]
 name = "mod-cleanup"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "directories",
  "optimizer-core",
@@ -1867,7 +1867,7 @@ dependencies = [
 
 [[package]]
 name = "mod-diskhealth"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1876,7 +1876,7 @@ dependencies = [
 
 [[package]]
 name = "mod-drivers"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1885,7 +1885,7 @@ dependencies = [
 
 [[package]]
 name = "mod-eventlog"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1894,7 +1894,7 @@ dependencies = [
 
 [[package]]
 name = "mod-health"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1903,7 +1903,7 @@ dependencies = [
 
 [[package]]
 name = "mod-netdiag"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1912,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "mod-network"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1921,7 +1921,7 @@ dependencies = [
 
 [[package]]
 name = "mod-performance"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1930,7 +1930,7 @@ dependencies = [
 
 [[package]]
 name = "mod-power"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1939,7 +1939,7 @@ dependencies = [
 
 [[package]]
 name = "mod-privacy"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1948,7 +1948,7 @@ dependencies = [
 
 [[package]]
 name = "mod-report"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -1958,7 +1958,7 @@ dependencies = [
 
 [[package]]
 name = "mod-restore"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -1968,7 +1968,7 @@ dependencies = [
 
 [[package]]
 name = "mod-runtimes"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1977,7 +1977,7 @@ dependencies = [
 
 [[package]]
 name = "mod-security"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1986,7 +1986,7 @@ dependencies = [
 
 [[package]]
 name = "mod-services"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -1995,7 +1995,7 @@ dependencies = [
 
 [[package]]
 name = "mod-sfc"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2005,7 +2005,7 @@ dependencies = [
 
 [[package]]
 name = "mod-startup"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "mod-sysinfo"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2023,7 +2023,7 @@ dependencies = [
 
 [[package]]
 name = "mod-temps"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2033,7 +2033,7 @@ dependencies = [
 
 [[package]]
 name = "mod-uninstall"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2043,7 +2043,7 @@ dependencies = [
 
 [[package]]
 name = "mod-updates"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "chrono",
  "optimizer-core",
@@ -2053,7 +2053,7 @@ dependencies = [
 
 [[package]]
 name = "mod-visual"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "optimizer-core",
  "serde",
@@ -2372,7 +2372,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "optimizer-app"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "chrono",
  "directories",
@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "optimizer-core"
-version = "2.3.1"
+version = "2.3.2"
 dependencies = [
  "chrono",
  "serde",

@@ -1321,6 +1321,92 @@ const PRODUCT_URL_OVERRIDES: &[(Manufacturer, &str, &str)] = &[
         "B760M STEEL LEGEND WIFI",
         "https://www.asrock.com/mb/Intel/B760M%20Steel%20Legend%20WiFi/index.asp",
     ),
+    // DDR4-era boards (AM4 / LGA1200)
+    (
+        Manufacturer::Asus,
+        "ROG CROSSHAIR VIII HERO",
+        "https://rog.asus.com/motherboards/rog-crosshair/rog-crosshair-viii-hero-model/",
+    ),
+    (
+        Manufacturer::Asus,
+        "TUF B450-PLUS GAMING",
+        "https://www.asus.com/us/motherboards-components/motherboards/tuf-gaming/tuf-b450-plus-gaming/",
+    ),
+    (
+        Manufacturer::Asus,
+        "PRIME Z490-P",
+        "https://www.asus.com/motherboards-components/motherboards/prime/prime-z490-p/",
+    ),
+    (
+        Manufacturer::Asus,
+        "TUF GAMING B460M-PLUS",
+        "https://www.asus.com/motherboards-components/motherboards/tuf-gaming/tuf-gaming-b460m-plus/",
+    ),
+    (
+        Manufacturer::Msi,
+        "MPG X570 GAMING PLUS",
+        "https://www.msi.com/Motherboard/MPG-X570-GAMING-PLUS",
+    ),
+    (
+        Manufacturer::Msi,
+        "B450 TOMAHAWK MAX",
+        "https://www.msi.com/Motherboard/b450-tomahawk-max",
+    ),
+    (
+        Manufacturer::Msi,
+        "MAG Z490 TOMAHAWK",
+        "https://www.msi.com/Motherboard/MAG-Z490-TOMAHAWK",
+    ),
+    (
+        Manufacturer::Msi,
+        "B460M PRO-VDH WIFI",
+        "https://www.msi.com/Motherboard/B460M-PRO-VDH-WIFI",
+    ),
+    (
+        Manufacturer::Gigabyte,
+        "X570 AORUS MASTER",
+        "https://www.gigabyte.com/Motherboard/X570-AORUS-MASTER-rev-10",
+    ),
+    (
+        Manufacturer::Gigabyte,
+        "B450M DS3H",
+        "https://www.gigabyte.com/Motherboard/B450M-DS3H-rev-1x",
+    ),
+    (
+        Manufacturer::Gigabyte,
+        "Z490 AORUS ELITE AC",
+        "https://www.gigabyte.com/Motherboard/Z490-AORUS-ELITE-AC-rev-10",
+    ),
+    (
+        Manufacturer::Gigabyte,
+        "B460M DS3H",
+        "https://www.gigabyte.com/Motherboard/B460M-DS3H-rev-10",
+    ),
+    (
+        Manufacturer::AsRock,
+        "X570 PHANTOM GAMING 4",
+        "https://www.asrock.com/mb/AMD/X570%20phantom%20Gaming%204/index.asp",
+    ),
+    (
+        Manufacturer::AsRock,
+        "B450M PRO4",
+        "https://www.asrock.com/mb/AMD/B450m%20Pro4/",
+    ),
+    (
+        Manufacturer::AsRock,
+        "Z490 PHANTOM GAMING 4",
+        "https://www.asrock.com/mb/Intel/Z490%20Phantom%20Gaming%204/",
+    ),
+    (
+        Manufacturer::AsRock,
+        "B460M PRO4",
+        "https://www.asrock.com/mb/Intel/B460M%20Pro4/",
+    ),
+    (
+        Manufacturer::Gigabyte,
+        "B760M D2H DDR4",
+        "https://www.gigabyte.com/us/Motherboard/B760M-D2H-DDR4-rev-10",
+    ),
 ];
 
 /// Resolve a verified product-page URL for a motherboard.
@@ -1529,6 +1615,32 @@ mod tests {
                 "URL does not use a trusted domain for {manufacturer:?}: {url}"
             );
         }
+    }
+
+    #[test]
+    fn resolves_ddr4_era_boards_per_vendor() {
+        assert_eq!(
+            motherboard_product_url("ASUS", "ROG CROSSHAIR VIII HERO").as_deref(),
+            Some("https://rog.asus.com/motherboards/rog-crosshair/rog-crosshair-viii-hero-model/")
+        );
+        assert_eq!(
+            motherboard_product_url("Micro-Star International Co., Ltd.", "B450 TOMAHAWK MAX")
+                .as_deref(),
+            Some("https://www.msi.com/Motherboard/b450-tomahawk-max")
+        );
+        assert_eq!(
+            motherboard_product_url("Gigabyte Technology Co., Ltd.", "B450M DS3H").as_deref(),
+            Some("https://www.gigabyte.com/Motherboard/B450M-DS3H-rev-1x")
+        );
+        assert_eq!(
+            motherboard_product_url("ASRock", "B460M Pro4").as_deref(),
+            Some("https://www.asrock.com/mb/Intel/B460M%20Pro4/")
+        );
+        assert_eq!(
+            motherboard_product_url("Gigabyte Technology Co., Ltd.", "B760M D2H DDR4")
+                .as_deref(),
+            Some("https://www.gigabyte.com/us/Motherboard/B760M-D2H-DDR4-rev-10")
+        );
     }
 
     #[test]
