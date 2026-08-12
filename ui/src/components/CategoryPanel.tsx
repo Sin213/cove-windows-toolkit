@@ -1,31 +1,8 @@
+import { lazy, Suspense, type ComponentType, type LazyExoticComponent } from "react";
 import type { View } from "../App";
 import Icon from "./Icon";
 import "./CategoryPanel.css";
-
-import PerformancePanel from "./PerformancePanel";
-import VisualPanel from "./VisualPanel";
-import PrivacyPanel from "./PrivacyPanel";
-import ServicesPanel from "./ServicesPanel";
-import StartupPanel from "./StartupPanel";
-import CleanupPanel from "./CleanupPanel";
-import BloatwarePanel from "./BloatwarePanel";
-import PowerPanel from "./PowerPanel";
-import HealthPanel from "./HealthPanel";
-import EventLogPanel from "./EventLogPanel";
-import BsodPanel from "./BsodPanel";
-import NetDiagPanel from "./NetDiagPanel";
-import UpdatesPanel from "./UpdatesPanel";
-import UninstallPanel from "./UninstallPanel";
-import SysInfoPanel from "./SysInfoPanel";
-import TempsPanel from "./TempsPanel";
-import SfcPanel from "./SfcPanel";
-import RestorePanel from "./RestorePanel";
-import HistoryPanel from "./HistoryPanel";
-import DiffPanel from "./DiffPanel";
-import SecurityPanel from "./SecurityPanel";
-import RuntimesPanel from "./RuntimesPanel";
-import DiskHealthPanel from "./DiskHealthPanel";
-import ToolsPanel from "./ToolsPanel";
+import { PANEL_LOADERS } from "./panelRegistry";
 
 interface Props {
   view: View;
@@ -146,32 +123,10 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
   },
 };
 
-const PANELS: Record<string, React.ComponentType> = {
-  performance: PerformancePanel,
-  visual: VisualPanel,
-  privacy: PrivacyPanel,
-  services: ServicesPanel,
-  startup: StartupPanel,
-  cleanup: CleanupPanel,
-  bloatware: BloatwarePanel,
-  power: PowerPanel,
-  health: HealthPanel,
-  eventlog: EventLogPanel,
-  bsod: BsodPanel,
-  netdiag: NetDiagPanel,
-  updates: UpdatesPanel,
-  uninstall: UninstallPanel,
-  sysinfo: SysInfoPanel,
-  temps: TempsPanel,
-  sfc: SfcPanel,
-  restore: RestorePanel,
-  security: SecurityPanel,
-  runtimes: RuntimesPanel,
-  diskhealth: DiskHealthPanel,
-  diff: DiffPanel,
-  history: HistoryPanel,
-  tools: ToolsPanel,
-};
+const PANELS: Record<string, LazyExoticComponent<ComponentType>> =
+  Object.fromEntries(
+    Object.entries(PANEL_LOADERS).map(([view, load]) => [view, lazy(load)]),
+  );
 
 export default function CategoryPanel({ view, onBack }: Props) {
   const meta = VIEW_META[view] || { title: view, description: "" };
@@ -191,7 +146,15 @@ export default function CategoryPanel({ view, onBack }: Props) {
       </div>
 
       {PanelComponent ? (
-        <PanelComponent />
+        <Suspense
+          fallback={
+            <div className="panel-loading" role="status">
+              Loading {meta.title}...
+            </div>
+          }
+        >
+          <PanelComponent />
+        </Suspense>
       ) : (
         <div className="coming-soon">
           <div className="coming-soon-icon">?</div>

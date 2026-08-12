@@ -12,6 +12,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:startup-loading": "pnpm build && node --test scripts/startup-loading.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
