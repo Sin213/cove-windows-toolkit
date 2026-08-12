@@ -14,3 +14,7 @@ handoff.md
 # CI generates authoritative hashes from the exact GitHub Release artifacts.
 # Keep local tester-build sidecars out of source control.
 release/*.sha256
+
+# Codex workflow private, machine-local state and personalization source.
+# AGENTS.md and agent_docs/ remain tracked as the shareable workflow surface.
+/.codex_workflow_hidden_resource/
