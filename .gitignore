@@ -7,6 +7,10 @@
 .env
 handoff.md
 
+# Internal audit reports, handoffs, and the dependency-exception policy.
+# These describe unfixed risk and internal process and are not published.
+/audit/
+
 # CI generates authoritative hashes from the exact GitHub Release artifacts.
 # Keep local tester-build sidecars out of source control.
 release/*.sha256

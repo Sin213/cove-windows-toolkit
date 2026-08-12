@@ -1,5 +1,6 @@
 # Approved RustSec maintenance warnings (no published vulnerability).
-# Reviewed in SECURITY.md; re-review on every Tauri upgrade and no later than
+# Reviewed in the internal audit/SECURITY.md policy; re-review on every Tauri
+# upgrade and no later than
 # 2026-11-10. Any warning not listed here fails CI.
 #
 # Tauri's non-Windows WebKit/GTK graph. Resolved into the shared lockfile but

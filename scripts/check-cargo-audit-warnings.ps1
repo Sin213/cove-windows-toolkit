@@ -53,7 +53,7 @@ if ($unexpected) {
     foreach ($warning in $unexpected) {
         Write-Output "UNAPPROVED $($warning.Kind) warning: $($warning.Id) ($($warning.Package))"
     }
-    Write-Error 'New undocumented cargo audit warnings block release. Review them and update scripts/audit-approved-warnings.txt and SECURITY.md.'
+    Write-Error 'New undocumented cargo audit warnings block release. Review them and update scripts/audit-approved-warnings.txt and the internal audit/SECURITY.md policy.'
     exit 1
 }
 
