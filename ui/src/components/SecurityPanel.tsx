@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/tauri";
 import "./SecurityPanel.css";
 
@@ -23,6 +23,8 @@ interface SecurityData {
   scan_available: boolean;
 }
 
+type SecurityScanKind = "quick" | "full" | "heuristic";
+
 interface SecScan {
   running: boolean;
   started: boolean;
@@ -40,6 +42,47 @@ interface SecScan {
   message: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function responseMessage(value: unknown, fallback: string): string {
+  return isRecord(value) && typeof value.message === "string" ? value.message : fallback;
+}
+
+function isSecurityData(value: unknown): value is SecurityData {
+  if (!isRecord(value) || !isRecord(value.defender)) return false;
+  const defender = value.defender;
+  return (
+    typeof defender.real_time_enabled === "boolean" &&
+    typeof defender.definitions_age_days === "number" &&
+    typeof defender.last_scan === "string" &&
+    typeof defender.last_scan_type === "string" &&
+    typeof defender.known === "boolean" &&
+    Array.isArray(value.heuristic_findings) &&
+    typeof value.scan_available === "boolean"
+  );
+}
+
+function startingScan(kind: SecurityScanKind): SecScan {
+  return {
+    running: true,
+    started: true,
+    kind,
+    indeterminate: kind !== "heuristic",
+    percent: 0,
+    step: 0,
+    total: 0,
+    phase: "Starting...",
+    elapsed_secs: 0,
+    done: false,
+    success: false,
+    threats_found: 0,
+    findings: [],
+    message: "",
+  };
+}
+
 const SEV_ICON: Record<string, string> = { Critical: "✖", Warning: "⚠", Info: "ℹ" };
 const SEV_ORDER = ["Critical", "Warning", "Info"];
 
@@ -52,63 +95,133 @@ function fmtElapsed(s: number) {
 export default function SecurityPanel() {
   const [data, setData] = useState<SecurityData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [defScan, setDefScan] = useState<SecScan | null>(null);
   const [heurScan, setHeurScan] = useState<SecScan | null>(null);
+  const [startingKind, setStartingKind] = useState<SecurityScanKind | null>(null);
+  const mountedRef = useRef(true);
+  const statusGenerationRef = useRef(0);
+  const startInFlightRef = useRef(false);
+  const pollInFlightRef = useRef({ defender: false, heuristic: false });
+  const pollGenerationRef = useRef({ defender: 0, heuristic: 0 });
 
-  const pollDef = async () => {
+  const pollDef = useCallback(async () => {
+    if (pollInFlightRef.current.defender) return;
+    pollInFlightRef.current.defender = true;
+    const generation = ++pollGenerationRef.current.defender;
     try {
-      setDefScan(await invoke<SecScan>("get_security_scan", { slot: "defender" }));
+      const scan = await invoke<SecScan>("get_security_scan", { slot: "defender" });
+      if (mountedRef.current && generation === pollGenerationRef.current.defender) {
+        setDefScan(scan);
+      }
     } catch {
       /* ignore */
+    } finally {
+      pollInFlightRef.current.defender = false;
     }
-  };
-  const pollHeur = async () => {
+  }, []);
+  const pollHeur = useCallback(async () => {
+    if (pollInFlightRef.current.heuristic) return;
+    pollInFlightRef.current.heuristic = true;
+    const generation = ++pollGenerationRef.current.heuristic;
     try {
-      setHeurScan(await invoke<SecScan>("get_security_scan", { slot: "heuristic" }));
+      const scan = await invoke<SecScan>("get_security_scan", { slot: "heuristic" });
+      if (mountedRef.current && generation === pollGenerationRef.current.heuristic) {
+        setHeurScan(scan);
+      }
     } catch {
       /* ignore */
+    } finally {
+      pollInFlightRef.current.heuristic = false;
     }
-  };
+  }, []);
 
   useEffect(() => {
-    invoke<SecurityData>("get_security_status")
-      .then(setData)
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+    mountedRef.current = true;
+    const statusGeneration = ++statusGenerationRef.current;
+    const pollGenerations = pollGenerationRef.current;
+    invoke<unknown>("get_security_status")
+      .then((status) => {
+        if (!isSecurityData(status)) {
+          throw new Error(
+            responseMessage(status, "The backend returned an invalid security-status response.")
+          );
+        }
+        if (mountedRef.current && statusGeneration === statusGenerationRef.current) {
+          setData(status);
+        }
+      })
+      .catch((e) => {
+        if (mountedRef.current && statusGeneration === statusGenerationRef.current) {
+          setLoadError(String(e));
+        }
+      })
+      .finally(() => {
+        if (mountedRef.current && statusGeneration === statusGenerationRef.current) {
+          setLoading(false);
+        }
+      });
     queueMicrotask(pollDef);
     queueMicrotask(pollHeur);
-  }, []);
+    return () => {
+      mountedRef.current = false;
+      statusGenerationRef.current += 1;
+      pollGenerations.defender += 1;
+      pollGenerations.heuristic += 1;
+    };
+  }, [pollDef, pollHeur]);
 
   const anyRunning = !!defScan?.running || !!heurScan?.running;
   useEffect(() => {
     if (!anyRunning) return;
-    const id = setInterval(() => {
-      pollDef();
-      pollHeur();
+    const id = window.setInterval(() => {
+      void pollDef();
+      void pollHeur();
     }, 500);
     return () => clearInterval(id);
-  }, [anyRunning]);
+  }, [anyRunning, pollDef, pollHeur]);
 
-  const startScan = async (kind: string) => {
-    setError(null);
+  const startScan = async (kind: SecurityScanKind) => {
+    if (startInFlightRef.current || anyRunning) return;
+    startInFlightRef.current = true;
+    setStartingKind(kind);
+    setActionError(null);
     try {
       const res = await invoke<{ success: boolean; message?: string }>("start_security_scan", { kind });
       if (!res.success) {
-        setError(res.message || "Could not start scan.");
+        setActionError(res.message || "Could not start scan.");
         return;
       }
-      if (kind === "heuristic") pollHeur();
-      else pollDef();
+      if (kind === "heuristic") {
+        pollGenerationRef.current.heuristic += 1;
+        if (mountedRef.current) setHeurScan(startingScan(kind));
+        void pollHeur();
+      } else {
+        pollGenerationRef.current.defender += 1;
+        if (mountedRef.current) setDefScan(startingScan(kind));
+        void pollDef();
+      }
     } catch (e) {
-      setError(String(e));
+      if (mountedRef.current) setActionError(String(e));
+    } finally {
+      startInFlightRef.current = false;
+      if (mountedRef.current) setStartingKind(null);
     }
   };
 
-  const openDefender = () => invoke("open_windows_security").catch(() => {});
+  const openDefender = async () => {
+    try {
+      const result = await invoke<{ success?: boolean; message?: string }>("open_windows_security");
+      if (!result?.success) setActionError(result?.message || "Could not open Windows Security.");
+      else setActionError(null);
+    } catch (openError) {
+      setActionError(`Could not open Windows Security: ${String(openError)}`);
+    }
+  };
 
   if (loading) return <div className="panel-loading">Checking security status...</div>;
-  if (error) return <div className="panel-error">Error: {error}</div>;
+  if (loadError) return <div className="panel-error">Error: {loadError}</div>;
   if (!data) return null;
 
   const d = data.defender;
@@ -118,7 +231,7 @@ export default function SecurityPanel() {
     return new Date(iso).toLocaleString();
   };
 
-  const busy = !!defScan?.running || !!heurScan?.running;
+  const busy = anyRunning || startingKind !== null;
   const heurFindings: Finding[] = (heurScan?.done ? heurScan.findings : []) || [];
   const grouped = SEV_ORDER.map((sev) => ({
     severity: sev,
@@ -127,6 +240,7 @@ export default function SecurityPanel() {
 
   return (
     <div className="security-panel">
+      {actionError && <div className="panel-error" role="alert">{actionError}</div>}
       {/* Defender status */}
       <div className="defender-status">
         <div className="defender-stat">
@@ -166,10 +280,10 @@ export default function SecurityPanel() {
       {/* Defender scan buttons */}
       <div className="defender-actions">
         <button className="scan-btn primary" onClick={() => startScan("quick")} disabled={busy}>
-          Quick Scan
+          {startingKind === "quick" ? "Starting..." : "Quick Scan"}
         </button>
         <button className="scan-btn" onClick={() => startScan("full")} disabled={busy}>
-          Full Scan
+          {startingKind === "full" ? "Starting..." : "Full Scan"}
         </button>
         <button className="scan-btn" onClick={openDefender}>
           Open Windows Security
@@ -203,7 +317,11 @@ export default function SecurityPanel() {
         <div className="heuristic-header">
           <h3>Heuristic Scan</h3>
           <button className="scan-btn" onClick={() => startScan("heuristic")} disabled={busy}>
-            {heurScan?.running ? "Scanning…" : "Run Heuristic Scan"}
+            {startingKind === "heuristic"
+              ? "Starting..."
+              : heurScan?.running
+                ? "Scanning…"
+                : "Run Heuristic Scan"}
           </button>
         </div>
 

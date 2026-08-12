@@ -13,6 +13,12 @@ interface ChangeEntry {
   can_undo: boolean;
 }
 
+interface ChangeHistoryResult {
+  success: boolean;
+  message: string;
+  entries: ChangeEntry[];
+}
+
 export default function HistoryPanel() {
   const [entries, setEntries] = useState<ChangeEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,8 +27,13 @@ export default function HistoryPanel() {
   const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<ChangeEntry[]>("get_change_history")
-      .then(setEntries)
+    invoke<ChangeHistoryResult>("get_change_history")
+      .then((result) => {
+        if (!result.success || !Array.isArray(result.entries)) {
+          throw new Error(result.message || "The change history response was invalid.");
+        }
+        setEntries(result.entries);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);

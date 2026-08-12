@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/tauri";
 import ConfirmDialog from "./ConfirmDialog";
 import "./PerformancePanel.css";
@@ -20,64 +20,91 @@ interface PerformanceTweak {
 export default function PerformancePanel() {
   const [tweaks, setTweaks] = useState<PerformanceTweak[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [applying, setApplying] = useState<Record<string, boolean>>({});
   const [applied, setApplied] = useState<Record<string, boolean>>({});
+  const [undoable, setUndoable] = useState<Record<string, boolean>>({});
+  const [batchApplying, setBatchApplying] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<PerformanceTweak | null>(null);
+  const inFlightRef = useRef(new Set<string>());
+  const batchRef = useRef(false);
 
   useEffect(() => {
     invoke<PerformanceTweak[]>("get_performance_tweaks")
       .then((data) => {
         setTweaks(data);
         setApplied(Object.fromEntries(data.map((tweak) => [tweak.id, tweak.applied])));
+        setUndoable(Object.fromEntries(data.map((tweak) => [tweak.id, tweak.can_undo])));
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setLoadError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
-  const handleApply = async (tweak: PerformanceTweak) => {
+  const handleApply = async (tweak: PerformanceTweak, fromBatch = false) => {
+    if (inFlightRef.current.has(tweak.id) || (batchRef.current && !fromBatch)) return;
+    inFlightRef.current.add(tweak.id);
+    setActionError(null);
     setApplying((s) => ({ ...s, [tweak.id]: true }));
     try {
       const result = await invoke<{ success: boolean; message?: string }>("apply_performance_tweak", { id: tweak.id });
-      if (result.success) setApplied((s) => ({ ...s, [tweak.id]: true }));
-      else setError(result.message || "Failed to apply tweak.");
+      if (result.success) {
+        setApplied((s) => ({ ...s, [tweak.id]: true }));
+        setUndoable((s) => ({ ...s, [tweak.id]: true }));
+      } else setActionError(result.message || "Failed to apply tweak.");
     } catch (e) {
-      setError(String(e));
+      setActionError(String(e));
     } finally {
+      inFlightRef.current.delete(tweak.id);
       setApplying((s) => ({ ...s, [tweak.id]: false }));
     }
   };
 
   const handleUndo = async (tweak: PerformanceTweak) => {
+    if (inFlightRef.current.has(tweak.id) || batchRef.current) return;
+    inFlightRef.current.add(tweak.id);
+    setActionError(null);
     setApplying((s) => ({ ...s, [tweak.id]: true }));
     try {
       const result = await invoke<{ success: boolean; message?: string }>("undo_performance_tweak", { id: tweak.id });
-      if (result.success) setApplied((s) => ({ ...s, [tweak.id]: false }));
-      else setError(result.message || "Failed to undo tweak.");
+      if (result.success) {
+        setApplied((s) => ({ ...s, [tweak.id]: false }));
+        setUndoable((s) => ({ ...s, [tweak.id]: false }));
+      } else setActionError(result.message || "Failed to undo tweak.");
     } catch (e) {
-      setError(String(e));
+      setActionError(String(e));
     } finally {
+      inFlightRef.current.delete(tweak.id);
       setApplying((s) => ({ ...s, [tweak.id]: false }));
     }
   };
 
   const handleApplyAllSafe = async () => {
+    if (batchRef.current || inFlightRef.current.size > 0) return;
+    batchRef.current = true;
+    setBatchApplying(true);
     const safe = tweaks.filter(
       (t) => t.safety_tier === "Green" && !applied[t.id]
     );
-    for (const t of safe) {
-      await handleApply(t);
+    try {
+      for (const t of safe) {
+        await handleApply(t, true);
+      }
+    } finally {
+      batchRef.current = false;
+      setBatchApplying(false);
     }
   };
 
   if (loading)
     return <div className="panel-loading">Loading performance tweaks...</div>;
-  if (error) return <div className="panel-error">Error: {error}</div>;
+  if (loadError) return <div className="panel-error">Error: {loadError}</div>;
 
   const categories = [...new Set(tweaks.map((t) => t.category))];
 
   return (
     <div className="performance-panel">
+      {actionError && <div className="panel-error" role="alert">{actionError}</div>}
       {categories.map((cat) => {
         const group = tweaks.filter((t) => t.category === cat);
         return (
@@ -113,14 +140,16 @@ export default function PerformancePanel() {
                         {tweak.optimized_value}
                       </span>
                     </div>
-                    {applied[tweak.id] ? (
+                    {applied[tweak.id] && undoable[tweak.id] ? (
                       <button
                         className="undo-btn"
                         onClick={() => handleUndo(tweak)}
-                        disabled={applying[tweak.id]}
+                        disabled={batchApplying || applying[tweak.id]}
                       >
                         {applying[tweak.id] ? "..." : "Undo"}
                       </button>
+                    ) : applied[tweak.id] ? (
+                      <span className="applied-label">Already applied</span>
                     ) : (
                       <button
                         className="apply-btn"
@@ -131,7 +160,7 @@ export default function PerformancePanel() {
                             handleApply(tweak);
                           }
                         }}
-                        disabled={applying[tweak.id]}
+                        disabled={batchApplying || applying[tweak.id]}
                       >
                         {applying[tweak.id] ? "..." : "Apply"}
                       </button>
@@ -144,8 +173,12 @@ export default function PerformancePanel() {
         );
       })}
       <div className="batch-actions">
-        <button className="batch-btn" onClick={handleApplyAllSafe}>
-          Apply All Green Tweaks
+        <button
+          className="batch-btn"
+          onClick={handleApplyAllSafe}
+          disabled={batchApplying || Object.values(applying).some(Boolean)}
+        >
+          {batchApplying ? "Applying..." : "Apply All Green Tweaks"}
         </button>
       </div>
       <ConfirmDialog

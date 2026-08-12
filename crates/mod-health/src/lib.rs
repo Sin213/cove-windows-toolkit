@@ -48,7 +48,7 @@ fn unknown_finding(id: &str, title: &str, detail: &str) -> (Finding, i32) {
 
 #[cfg(target_os = "windows")]
 fn check_disk_space() -> (Finding, i32) {
-    let ps = r#"$sd = $env:SystemDrive
+    let ps = r#"$sd = [IO.Path]::GetPathRoot([Environment]::SystemDirectory).TrimEnd('\')
 $d = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sd'" -ErrorAction SilentlyContinue
 Write-Output "$($d.FreeSpace)|$($d.Size)""#;
     if let Ok(o) = optimizer_core::powershell(ps).output() {

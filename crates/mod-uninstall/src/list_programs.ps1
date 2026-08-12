@@ -1,15 +1,27 @@
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 
-$paths = @(
-    'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
-    'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
+$roots = @(
+    @{ path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'; required = $true },
+    # This view is absent on some architectures, but if present it must be read
+    # completely or the caller could mistake a partial inventory for removals.
+    @{ path = 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'; required = $false },
+    # Per-user registrations are optional and are never executable by Cove's
+    # elevated uninstaller policy, but remain visible when the hive is present.
+    @{ path = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'; required = $false }
 )
 
 $programs = @()
 
-foreach ($path in $paths) {
-    $items = Get-ItemProperty $path -ErrorAction SilentlyContinue
+foreach ($root in $roots) {
+    $exists = Test-Path -LiteralPath $root.path -ErrorAction Stop
+    if (-not $exists) {
+        if ($root.required) { throw "Required uninstall registry root is missing: $($root.path)" }
+        continue
+    }
+    # `-ErrorAction Stop` is deliberate: returning a successful partial list
+    # makes snapshot/diff report installed applications as removed.
+    $items = Get-ChildItem -LiteralPath $root.path -ErrorAction Stop |
+        ForEach-Object { Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction Stop }
     foreach ($item in $items) {
         $name = $item.DisplayName
         if (-not $name -or $name.Length -lt 2) { continue }
@@ -51,8 +63,10 @@ foreach ($path in $paths) {
             install_location = if ($item.InstallLocation) { $item.InstallLocation.TrimEnd('\') } else { '' }
             registry_key = $regKey
             is_system = $isSystem
+            can_uninstall = $false
+            uninstall_reason = ''
         }
     }
 }
 
-$programs | Sort-Object { $_.name } | ConvertTo-Json -Depth 3 -Compress
+ConvertTo-Json -InputObject @($programs | Sort-Object { $_.name }) -Depth 3 -Compress

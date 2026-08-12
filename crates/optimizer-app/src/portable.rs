@@ -1,20 +1,19 @@
 use std::path::PathBuf;
 
-pub fn exe_dir() -> PathBuf {
-    std::env::current_exe()
-        .expect("cannot determine exe path")
-        .parent()
-        .expect("exe has no parent directory")
-        .to_path_buf()
-}
-
+/// The single-file build is portable in the no-install sense, but state is
+/// deliberately kept in the per-user application-data directory. Following an
+/// adjacent `portable.marker`/`cove-app-data` directory from an elevated process
+/// would let an unprivileged junction redirect privileged log and snapshot
+/// writes. A future true side-by-side mode must use handle-relative, no-reparse
+/// storage before it can be enabled safely.
 pub fn is_portable() -> bool {
-    let base = exe_dir();
-    base.join("cove-app-data").is_dir() || base.join("portable.marker").is_file()
+    false
 }
 
-pub fn portable_data_dir(app_name: &str) -> PathBuf {
-    let dir = exe_dir().join("cove-app-data").join(app_name);
+pub fn portable_data_dir(_app_name: &str) -> PathBuf {
+    let dir = directories::ProjectDirs::from("com", "cove", "optimizer")
+        .map(|directories| directories.data_local_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
     std::fs::create_dir_all(&dir).ok();
     dir
 }

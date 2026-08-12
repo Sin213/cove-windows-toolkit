@@ -174,8 +174,7 @@ else { Write-Output 'NOTFOUND|.NET Framework 3.5' }
     }
 
     // .NET 5+ via dotnet CLI
-    let dotnet = std::env::var_os("ProgramFiles")
-        .map(std::path::PathBuf::from)
+    let dotnet = optimizer_core::program_files_directory()
         .map(|path| path.join("dotnet").join("dotnet.exe"));
     if let Some(dotnet) = dotnet
         && dotnet.is_file()
@@ -315,7 +314,7 @@ $tmp = [IO.Path]::Combine([IO.Path]::GetTempPath(), ([IO.Path]::GetRandomFileNam
 # Do NOT use -Wait: dxdiag can hang indefinitely on VMs / GPU-less or policy-
 # restricted machines, which would block the whole scan. Launch async, poll for
 # the output file up to 15s, then force-kill dxdiag if it is still running.
-$dxdiag = Join-Path $env:SystemRoot 'System32\dxdiag.exe'
+$dxdiag = Join-Path ([Environment]::SystemDirectory) 'dxdiag.exe'
 $p = Start-Process -FilePath $dxdiag -ArgumentList "/x `"$tmp`"" -WindowStyle Hidden -PassThru
 $n = 0
 while ((-not (Test-Path $tmp)) -or ((Get-Item -LiteralPath $tmp -ErrorAction SilentlyContinue).Length -eq 0)) {
@@ -593,9 +592,9 @@ fn dotnet_core_status(version: &str) -> (bool, Option<String>) {
         .unwrap_or(0);
     match major {
         5..=7 => (true, Some(DOTNET10_URL.into())),
-        8 => (patch < 28, (patch < 28).then(|| DOTNET10_URL.into())),
-        9 => (patch < 17, (patch < 17).then(|| DOTNET10_URL.into())),
-        10 => (patch < 9, (patch < 9).then(|| DOTNET10_URL.into())),
+        8 => (patch < 29, (patch < 29).then(|| DOTNET8_URL.into())),
+        9 => (patch < 18, (patch < 18).then(|| DOTNET10_URL.into())),
+        10 => (patch < 10, (patch < 10).then(|| DOTNET10_URL.into())),
         // Very old or unknown
         _ if major < 5 => (true, Some(DOTNET8_URL.into())),
         _ => (false, None),
@@ -627,10 +626,12 @@ mod tests {
     #[test]
     fn runtime_lifecycle_table_rejects_eol_channels_and_old_patches() {
         assert!(dotnet_core_status("6.0.36").0);
-        assert!(dotnet_core_status("8.0.27").0);
-        assert!(!dotnet_core_status("8.0.28").0);
-        assert!(dotnet_core_status("10.0.8").0);
-        assert!(!dotnet_core_status("10.0.9").0);
+        assert!(dotnet_core_status("8.0.28").0);
+        assert!(!dotnet_core_status("8.0.29").0);
+        assert!(dotnet_core_status("9.0.17").0);
+        assert!(!dotnet_core_status("9.0.18").0);
+        assert!(dotnet_core_status("10.0.9").0);
+        assert!(!dotnet_core_status("10.0.10").0);
         assert!(is_java_outdated("24"));
         assert!(!is_java_outdated("25"));
         assert!(is_dotnet_fw_outdated("4.6.1"));

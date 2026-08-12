@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/tauri";
 import "./SfcPanel.css";
 
@@ -28,6 +28,20 @@ const TITLE: Record<Key, string> = {
   sfc: "SFC",
 };
 
+function startingProgress(): ScanProgress {
+  return {
+    running: true,
+    started: true,
+    percent: 0,
+    phase: "Starting...",
+    output_tail: [],
+    done: false,
+    success: false,
+    summary: "",
+    exit_code: 0,
+  };
+}
+
 export default function SfcPanel() {
   const [admin, setAdmin] = useState<AdminStatus | null>(null);
   const [scans, setScans] = useState<Record<Key, ScanProgress | null>>({
@@ -36,30 +50,71 @@ export default function SfcPanel() {
     sfc: null,
   });
   const [error, setError] = useState<string | null>(null);
+  const [starting, setStarting] = useState<Key | null>(null);
+  const mountedRef = useRef(true);
+  const effectGenerationRef = useRef(0);
+  const startInFlightRef = useRef(false);
+  const pollInFlightRef = useRef<Record<Key, boolean>>({ full: false, dism: false, sfc: false });
+  const pollGenerationRef = useRef<Record<Key, number>>({ full: 0, dism: 0, sfc: 0 });
 
-  const poll = async (key: Key) => {
+  const poll = useCallback(async (key: Key) => {
+    if (pollInFlightRef.current[key]) return;
+    pollInFlightRef.current[key] = true;
+    const generation = ++pollGenerationRef.current[key];
     try {
       const p = await invoke<ScanProgress>("get_scan_progress", { tool: key });
-      setScans((s) => ({ ...s, [key]: p }));
+      if (mountedRef.current && generation === pollGenerationRef.current[key]) {
+        setScans((s) => ({ ...s, [key]: p }));
+      }
     } catch {
       /* ignore transient poll errors */
+    } finally {
+      pollInFlightRef.current[key] = false;
     }
-  };
+  }, []);
 
   // On mount, resume whatever the backend is doing (scans outlive this panel).
   useEffect(() => {
-    invoke<AdminStatus>("check_admin_status").then(setAdmin).catch((e) => setError(String(e)));
-    KEYS.forEach(poll);
-  }, []);
+    mountedRef.current = true;
+    const effectGeneration = ++effectGenerationRef.current;
+    const pollGenerations = pollGenerationRef.current;
+    invoke<AdminStatus>("check_admin_status")
+      .then((status) => {
+        if (mountedRef.current && effectGeneration === effectGenerationRef.current) {
+          setAdmin(status);
+        }
+      })
+      .catch((e) => {
+        if (mountedRef.current && effectGeneration === effectGenerationRef.current) {
+          setError(String(e));
+        }
+      });
+    queueMicrotask(() => {
+      if (mountedRef.current && effectGeneration === effectGenerationRef.current) {
+        KEYS.forEach((key) => void poll(key));
+      }
+    });
+    return () => {
+      mountedRef.current = false;
+      effectGenerationRef.current += 1;
+      KEYS.forEach((key) => {
+        pollGenerations[key] += 1;
+      });
+    };
+  }, [poll]);
 
   const anyRunning = KEYS.some((k) => scans[k]?.running);
+  const busy = anyRunning || starting !== null;
   useEffect(() => {
     if (!anyRunning) return;
-    const id = setInterval(() => KEYS.forEach(poll), 250);
+    const id = window.setInterval(() => KEYS.forEach((key) => void poll(key)), 250);
     return () => clearInterval(id);
-  }, [anyRunning]);
+  }, [anyRunning, poll]);
 
   const start = async (key: Key) => {
+    if (startInFlightRef.current || anyRunning) return;
+    startInFlightRef.current = true;
+    setStarting(key);
     setError(null);
     try {
       const res = await invoke<{ success: boolean; message?: string }>("start_scan", { tool: key });
@@ -67,9 +122,16 @@ export default function SfcPanel() {
         setError(res.message || "Could not start scan.");
         return;
       }
-      poll(key);
+      pollGenerationRef.current[key] += 1;
+      if (mountedRef.current) {
+        setScans((current) => ({ ...current, [key]: startingProgress() }));
+      }
+      void poll(key);
     } catch (e) {
-      setError(String(e));
+      if (mountedRef.current) setError(String(e));
+    } finally {
+      startInFlightRef.current = false;
+      if (mountedRef.current) setStarting(null);
     }
   };
 
@@ -94,24 +156,24 @@ export default function SfcPanel() {
         <button
           className="sfc-btn sfc-btn-primary"
           onClick={() => start("full")}
-          disabled={anyRunning}
+          disabled={busy}
         >
-          Run Full Scan (DISM + SFC)
+          {starting === "full" ? "Starting..." : "Run Full Scan (DISM + SFC)"}
         </button>
         <div className="sfc-btn-row">
           <button
             className="sfc-btn sfc-btn-secondary"
             onClick={() => start("dism")}
-            disabled={anyRunning}
+            disabled={busy}
           >
-            DISM Only
+            {starting === "dism" ? "Starting..." : "DISM Only"}
           </button>
           <button
             className="sfc-btn sfc-btn-secondary"
             onClick={() => start("sfc")}
-            disabled={anyRunning}
+            disabled={busy}
           >
-            SFC Only
+            {starting === "sfc" ? "Starting..." : "SFC Only"}
           </button>
         </div>
       </div>

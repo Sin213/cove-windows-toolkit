@@ -98,7 +98,7 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
   uninstall: {
     title: "Deep Uninstaller",
     description:
-      "Completely remove programs and all leftover files, registry keys, services, and scheduled tasks.",
+      "Run a program's standard uninstaller, then find and optionally remove leftover application folders.",
   },
   sysinfo: {
     title: "System Information",

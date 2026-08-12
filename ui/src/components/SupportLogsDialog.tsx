@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "../lib/tauri";
 import "./SupportLogsDialog.css";
 
@@ -20,23 +20,34 @@ export default function SupportLogsDialog({ open, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const requestGeneration = useRef(0);
+  const openRef = useRef(open);
   const titleId = useId();
   const descriptionId = useId();
 
   const refresh = useCallback(async () => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setError(null);
     setNotice(null);
     try {
-      setData(await invoke<SupportLogReport>("get_support_logs"));
+      const report = await invoke<SupportLogReport>("get_support_logs");
+      if (generation !== requestGeneration.current || !openRef.current) return;
+      setData(report);
     } catch (refreshError) {
+      if (generation !== requestGeneration.current || !openRef.current) return;
       setError(
         `Could not refresh the support log. Any previous snapshot is still shown. ${String(refreshError)}`,
       );
     } finally {
-      setLoading(false);
+      if (generation === requestGeneration.current && openRef.current) setLoading(false);
     }
   }, []);
+
+  useLayoutEffect(() => {
+    openRef.current = open;
+    if (!open) requestGeneration.current += 1;
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;

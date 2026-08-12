@@ -1637,8 +1637,7 @@ mod tests {
             Some("https://www.asrock.com/mb/Intel/B460M%20Pro4/")
         );
         assert_eq!(
-            motherboard_product_url("Gigabyte Technology Co., Ltd.", "B760M D2H DDR4")
-                .as_deref(),
+            motherboard_product_url("Gigabyte Technology Co., Ltd.", "B760M D2H DDR4").as_deref(),
             Some("https://www.gigabyte.com/us/Motherboard/B760M-D2H-DDR4-rev-10")
         );
     }

@@ -507,7 +507,7 @@ pub fn run_chkdsk(mode: &str, _drive: &str) -> ChkdskResult {
 pub fn get_last_chkdsk() -> LastChkdskInfo {
     let ps = r#"
 $errors=@()
-try { $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$env:SystemDrive'" -ErrorAction Stop; $dirty=[bool]$disk.VolumeDirty; $dirtyKnown=$true } catch { $dirty=$false; $dirtyKnown=$false; $errors+=$_.Exception.Message }
+try { $systemDrive=[IO.Path]::GetPathRoot([Environment]::SystemDirectory).TrimEnd('\'); $disk=Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$systemDrive'" -ErrorAction Stop; $dirty=[bool]$disk.VolumeDirty; $dirtyKnown=$true } catch { $dirty=$false; $dirtyKnown=$false; $errors+=$_.Exception.Message }
 try {
     $evt = Get-WinEvent -FilterHashtable @{LogName='Application'; ProviderName=@('Wininit','Chkdsk'); Id=@(1001,26214)} -MaxEvents 20 -ErrorAction Stop | Sort-Object TimeCreated -Descending | Select-Object -First 1
     Write-Output "FOUND|$($evt.TimeCreated.ToString('o'))|$(($evt.Message -replace '[\r\n]+',' ').Trim())"

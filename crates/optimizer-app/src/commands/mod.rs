@@ -1,5 +1,5 @@
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 // ---------------------------------------------------------------------------
@@ -58,7 +58,7 @@ pub async fn get_visual_tweaks() -> Vec<serde_json::Value> {
                     "current_value": t.current_value,
                     "optimized_value": t.optimized_value,
                     "applied": applied,
-                    "can_undo": load_snapshot(&t.id).is_some(),
+                    "can_undo": has_snapshot(&t.id),
                 })
             })
             .collect()
@@ -69,16 +69,20 @@ pub async fn get_visual_tweaks() -> Vec<serde_json::Value> {
 
 #[tauri::command]
 pub async fn apply_visual_tweak(id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || apply_visual_tweak_sync(&id))
+    tokio::task::spawn_blocking(move || with_tweak_mutation(|| apply_visual_tweak_sync(&id)))
         .await
         .unwrap_or_else(|_| join_fallback())
 }
 
 #[tauri::command]
 pub async fn undo_visual_tweak(id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || undo_visual_tweak_sync(&id))
-        .await
-        .unwrap_or_else(|_| join_fallback())
+    tokio::task::spawn_blocking(move || {
+        with_tweak_mutation(|| {
+            finish_undo_with_history(undo_visual_tweak_sync(&id), "visual", &id, None)
+        })
+    })
+    .await
+    .unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -131,11 +135,12 @@ pub async fn get_services_tweaks() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_startup_items() -> serde_json::Value {
-    tokio::task::spawn_blocking(|| {
-        serde_json::to_value(mod_startup::list_items_v2().unwrap_or_default()).unwrap_or_default()
+    tokio::task::spawn_blocking(|| match mod_startup::list_items_v2() {
+        Ok(items) => serde_json::json!({ "success": true, "message": "", "items": items }),
+        Err(message) => serde_json::json!({ "success": false, "message": message, "items": [] }),
     })
     .await
-    .unwrap_or_default()
+    .unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -356,8 +361,9 @@ $log = @(); $stopped = @()
 $services = @('wuauserv','bits','cryptSvc','msiserver')
 try {
   foreach ($s in $services) { Stop-Service -Name $s -Force -ErrorAction Stop; $stopped += $s; $log += "Stopped $s" }
-  $sd = Join-Path $env:SystemRoot 'SoftwareDistribution'
-  $cr = Join-Path $env:SystemRoot 'System32\catroot2'
+  $windows = [IO.Directory]::GetParent([Environment]::SystemDirectory).FullName
+  $sd = Join-Path $windows 'SoftwareDistribution'
+  $cr = Join-Path $windows 'System32\catroot2'
   $stamp = Get-Date -Format yyyyMMddHHmmss
   if (Test-Path -LiteralPath $sd) { Rename-Item -LiteralPath $sd -NewName "SoftwareDistribution.bak.$stamp" -ErrorAction Stop; $log += 'Renamed SoftwareDistribution' }
   if (Test-Path -LiteralPath $cr) { Rename-Item -LiteralPath $cr -NewName "catroot2.bak.$stamp" -ErrorAction Stop; $log += 'Renamed catroot2' }
@@ -687,14 +693,14 @@ pub async fn run_speed_test() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn apply_tweak(module: String, id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || apply_tweak_sync(&module, &id))
+    tokio::task::spawn_blocking(move || with_tweak_mutation(|| apply_tweak_sync(&module, &id)))
         .await
         .unwrap_or_else(|_| join_fallback())
 }
 
 #[tauri::command]
 pub async fn undo_tweak(module: String, id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || undo_tweak_sync(&module, &id))
+    tokio::task::spawn_blocking(move || with_tweak_mutation(|| undo_tweak_sync(&module, &id)))
         .await
         .unwrap_or_else(|_| join_fallback())
 }
@@ -716,16 +722,24 @@ fn apply_tweak_sync(module: &str, id: &str) -> serde_json::Value {
                         Err(msg) => serde_json::json!({ "success": false, "message": msg }),
                     }
                 } else {
-                    // Snapshot the pre-apply value (None => value was absent) so the
-                    // change can be reverted from history later.
-                    let current = if t.current == "NotSet" {
-                        None
-                    } else {
-                        Some(t.current.as_str())
+                    // Read again immediately before mutation. Inventory display
+                    // values intentionally degrade on query failures, but rollback
+                    // data must distinguish an absent value from an unreadable one.
+                    let current = match read_registry_value_for_snapshot(&t.path, &t.value_name) {
+                        Ok(value) => value,
+                        Err(message) => {
+                            return serde_json::json!({
+                                "success": false,
+                                "message": format!("Could not read the current registry value safely: {message}")
+                            });
+                        }
                     };
-                    if let Err(message) = save_snapshot(id, current) {
-                        return serde_json::json!({ "success": false, "message": format!("Could not save rollback data: {message}") });
-                    }
+                    let snapshot_created = match save_snapshot(id, current.as_deref()) {
+                        Ok(created) => created,
+                        Err(message) => {
+                            return serde_json::json!({ "success": false, "message": format!("Could not save rollback data: {message}") });
+                        }
+                    };
                     let result = apply_registry_tweak(&t.path, &t.value_name, &t.optimized);
                     if result
                         .get("success")
@@ -743,6 +757,16 @@ fn apply_tweak_sync(module: &str, id: &str) -> serde_json::Value {
                             &t.name,
                             &t.tier,
                         );
+                    }
+                    if snapshot_created && let Err(message) = delete_snapshot(id) {
+                        let original = result
+                            .get("message")
+                            .and_then(|value| value.as_str())
+                            .unwrap_or("The setting was not applied.");
+                        return serde_json::json!({
+                            "success": false,
+                            "message": format!("{original} Also could not discard unused rollback data: {message}")
+                        });
                     }
                     result
                 }
@@ -783,14 +807,18 @@ fn undo_privacy_tweak_sync(id: &str) -> serde_json::Value {
         });
     }
     let result = match load_snapshot(id) {
-        Some(Some(v)) => apply_registry_tweak(&t.path, &t.value_name, &v),
-        Some(None) => match delete_registry_value(&t.path, &t.value_name) {
+        Ok(Some(Some(v))) => apply_registry_tweak(&t.path, &t.value_name, &v),
+        Ok(Some(None)) => match delete_registry_value(&t.path, &t.value_name) {
             Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
             Err(msg) => serde_json::json!({ "success": false, "message": msg }),
         },
-        None => {
+        Ok(None) => {
             serde_json::json!({ "success": false, "message": "No saved original value to restore." })
         }
+        Err(message) => serde_json::json!({
+            "success": false,
+            "message": format!("Rollback data is unreadable; no registry value was changed: {message}")
+        }),
     };
     if result
         .get("success")
@@ -804,7 +832,7 @@ fn undo_privacy_tweak_sync(id: &str) -> serde_json::Value {
 }
 
 fn undo_tweak_sync(module: &str, id: &str) -> serde_json::Value {
-    match module {
+    let result = match module {
         "visual" => undo_visual_tweak_sync(id),
         "performance" => undo_perf_tweak_sync(id),
         "privacy" => undo_privacy_tweak_sync(id),
@@ -813,16 +841,34 @@ fn undo_tweak_sync(module: &str, id: &str) -> serde_json::Value {
             "success": false,
             "message": format!("Undo is not supported for '{}' changes.", module)
         }),
+    };
+    if matches!(module, "visual" | "performance" | "privacy") {
+        finish_undo_with_history(result, module, id, None)
+    } else {
+        result
     }
 }
 
 fn apply_visual_tweak_sync(id: &str) -> serde_json::Value {
     let tweaks = mod_visual::get_tweaks();
     if let Some(t) = tweaks.iter().find(|t| t.id == id) {
-        // Snapshot the original value before changing it, so undo can restore it.
-        if let Err(message) = save_snapshot(id, t.current_value.as_deref()) {
-            return serde_json::json!({ "success": false, "message": format!("Could not save rollback data: {message}") });
-        }
+        // Query immediately before the write instead of trusting the display
+        // inventory, which deliberately cannot represent query failures.
+        let current = match read_registry_value_for_snapshot(&t.registry_path, &t.registry_name) {
+            Ok(value) => value,
+            Err(message) => {
+                return serde_json::json!({
+                    "success": false,
+                    "message": format!("Could not read the current registry value safely: {message}")
+                });
+            }
+        };
+        let snapshot_created = match save_snapshot(id, current.as_deref()) {
+            Ok(created) => created,
+            Err(message) => {
+                return serde_json::json!({ "success": false, "message": format!("Could not save rollback data: {message}") });
+            }
+        };
         match mod_visual::apply_tweak(&t.registry_path, &t.registry_name, &t.optimized_value) {
             Ok(msg) => change_with_history(
                 msg,
@@ -831,7 +877,7 @@ fn apply_visual_tweak_sync(id: &str) -> serde_json::Value {
                 &t.name,
                 &format!("{:?}", t.safety_tier),
             ),
-            Err(msg) => serde_json::json!({ "success": false, "message": msg }),
+            Err(msg) => failed_apply_with_snapshot_cleanup(id, snapshot_created, msg),
         }
     } else {
         serde_json::json!({ "success": false, "message": format!("Unknown tweak: {}", id) })
@@ -842,9 +888,12 @@ fn undo_visual_tweak_sync(id: &str) -> serde_json::Value {
     let tweaks = mod_visual::get_tweaks();
     if let Some(t) = tweaks.iter().find(|t| t.id == id) {
         let result = match load_snapshot(id) {
-            Some(Some(v)) => mod_visual::apply_tweak(&t.registry_path, &t.registry_name, &v),
-            Some(None) => delete_registry_value(&t.registry_path, &t.registry_name),
-            None => Err("No saved original value to restore.".into()),
+            Ok(Some(Some(v))) => mod_visual::apply_tweak(&t.registry_path, &t.registry_name, &v),
+            Ok(Some(None)) => delete_registry_value(&t.registry_path, &t.registry_name),
+            Ok(None) => Err("No saved original value to restore.".into()),
+            Err(message) => Err(format!(
+                "Rollback data is unreadable; no registry value was changed: {message}"
+            )),
         };
         match result {
             Ok(msg) => {
@@ -863,9 +912,21 @@ fn undo_visual_tweak_sync(id: &str) -> serde_json::Value {
 fn apply_perf_tweak_sync(id: &str) -> serde_json::Value {
     let tweaks = mod_performance::get_tweaks();
     if let Some(t) = tweaks.iter().find(|t| t.id == id) {
-        if let Err(message) = save_snapshot(id, t.current_value.as_deref()) {
-            return serde_json::json!({ "success": false, "message": format!("Could not save rollback data: {message}") });
-        }
+        let current = match read_registry_value_for_snapshot(&t.registry_path, &t.registry_name) {
+            Ok(value) => value,
+            Err(message) => {
+                return serde_json::json!({
+                    "success": false,
+                    "message": format!("Could not read the current registry value safely: {message}")
+                });
+            }
+        };
+        let snapshot_created = match save_snapshot(id, current.as_deref()) {
+            Ok(created) => created,
+            Err(message) => {
+                return serde_json::json!({ "success": false, "message": format!("Could not save rollback data: {message}") });
+            }
+        };
         match mod_performance::apply_tweak(&t.registry_path, &t.registry_name, &t.optimized_value) {
             Ok(msg) => change_with_history(
                 msg,
@@ -874,7 +935,7 @@ fn apply_perf_tweak_sync(id: &str) -> serde_json::Value {
                 &t.name,
                 &format!("{:?}", t.safety_tier),
             ),
-            Err(msg) => serde_json::json!({ "success": false, "message": msg }),
+            Err(msg) => failed_apply_with_snapshot_cleanup(id, snapshot_created, msg),
         }
     } else {
         serde_json::json!({ "success": false, "message": format!("Unknown tweak: {}", id) })
@@ -885,9 +946,14 @@ fn undo_perf_tweak_sync(id: &str) -> serde_json::Value {
     let tweaks = mod_performance::get_tweaks();
     if let Some(t) = tweaks.iter().find(|t| t.id == id) {
         let result = match load_snapshot(id) {
-            Some(Some(v)) => mod_performance::apply_tweak(&t.registry_path, &t.registry_name, &v),
-            Some(None) => delete_registry_value(&t.registry_path, &t.registry_name),
-            None => Err("No saved original value to restore.".into()),
+            Ok(Some(Some(v))) => {
+                mod_performance::apply_tweak(&t.registry_path, &t.registry_name, &v)
+            }
+            Ok(Some(None)) => delete_registry_value(&t.registry_path, &t.registry_name),
+            Ok(None) => Err("No saved original value to restore.".into()),
+            Err(message) => Err(format!(
+                "Rollback data is unreadable; no registry value was changed: {message}"
+            )),
         };
         match result {
             Ok(msg) => {
@@ -938,6 +1004,71 @@ fn apply_registry_tweak(path: &str, name: &str, value: &str) -> serde_json::Valu
     serde_json::json!({ "success": true, "message": format!("Applied: {} = {}", name, value) })
 }
 
+/// Read a registry value for rollback without conflating "missing" with
+/// "PowerShell/registry query failed". The caller holds `TWEAK_MUTATION_LOCK`,
+/// keeping Cove's own apply/undo requests serialized around this read + write.
+#[cfg(target_os = "windows")]
+fn read_registry_value_for_snapshot(path: &str, name: &str) -> Result<Option<String>, String> {
+    let quote = |value: &str| value.replace('\'', "''");
+    let script = format!(
+        r#"
+$ErrorActionPreference='Stop'
+$path='Registry::{path}'
+$name='{name}'
+if (-not (Test-Path -LiteralPath $path -ErrorAction Stop)) {{
+  $result=[pscustomobject]@{{ exists=$false; value=$null }}
+}} else {{
+  $key=Get-Item -LiteralPath $path -ErrorAction Stop
+  if ($key.GetValueNames() -contains $name) {{
+    $raw=$key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $result=[pscustomobject]@{{ exists=$true; value=[string]$raw }}
+  }} else {{
+    $result=[pscustomobject]@{{ exists=$false; value=$null }}
+  }}
+}}
+$result | ConvertTo-Json -Compress
+"#,
+        path = quote(path),
+        name = quote(name),
+    );
+    let output = optimizer_core::powershell(&script)
+        .output()
+        .map_err(|error| format!("Could not start the registry query: {error}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            "The registry query failed without an error message.".into()
+        } else {
+            detail
+        });
+    }
+    parse_registry_snapshot_response(String::from_utf8_lossy(&output.stdout).trim())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_registry_value_for_snapshot(_path: &str, _name: &str) -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+fn parse_registry_snapshot_response(response: &str) -> Result<Option<String>, String> {
+    let value: serde_json::Value = serde_json::from_str(response)
+        .map_err(|error| format!("Could not parse the registry query response: {error}"))?;
+    let exists = value
+        .get("exists")
+        .and_then(serde_json::Value::as_bool)
+        .ok_or_else(|| {
+            "The registry query response did not contain a valid exists flag.".to_string()
+        })?;
+    if !exists {
+        return Ok(None);
+    }
+    value
+        .get("value")
+        .and_then(serde_json::Value::as_str)
+        .map(|value| Some(value.to_string()))
+        .ok_or_else(|| "The registry query returned an invalid value.".to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Change history (file-backed)
 // ---------------------------------------------------------------------------
@@ -946,6 +1077,17 @@ fn apply_registry_tweak(path: &str, name: &str, value: &str) -> serde_json::Valu
 // concurrent apply/undo tasks (run on spawn_blocking worker threads) can't
 // clobber each other's writes.
 static DATA_FILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+/// Serializes the complete read-current -> snapshot -> mutate sequence. The
+/// file lock alone only protects individual JSON writes and cannot stop two
+/// concurrent requests from both observing/changing the same registry value.
+static TWEAK_MUTATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn with_tweak_mutation<T>(operation: impl FnOnce() -> T) -> T {
+    let _guard = TWEAK_MUTATION_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    operation()
+}
 
 fn history_path() -> std::path::PathBuf {
     if crate::portable::is_portable() {
@@ -959,14 +1101,41 @@ fn history_path() -> std::path::PathBuf {
 
 #[tauri::command]
 pub fn get_change_history() -> serde_json::Value {
+    let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = history_path();
-    if path.exists()
-        && let Ok(data) = std::fs::read_to_string(&path)
-        && let Ok(val) = serde_json::from_str::<serde_json::Value>(&data)
-    {
-        return val;
+    match std::fs::read_to_string(&path) {
+        Ok(data) => match serde_json::from_str::<Vec<serde_json::Value>>(&data) {
+            Ok(mut entries) => {
+                let message = match read_snapshot_map_file(&tweak_snapshot_path()) {
+                    Ok(snapshots) => {
+                        normalize_history_undo_flags(
+                            &mut entries,
+                            snapshots.as_ref().unwrap_or(&serde_json::Map::new()),
+                        );
+                        String::new()
+                    }
+                    Err(error) => {
+                        disable_all_history_undo(&mut entries);
+                        format!("Undo is disabled because rollback data is unreadable: {error}")
+                    }
+                };
+                serde_json::json!({ "success": true, "message": message, "entries": entries })
+            }
+            Err(error) => serde_json::json!({
+                "success": false,
+                "message": format!("Change history is unreadable: {error}"),
+                "entries": []
+            }),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            serde_json::json!({ "success": true, "message": "", "entries": [] })
+        }
+        Err(error) => serde_json::json!({
+            "success": false,
+            "message": format!("Could not read change history: {error}"),
+            "entries": []
+        }),
     }
-    serde_json::json!([])
 }
 
 fn append_history(
@@ -982,13 +1151,11 @@ fn append_history(
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Could not create history directory: {e}"))?;
     }
-    let mut entries: Vec<serde_json::Value> = if path.exists() {
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|d| serde_json::from_str(&d).ok())
-            .unwrap_or_default()
-    } else {
-        Vec::new()
+    let mut entries: Vec<serde_json::Value> = match std::fs::read_to_string(&path) {
+        Ok(data) => serde_json::from_str(&data)
+            .map_err(|error| format!("Existing change history is unreadable: {error}"))?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(format!("Could not read existing change history: {error}")),
     };
     // Derive the next id from the current maximum rather than the entry count,
     // so ids stay unique even if entries are ever pruned/filtered.
@@ -998,6 +1165,11 @@ fn append_history(
         .max()
         .unwrap_or(0)
         + 1;
+    let can_undo =
+        status == "committed" && action_id.is_some() && is_undoable_history_module(module);
+    if can_undo {
+        disable_matching_history_undo(&mut entries, module, action_id.unwrap_or_default());
+    }
     entries.push(serde_json::json!({
         "id": id,
         "timestamp": chrono::Local::now().to_rfc3339(),
@@ -1006,9 +1178,130 @@ fn append_history(
         "name": name,
         "tier": tier,
         "status": status,
-        "can_undo": status == "committed" && matches!(module, "visual" | "performance" | "privacy"),
+        "can_undo": can_undo,
     }));
     write_json_atomic(&path, &entries).map_err(|e| format!("Could not save change history: {e}"))
+}
+
+fn is_undoable_history_module(module: &str) -> bool {
+    matches!(module, "visual" | "performance" | "privacy")
+}
+
+fn history_entry_matches(entry: &serde_json::Value, module: &str, action_id: &str) -> bool {
+    entry.get("module").and_then(serde_json::Value::as_str) == Some(module)
+        && entry.get("action_id").and_then(serde_json::Value::as_str) == Some(action_id)
+}
+
+fn disable_matching_history_undo(entries: &mut [serde_json::Value], module: &str, action_id: &str) {
+    for entry in entries {
+        if history_entry_matches(entry, module, action_id) {
+            entry["can_undo"] = serde_json::Value::Bool(false);
+        }
+    }
+}
+
+fn disable_all_history_undo(entries: &mut [serde_json::Value]) {
+    for entry in entries {
+        entry["can_undo"] = serde_json::Value::Bool(false);
+    }
+}
+
+/// Reconcile file-backed History after an undo launched from either a module
+/// panel or the History panel. One snapshot represents the whole active run of
+/// a tweak, so every committed row for that action becomes non-actionable.
+fn finish_undo_with_history(
+    result: serde_json::Value,
+    module: &str,
+    action_id: &str,
+    selected_history_id: Option<i64>,
+) -> serde_json::Value {
+    if result.get("success").and_then(serde_json::Value::as_bool) != Some(true) {
+        return result;
+    }
+
+    let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let path = history_path();
+    let mut entries: Vec<serde_json::Value> = match std::fs::read_to_string(&path) {
+        Ok(data) => match serde_json::from_str(&data) {
+            Ok(entries) => entries,
+            Err(error) => {
+                return serde_json::json!({
+                    "success": false,
+                    "changed": true,
+                    "message": format!("The setting was restored, but History is unreadable: {error}")
+                });
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return result,
+        Err(error) => {
+            return serde_json::json!({
+                "success": false,
+                "changed": true,
+                "message": format!("The setting was restored, but History could not be read: {error}")
+            });
+        }
+    };
+
+    reconcile_history_after_undo(&mut entries, module, action_id, selected_history_id);
+    if let Err(error) = write_json_atomic(&path, &entries) {
+        return serde_json::json!({
+            "success": false,
+            "changed": true,
+            "message": format!("The setting was restored, but History could not be saved: {error}")
+        });
+    }
+    result
+}
+
+fn reconcile_history_after_undo(
+    entries: &mut [serde_json::Value],
+    module: &str,
+    action_id: &str,
+    selected_history_id: Option<i64>,
+) {
+    let status_id = selected_history_id.or_else(|| {
+        entries.iter().rev().find_map(|entry| {
+            history_entry_matches(entry, module, action_id)
+                .then(|| entry.get("id").and_then(serde_json::Value::as_i64))
+                .flatten()
+        })
+    });
+    for entry in entries {
+        if history_entry_matches(entry, module, action_id) {
+            entry["can_undo"] = serde_json::Value::Bool(false);
+            if status_id
+                .is_some_and(|id| entry.get("id").and_then(serde_json::Value::as_i64) == Some(id))
+            {
+                entry["status"] = serde_json::Value::String("undone".into());
+            }
+        }
+    }
+}
+
+/// Stored flags are advisory and may predate the single-snapshot policy. Only
+/// the latest committed row backed by a valid snapshot may offer Undo.
+fn normalize_history_undo_flags(
+    entries: &mut [serde_json::Value],
+    snapshots: &serde_json::Map<String, serde_json::Value>,
+) {
+    let mut seen = HashSet::<(String, String)>::new();
+    for entry in entries.iter_mut().rev() {
+        let module = entry
+            .get("module")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let action_id = entry
+            .get("action_id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let key = (module.to_string(), action_id.to_string());
+        let is_latest = !action_id.is_empty() && seen.insert(key);
+        let can_undo = entry.get("status").and_then(serde_json::Value::as_str) == Some("committed")
+            && is_undoable_history_module(module)
+            && is_latest
+            && snapshots.contains_key(action_id);
+        entry["can_undo"] = serde_json::Value::Bool(can_undo);
+    }
 }
 
 fn change_with_history(
@@ -1044,42 +1337,93 @@ fn tweak_snapshot_path() -> std::path::PathBuf {
 
 /// Record the value a tweak had BEFORE it was applied. `None` means the registry
 /// value did not exist (so undo should delete it rather than write a default).
-fn save_snapshot(id: &str, value: Option<&str>) -> Result<(), String> {
+fn save_snapshot(id: &str, value: Option<&str>) -> Result<bool, String> {
     let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = tweak_snapshot_path();
     if let Some(p) = path.parent() {
         std::fs::create_dir_all(p).map_err(|e| e.to_string())?;
     }
-    let mut map: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|d| serde_json::from_str(&d).ok())
-        .unwrap_or_default();
-    // Each apply records the immediately preceding value for that operation.
-    map.insert(
-        id.to_string(),
-        match value {
-            Some(v) => serde_json::Value::String(v.to_string()),
-            None => serde_json::Value::Null,
-        },
-    );
-    write_json_atomic(&path, &map).map_err(|e| e.to_string())
+    let mut map = read_snapshot_map_file(&path)?.unwrap_or_default();
+    // A snapshot represents the original value for the currently applied
+    // change, not a stack of repeated button presses. Preserve the first value
+    // until a successful undo consumes it.
+    if !insert_snapshot_if_absent(&mut map, id, value) {
+        return Ok(false);
+    }
+    write_json_atomic(&path, &map)
+        .map(|()| true)
+        .map_err(|e| e.to_string())
 }
 
-/// Returns `Some(Some(v))` if a value was saved, `Some(None)` if the value was
-/// absent before apply, or `None` if no snapshot exists.
-fn load_snapshot(id: &str) -> Option<Option<String>> {
+fn failed_apply_with_snapshot_cleanup(
+    id: &str,
+    snapshot_created: bool,
+    message: String,
+) -> serde_json::Value {
+    if snapshot_created && let Err(cleanup_error) = delete_snapshot(id) {
+        return serde_json::json!({
+            "success": false,
+            "message": format!("{message} Also could not discard unused rollback data: {cleanup_error}")
+        });
+    }
+    serde_json::json!({ "success": false, "message": message })
+}
+
+fn insert_snapshot_if_absent(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    id: &str,
+    value: Option<&str>,
+) -> bool {
+    if map.contains_key(id) {
+        return false;
+    }
+    map.insert(
+        id.to_string(),
+        value.map_or(serde_json::Value::Null, |value| {
+            serde_json::Value::String(value.to_string())
+        }),
+    );
+    true
+}
+
+fn parse_snapshot_map(data: &str) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(data)
+        .map_err(|error| format!("Existing rollback data is unreadable: {error}"))?;
+    if let Some((id, _)) = map
+        .iter()
+        .find(|(_, value)| !value.is_null() && !value.is_string())
+    {
+        return Err(format!(
+            "Existing rollback data for '{id}' has an invalid value type."
+        ));
+    }
+    Ok(map)
+}
+
+fn read_snapshot_map_file(
+    path: &std::path::Path,
+) -> Result<Option<serde_json::Map<String, serde_json::Value>>, String> {
+    match std::fs::read_to_string(path) {
+        Ok(data) => parse_snapshot_map(&data).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("Could not read existing rollback data: {error}")),
+    }
+}
+
+/// Returns `Ok(Some(Some(v)))` if a value was saved, `Ok(Some(None))` if the
+/// value was absent before apply, or `Ok(None)` if no snapshot exists. Corrupt
+/// or unreadable storage is an error and must never be interpreted as absence.
+fn load_snapshot(id: &str) -> Result<Option<Option<String>>, String> {
     let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = tweak_snapshot_path();
-    let map: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|d| serde_json::from_str(&d).ok())?;
-    map.get(id).map(|v| {
-        if v.is_null() {
-            None
-        } else {
-            v.as_str().map(|s| s.to_string())
-        }
-    })
+    let Some(map) = read_snapshot_map_file(&path)? else {
+        return Ok(None);
+    };
+    Ok(map.get(id).map(|value| value.as_str().map(str::to_string)))
+}
+
+fn has_snapshot(id: &str) -> bool {
+    matches!(load_snapshot(id), Ok(Some(_)))
 }
 
 #[cfg(target_os = "windows")]
@@ -1283,6 +1627,10 @@ pub async fn get_restore_points() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn create_restore_point(description: String) -> serde_json::Value {
+    let description = match validate_restore_point_description(&description) {
+        Ok(description) => description,
+        Err(message) => return serde_json::json!({ "success": false, "message": message }),
+    };
     tokio::task::spawn_blocking(
         move || match mod_restore::create_restore_point(&description) {
             Ok(msg) => serde_json::json!({ "success": true, "message": msg }),
@@ -1291,6 +1639,22 @@ pub async fn create_restore_point(description: String) -> serde_json::Value {
     )
     .await
     .unwrap_or_else(|_| join_fallback())
+}
+
+fn validate_restore_point_description(description: &str) -> Result<String, String> {
+    let description = description.trim();
+    if description.is_empty() {
+        return Err("Enter a restore-point description.".into());
+    }
+    if description.chars().count() > 120 {
+        return Err("Restore-point descriptions must be 120 characters or fewer.".into());
+    }
+    if description.chars().any(char::is_control) {
+        return Err(
+            "Restore-point descriptions cannot contain control characters or line breaks.".into(),
+        );
+    }
+    Ok(description.to_string())
 }
 
 #[tauri::command]
@@ -1348,10 +1712,9 @@ fn program_cache() -> &'static Mutex<HashMap<String, mod_uninstall::InstalledPro
 fn delete_snapshot(id: &str) -> Result<(), String> {
     let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = tweak_snapshot_path();
-    let mut map: serde_json::Map<String, serde_json::Value> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|data| serde_json::from_str(&data).ok())
-        .unwrap_or_default();
+    let Some(mut map) = read_snapshot_map_file(&path)? else {
+        return Ok(());
+    };
     map.remove(id);
     write_json_atomic(&path, &map).map_err(|e| e.to_string())
 }
@@ -1408,16 +1771,23 @@ fn leftover_cache() -> &'static Mutex<HashMap<String, Vec<mod_uninstall::Leftove
 
 #[tauri::command]
 pub async fn get_installed_programs() -> serde_json::Value {
-    tokio::task::spawn_blocking(|| {
-        let programs = mod_uninstall::list_programs();
-        if let Ok(mut cache) = program_cache().lock() {
-            cache.clear();
-            cache.extend(programs.iter().cloned().map(|p| (p.id.clone(), p)));
+    tokio::task::spawn_blocking(|| match mod_uninstall::list_programs_checked() {
+        Ok(programs) => {
+            if let Ok(mut cache) = program_cache().lock() {
+                cache.clear();
+                cache.extend(programs.iter().cloned().map(|p| (p.id.clone(), p)));
+            }
+            serde_json::json!({ "success": true, "message": "", "programs": programs })
         }
-        serde_json::to_value(programs).unwrap_or_default()
+        Err(message) => {
+            if let Ok(mut cache) = program_cache().lock() {
+                cache.clear();
+            }
+            serde_json::json!({ "success": false, "message": message, "programs": [] })
+        }
     })
     .await
-    .unwrap_or_default()
+    .unwrap_or_else(|_| join_fallback())
 }
 
 #[tauri::command]
@@ -1427,11 +1797,7 @@ pub async fn uninstall_program(program_id: String) -> serde_json::Value {
         let Some(program) = program else {
             return serde_json::json!({ "success": false, "message": "Program selection expired. Refresh the installed-program list." });
         };
-        serde_json::to_value(mod_uninstall::run_uninstall(
-            &program.uninstall_string,
-            &program.quiet_uninstall_string,
-        ))
-        .unwrap_or_default()
+        serde_json::to_value(mod_uninstall::run_uninstall(&program)).unwrap_or_default()
     })
     .await
     .unwrap_or_else(|_| join_fallback())
@@ -1444,7 +1810,12 @@ pub async fn scan_leftovers(program_id: String) -> serde_json::Value {
         let Some(program) = program else {
             return serde_json::json!({ "success": false, "message": "Program selection expired. Refresh the installed-program list." });
         };
-        let result = mod_uninstall::scan_leftovers(&program.name, &program.publisher, "", "");
+        let result = mod_uninstall::scan_leftovers(
+            &program.name,
+            &program.publisher,
+            &program.install_location,
+            &program.registry_key,
+        );
         let scan_id = format!("scan-{}", uuid::Uuid::new_v4());
         if let Ok(mut cache) = leftover_cache().lock() {
             cache.insert(scan_id.clone(), result.leftovers.clone());
@@ -1580,6 +1951,9 @@ pub fn get_presets() -> serde_json::Value {
 #[tauri::command]
 pub async fn run_preset(id: String) -> serde_json::Value {
     tokio::task::spawn_blocking(move || {
+        let _mutation_guard = TWEAK_MUTATION_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let presets = get_presets();
         let preset = presets.as_array().and_then(|arr| arr.iter().find(|p| p.get("id").and_then(|v| v.as_str()) == Some(&id)));
 
@@ -1641,7 +2015,7 @@ fn snapshot_path() -> std::path::PathBuf {
 fn system_drive_free_bytes() -> Option<u64> {
     #[cfg(target_os = "windows")]
     {
-        let ps = r#"$sd = $env:SystemDrive; (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sd'" -ErrorAction SilentlyContinue).FreeSpace"#;
+        let ps = r#"$sd = [IO.Path]::GetPathRoot([Environment]::SystemDirectory).TrimEnd('\'); (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sd'" -ErrorAction SilentlyContinue).FreeSpace"#;
         if let Ok(o) = optimizer_core::powershell(ps).output() {
             return String::from_utf8_lossy(&o.stdout).trim().parse().ok();
         }
@@ -1654,7 +2028,7 @@ pub async fn take_snapshot() -> serde_json::Value {
     tokio::task::spawn_blocking(|| {
     let health = mod_health::quick_scan();
     let startup_result = mod_startup::list_items_v2();
-    let programs = mod_uninstall::list_programs();
+    let programs = mod_uninstall::list_programs_checked();
     let cleanup = mod_cleanup::scan_targets();
     let events = mod_eventlog::get_summary();
     let bloatware = mod_bloatware::scan_installed();
@@ -1662,9 +2036,9 @@ pub async fn take_snapshot() -> serde_json::Value {
     let startup_items = startup_result.as_ref().ok().map(|items| items.iter().map(|item| {
         serde_json::json!({ "id": item.id, "name": item.name })
     }).collect::<Vec<_>>());
-    let program_items = programs.iter().map(|item| {
+    let program_items = programs.as_ref().ok().map(|items| items.iter().map(|item| {
         serde_json::json!({ "id": item.id, "name": item.name })
-    }).collect::<Vec<_>>();
+    }).collect::<Vec<_>>());
     let temp_size = if cleanup.iter().all(|target| target.scan_error.is_none()) {
         Some(cleanup.iter().map(|target| target.size_bytes).sum::<u64>())
     } else { None };
@@ -1711,7 +2085,7 @@ pub async fn get_machine_diff() -> serde_json::Value {
 
     let health = mod_health::quick_scan();
     let startup = mod_startup::list_items_v2();
-    let programs = mod_uninstall::list_programs();
+    let programs = mod_uninstall::list_programs_checked();
     let cleanup = mod_cleanup::scan_targets();
     let events = mod_eventlog::get_summary();
     let bloatware = mod_bloatware::scan_installed();
@@ -1724,7 +2098,7 @@ pub async fn get_machine_diff() -> serde_json::Value {
     };
     let cur_startup = startup.ok().map(|items| items.into_iter().map(|i| (i.id.to_lowercase(), i.name)).collect::<std::collections::BTreeMap<_,_>>());
     let prev_startup = read_items(prev.get("startup_items"));
-    let cur_programs = Some(programs.into_iter().map(|i| (i.id.to_lowercase(), i.name)).collect::<std::collections::BTreeMap<_,_>>());
+    let cur_programs = programs.ok().map(|items| items.into_iter().map(|i| (i.id.to_lowercase(), i.name)).collect::<std::collections::BTreeMap<_,_>>());
     let prev_programs = read_items(prev.get("programs"));
     let cur_bloatware = bloatware.complete.then(|| bloatware.apps.into_iter().filter(|a| a.installed).map(|a| (a.package_name.to_lowercase(), a.display_name)).collect::<std::collections::BTreeMap<_,_>>());
     let prev_bloatware = read_items(prev.get("bloatware"));
@@ -1934,7 +2308,7 @@ pub async fn get_performance_tweaks() -> Vec<serde_json::Value> {
                     "id": t.id, "name": t.name, "description": t.description, "category": t.category,
                     "safety_tier": t.safety_tier, "registry_path": t.registry_path,
                     "current_value": t.current_value, "optimized_value": t.optimized_value, "warning": t.warning,
-                    "applied": applied, "can_undo": load_snapshot(&t.id).is_some(),
+                    "applied": applied, "can_undo": has_snapshot(&t.id),
                 })
             })
             .collect()
@@ -1943,16 +2317,20 @@ pub async fn get_performance_tweaks() -> Vec<serde_json::Value> {
 
 #[tauri::command]
 pub async fn apply_performance_tweak(id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || apply_perf_tweak_sync(&id))
+    tokio::task::spawn_blocking(move || with_tweak_mutation(|| apply_perf_tweak_sync(&id)))
         .await
         .unwrap_or_else(|_| join_fallback())
 }
 
 #[tauri::command]
 pub async fn undo_performance_tweak(id: String) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || undo_perf_tweak_sync(&id))
-        .await
-        .unwrap_or_else(|_| join_fallback())
+    tokio::task::spawn_blocking(move || {
+        with_tweak_mutation(|| {
+            finish_undo_with_history(undo_perf_tweak_sync(&id), "performance", &id, None)
+        })
+    })
+    .await
+    .unwrap_or_else(|_| join_fallback())
 }
 
 // ---------------------------------------------------------------------------
@@ -2016,7 +2394,7 @@ fn get_activation_status_sync() -> serde_json::Value {
 
 #[tauri::command]
 pub async fn undo_change(id: i64) -> serde_json::Value {
-    tokio::task::spawn_blocking(move || undo_change_sync(id))
+    tokio::task::spawn_blocking(move || with_tweak_mutation(|| undo_change_sync(id)))
         .await
         .unwrap_or_else(|_| join_fallback())
 }
@@ -2025,15 +2403,26 @@ fn undo_change_sync(id: i64) -> serde_json::Value {
     let path = history_path();
     let entries: Vec<serde_json::Value> = {
         let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        match std::fs::read_to_string(&path)
+        let mut entries: Vec<serde_json::Value> = match std::fs::read_to_string(&path)
             .ok()
             .and_then(|d| serde_json::from_str(&d).ok())
         {
-            Some(e) => e,
+            Some(entries) => entries,
             None => {
                 return serde_json::json!({ "success": false, "message": "No readable change history found." });
             }
-        }
+        };
+        let snapshots = match read_snapshot_map_file(&tweak_snapshot_path()) {
+            Ok(snapshots) => snapshots.unwrap_or_default(),
+            Err(message) => {
+                return serde_json::json!({
+                    "success": false,
+                    "message": format!("Undo is disabled because rollback data is unreadable: {message}")
+                });
+            }
+        };
+        normalize_history_undo_flags(&mut entries, &snapshots);
+        entries
     };
 
     let idx = match entries
@@ -2047,6 +2436,16 @@ fn undo_change_sync(id: i64) -> serde_json::Value {
     };
     if entries[idx].get("status").and_then(|v| v.as_str()) == Some("undone") {
         return serde_json::json!({ "success": false, "message": "This change was already undone." });
+    }
+    if entries[idx]
+        .get("can_undo")
+        .and_then(serde_json::Value::as_bool)
+        != Some(true)
+    {
+        return serde_json::json!({
+            "success": false,
+            "message": "This history entry is no longer the active undo point for that setting."
+        });
     }
 
     let module = entries[idx]
@@ -2104,35 +2503,160 @@ fn undo_change_sync(id: i64) -> serde_json::Value {
         }),
     };
 
-    // On success, flip the original entry to "undone" and persist. (This write
-    // also supersedes any extra entry an inner undo appended, so the history
-    // shows a single, accurate state.)
-    if result
-        .get("success")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        let _guard = DATA_FILE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut latest: Vec<serde_json::Value> = match std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|d| serde_json::from_str(&d).ok())
-        {
-            Some(entries) => entries,
-            None => {
-                return serde_json::json!({ "success": false, "changed": true, "message": "The setting was restored, but History could not be reloaded to record it." });
-            }
-        };
-        let Some(latest_idx) = latest
-            .iter()
-            .position(|e| e.get("id").and_then(|v| v.as_i64()) == Some(id))
-        else {
-            return serde_json::json!({ "success": false, "changed": true, "message": "The setting was restored, but its History entry disappeared before it could be updated." });
-        };
-        latest[latest_idx]["status"] = serde_json::Value::String("undone".to_string());
-        latest[latest_idx]["can_undo"] = serde_json::Value::Bool(false);
-        if let Err(error) = write_json_atomic(&path, &latest) {
-            return serde_json::json!({ "success": false, "changed": true, "message": format!("The setting was restored, but History could not be saved: {error}") });
-        }
+    let Some(action_id) = action_id else {
+        return result;
+    };
+    finish_undo_with_history(result, &module, &action_id, Some(id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_insert_preserves_the_first_original_value() {
+        let mut snapshots = serde_json::Map::new();
+        assert!(insert_snapshot_if_absent(
+            &mut snapshots,
+            "visual.transparency",
+            Some("1")
+        ));
+        assert!(!insert_snapshot_if_absent(
+            &mut snapshots,
+            "visual.transparency",
+            Some("0")
+        ));
+        assert_eq!(
+            snapshots
+                .get("visual.transparency")
+                .and_then(serde_json::Value::as_str),
+            Some("1")
+        );
     }
-    result
+
+    #[test]
+    fn snapshot_insert_preserves_an_originally_absent_value() {
+        let mut snapshots = serde_json::Map::new();
+        assert!(insert_snapshot_if_absent(
+            &mut snapshots,
+            "privacy.feedback",
+            None
+        ));
+        assert!(!insert_snapshot_if_absent(
+            &mut snapshots,
+            "privacy.feedback",
+            Some("0")
+        ));
+        assert_eq!(
+            snapshots.get("privacy.feedback"),
+            Some(&serde_json::Value::Null)
+        );
+    }
+
+    #[test]
+    fn corrupt_snapshot_values_are_rejected_instead_of_treated_as_absent() {
+        assert!(parse_snapshot_map(r#"{"perf.example":1}"#).is_err());
+        assert!(parse_snapshot_map(r#"{"perf.example":{"value":"1"}}"#).is_err());
+        let valid = parse_snapshot_map(r#"{"perf.example":"1","privacy.example":null}"#)
+            .expect("valid rollback map");
+        assert_eq!(
+            valid
+                .get("perf.example")
+                .and_then(serde_json::Value::as_str),
+            Some("1")
+        );
+        assert!(
+            valid
+                .get("privacy.example")
+                .is_some_and(serde_json::Value::is_null)
+        );
+    }
+
+    #[test]
+    fn checked_registry_response_distinguishes_missing_failure_and_value() {
+        assert_eq!(
+            parse_registry_snapshot_response(r#"{"exists":false,"value":null}"#),
+            Ok(None)
+        );
+        assert_eq!(
+            parse_registry_snapshot_response(r#"{"exists":true,"value":"0"}"#),
+            Ok(Some("0".into()))
+        );
+        assert!(parse_registry_snapshot_response(r#"{"value":"0"}"#).is_err());
+        assert!(parse_registry_snapshot_response("not json").is_err());
+    }
+
+    #[test]
+    fn history_exposes_only_the_latest_snapshot_backed_action() {
+        let mut entries = vec![
+            serde_json::json!({
+                "id": 1, "module": "visual", "action_id": "visual.transparency",
+                "status": "committed", "can_undo": true
+            }),
+            serde_json::json!({
+                "id": 2, "module": "visual", "action_id": "visual.transparency",
+                "status": "committed", "can_undo": true
+            }),
+            serde_json::json!({
+                "id": 3, "module": "performance", "action_id": "perf.missing",
+                "status": "committed", "can_undo": true
+            }),
+            serde_json::json!({
+                "id": 4, "module": "privacy", "action_id": "privacy.feedback",
+                "status": "committed", "can_undo": true
+            }),
+            serde_json::json!({
+                "id": 5, "module": "privacy", "action_id": "privacy.feedback",
+                "status": "undone", "can_undo": false
+            }),
+        ];
+        let snapshots = serde_json::Map::from_iter([
+            (
+                "visual.transparency".to_string(),
+                serde_json::Value::String("1".into()),
+            ),
+            ("privacy.feedback".to_string(), serde_json::Value::Null),
+        ]);
+
+        normalize_history_undo_flags(&mut entries, &snapshots);
+
+        assert_eq!(entries[0]["can_undo"], false);
+        assert_eq!(entries[1]["can_undo"], true);
+        assert_eq!(entries[2]["can_undo"], false);
+        assert_eq!(entries[3]["can_undo"], false);
+        assert_eq!(entries[4]["can_undo"], false);
+    }
+
+    #[test]
+    fn direct_undo_disables_all_matching_rows_and_marks_latest_undone() {
+        let mut entries = vec![
+            serde_json::json!({
+                "id": 1, "module": "privacy", "action_id": "privacy.feedback",
+                "status": "committed", "can_undo": false
+            }),
+            serde_json::json!({
+                "id": 2, "module": "privacy", "action_id": "privacy.feedback",
+                "status": "committed", "can_undo": true
+            }),
+        ];
+
+        reconcile_history_after_undo(&mut entries, "privacy", "privacy.feedback", None);
+
+        assert_eq!(entries[0]["can_undo"], false);
+        assert_eq!(entries[0]["status"], "committed");
+        assert_eq!(entries[1]["can_undo"], false);
+        assert_eq!(entries[1]["status"], "undone");
+    }
+
+    #[test]
+    fn restore_point_description_policy_is_backend_enforced() {
+        assert_eq!(
+            validate_restore_point_description("  Before driver update  ").as_deref(),
+            Ok("Before driver update")
+        );
+        assert!(validate_restore_point_description("   ").is_err());
+        assert!(validate_restore_point_description("line one\nline two").is_err());
+        assert!(validate_restore_point_description(&"x".repeat(121)).is_err());
+        assert!(validate_restore_point_description(&"é".repeat(120)).is_ok());
+    }
 }

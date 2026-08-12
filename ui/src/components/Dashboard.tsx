@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { View } from "../App";
 import { invoke } from "../lib/tauri";
 import Icon from "./Icon";
@@ -258,10 +258,19 @@ export default function Dashboard({ onNavigate }: Props) {
   const [diagError, setDiagError] = useState<string | null>(null);
   const [presetError, setPresetError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const presetRunningRef = useRef(false);
 
   useEffect(() => {
     invoke<HealthReport>("get_health_report")
       .then((report) => {
+        if (
+          !report ||
+          !Array.isArray(report.findings) ||
+          !(typeof report.score === "number" || report.score === null) ||
+          typeof report.complete !== "boolean"
+        ) {
+          throw new Error("The backend returned an invalid health report.");
+        }
         setScore(report.score);
         const warnings = report.findings.filter(
           (f) => f.severity === "Warning" || f.severity === "Critical"
@@ -277,6 +286,7 @@ export default function Dashboard({ onNavigate }: Props) {
         }
       })
       .catch(() => {
+        setScore(null);
         setStatusText("Ready to scan. Could not reach backend.");
       });
 
@@ -304,6 +314,8 @@ export default function Dashboard({ onNavigate }: Props) {
   };
 
   const handleRunPreset = async (preset: Preset) => {
+    if (presetRunningRef.current) return;
+    presetRunningRef.current = true;
     setPresetRunning(preset.id);
     setPresetResult(null);
     setPresetError(null);
@@ -317,6 +329,7 @@ export default function Dashboard({ onNavigate }: Props) {
       console.error("Preset failed:", e);
       setPresetError(`Could not run "${preset.name}": ${String(e)}`);
     } finally {
+      presetRunningRef.current = false;
       setPresetRunning(null);
     }
   };
@@ -436,7 +449,7 @@ export default function Dashboard({ onNavigate }: Props) {
                 <button
                   className="preset-run-btn"
                   onClick={() => handleRunPreset(p)}
-                  disabled={presetRunning === p.id}
+                  disabled={presetRunning !== null}
                 >
                   {presetRunning === p.id ? "Running..." : "Run"}
                 </button>

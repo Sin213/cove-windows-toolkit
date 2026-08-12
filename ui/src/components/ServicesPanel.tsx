@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/tauri";
 import ConfirmDialog from "./ConfirmDialog";
 import "./ServicesPanel.css";
@@ -28,10 +28,13 @@ const PROFILE_TABS = [
 export default function ServicesPanel() {
   const [data, setData] = useState<ServicesData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [activeProfile, setActiveProfile] = useState("conservative");
   const [applied, setApplied] = useState<Record<string, boolean>>({});
+  const [applying, setApplying] = useState<Record<string, boolean>>({});
   const [pendingConfirm, setPendingConfirm] = useState<ServiceItem | null>(null);
+  const inFlightRef = useRef(new Set<string>());
 
   useEffect(() => {
     invoke<ServicesData>("get_services_tweaks")
@@ -39,11 +42,15 @@ export default function ServicesPanel() {
         setData(response);
         setApplied(Object.fromEntries([...response.conservative, ...response.advanced].map((item) => [item.id, item.current === item.optimized])));
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setLoadError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
   const handleApply = async (svc: ServiceItem) => {
+    if (inFlightRef.current.size > 0) return;
+    inFlightRef.current.add(svc.id);
+    setApplying((current) => ({ ...current, [svc.id]: true }));
+    setActionError(null);
     try {
       const res = await invoke<{ success: boolean; message?: string }>("apply_service_change", { id: svc.id });
       if (res.success) {
@@ -53,15 +60,18 @@ export default function ServicesPanel() {
           advanced: current.advanced.map((item) => item.id === svc.id ? { ...item, current: item.optimized } : item),
         } : current);
       } else {
-        setError(res.message || "Service change failed.");
+        setActionError(res.message || "Service change failed.");
       }
     } catch (e) {
-      setError(String(e));
+      setActionError(String(e));
+    } finally {
+      inFlightRef.current.delete(svc.id);
+      setApplying((current) => ({ ...current, [svc.id]: false }));
     }
   };
 
   if (loading) return <div className="panel-loading">Loading services...</div>;
-  if (error) return <div className="panel-error">Error: {error}</div>;
+  if (loadError) return <div className="panel-error">Error: {loadError}</div>;
   if (!data) return null;
 
   const filtered: ServiceItem[] =
@@ -71,6 +81,7 @@ export default function ServicesPanel() {
 
   return (
     <div className="services-panel">
+      {actionError && <div className="panel-error" role="alert">{actionError}</div>}
       <div className="profile-tabs">
         {PROFILE_TABS.map((p) => (
           <button
@@ -123,8 +134,9 @@ export default function ServicesPanel() {
                       handleApply(svc);
                     }
                   }}
+                  disabled={Object.values(applying).some(Boolean)}
                 >
-                  Apply
+                  {applying[svc.id] ? "Applying..." : "Apply"}
                 </button>
               )}
             </div>

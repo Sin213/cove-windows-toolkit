@@ -22,6 +22,9 @@ pub struct UpdateStatus {
 
 #[cfg(target_os = "windows")]
 pub fn get_status() -> UpdateStatus {
+    let dism_path = optimizer_core::system_executable("dism")
+        .to_string_lossy()
+        .replace('\'', "''");
     let ps = r#"
 # WU service status
 $svc = Get-Service wuauserv -ErrorAction SilentlyContinue
@@ -61,7 +64,7 @@ foreach ($p in $pending) { Write-Output ('UPDATEJSON|' + ($p | ConvertTo-Json -C
 
 # Component store
 try {
-    $dism = & dism /Online /Cleanup-Image /CheckHealth 2>&1
+    $dism = & '__COVE_DISM_PATH__' /Online /Cleanup-Image /CheckHealth 2>&1
     if ($LASTEXITCODE -ne 0) {
         # e.g. error 740 (needs elevation) - we can't tell, so don't claim corruption
         Write-Output "COMP|Unknown"
@@ -76,7 +79,8 @@ try {
     }
 } catch { Write-Output "COMP|Unknown" }
 foreach ($err in $errors) { Write-Output ('ERR|' + ($err -replace '[\r\n]+',' ')) }
-"#;
+"#
+    .replace("__COVE_DISM_PATH__", &dism_path);
 
     let mut status = UpdateStatus {
         complete: false,
@@ -89,7 +93,7 @@ foreach ($err in $errors) { Write-Output ('ERR|' + ($err -replace '[\r\n]+',' ')
         days_since_last_update: None,
     };
 
-    if let Ok(o) = optimizer_core::powershell(ps).output() {
+    if let Ok(o) = optimizer_core::powershell(&ps).output() {
         let stdout = String::from_utf8_lossy(&o.stdout);
         for line in stdout.lines() {
             if line.starts_with("STATUS|") {

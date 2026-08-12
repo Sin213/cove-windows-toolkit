@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
 import { timeAgo } from "../lib/format";
+import { openExternal } from "../lib/openExternal";
 import ConfirmDialog from "./ConfirmDialog";
 import "./UpdatesPanel.css";
 
@@ -64,6 +65,14 @@ export default function UpdatesPanel() {
     } finally {
       setResetting(false);
     }
+  };
+
+  const handleDriverUpdates = async () => {
+    const result = await openExternal("ms-settings:windowsupdate-optionalupdates");
+    setFeedback({
+      type: result.ok ? "success" : "error",
+      message: result.ok ? "Opened Optional Updates." : result.message,
+    });
   };
 
   if (loading) return <div className="panel-loading">Checking updates...</div>;
@@ -131,7 +140,7 @@ export default function UpdatesPanel() {
           <button className="wu-btn wu-btn-primary" onClick={handleCheckUpdates}>
             Check for Windows Updates
           </button>
-          <button className="wu-btn wu-btn-secondary" onClick={() => invoke("open_url", { url: "ms-settings:windowsupdate-optionalupdates" })}>
+          <button className="wu-btn wu-btn-secondary" onClick={handleDriverUpdates}>
             Check for Driver Updates
           </button>
           <button className="wu-btn wu-btn-warning" onClick={() => setConfirmReset(true)} disabled={resetting}>

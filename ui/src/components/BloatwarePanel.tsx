@@ -43,7 +43,8 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function BloatwarePanel() {
   const [apps, setApps] = useState<BloatwareApp[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [removing, setRemoving] = useState(false);
   const [results, setResults] = useState<Record<string, RemoveResult>>({});
@@ -53,12 +54,12 @@ export default function BloatwarePanel() {
     invoke<BloatwareReport>("get_bloatware")
       .then((report) => {
         if (!report.complete) {
-          setError(report.error || "The AppX inventory could not be queried.");
+          setLoadError(report.error || "The AppX inventory could not be queried.");
           return;
         }
         setApps(report.apps);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setLoadError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -85,6 +86,7 @@ export default function BloatwarePanel() {
 
   const handleRemove = async () => {
     setRemoving(true);
+    setActionError(null);
     try {
       const packages = selectedApps.map((a) => a.package_name);
       const res = await invoke<RemoveResult[]>("remove_bloatware", { packages });
@@ -95,14 +97,14 @@ export default function BloatwarePanel() {
       setResults((prev) => ({ ...prev, ...map }));
     } catch (e) {
       console.error("Bloatware removal failed:", e);
-      setError(`Removal failed: ${String(e)}`);
+      setActionError(`Removal failed: ${String(e)}`);
     } finally {
       setRemoving(false);
     }
   };
 
   if (loading) return <div className="panel-loading">Scanning installed apps...</div>;
-  if (error) return <div className="panel-error">Error: {error}</div>;
+  if (loadError) return <div className="panel-error">Error: {loadError}</div>;
 
   const grouped = CATEGORY_ORDER.map((cat) => ({
     cat,
@@ -111,6 +113,7 @@ export default function BloatwarePanel() {
 
   return (
     <div className="bloatware-panel">
+      {actionError && <div className="panel-error" role="alert">{actionError}</div>}
       <div className="bloat-summary">
         <div className="bs-stat">
           <span className="bs-num">{installed.length}</span>

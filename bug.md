@@ -1,5 +1,11 @@
 # Cove Windows Toolkit — full repository bug audit
 
+> **This first report is historic.** It describes commit `362675b` as of
+> 2026-07-16 and its verification failures no longer reflect the working tree.
+> For the current state of the code, read
+> [the August 2026 follow-up audit](#august-2026-follow-up-audit) at the end of
+> this file.
+
 Audit date: 2026-07-16
 Audited commit: `362675b`
 Scope: all Rust crates, Tauri command adapters and configuration, embedded PowerShell, React/TypeScript UI, release workflow, dependency locks, and documented development/release paths.
@@ -1071,3 +1077,249 @@ Many native Windows tools emit the active OEM code page, but the code uses `Stri
 4. Introduce a shared result model with `known`, `complete`, `success`, `partial`, and error details; stop treating empty/default data as healthy.
 5. Make mutation history transactional and rollback payloads operation-specific before calling tweaks reversible.
 6. Repair clean-clone build/release paths and dependency advisories, then establish CI gates and real tests for the critical validation/parsing/state logic.
+
+---
+
+# August 2026 follow-up audit
+
+Audit date: 2026-08-12
+Audited branch: `agent/cleanup-support-logs`
+Baseline commit: `d41759a` ("Fix pnpm cache path in CI")
+Audited tree: that commit plus the uncommitted remediation working tree
+(82 tracked files changed, plus new `LICENSE`, `rust-toolchain.toml`, and
+`scripts/`).
+
+Scope: all Rust crates, the Tauri command adapters and configuration, embedded
+PowerShell, the React/TypeScript UI, CI and release workflows, dependency locks,
+and the documented build/release path. `.claude/settings.local.json` is a
+user-local file and is outside audit scope.
+
+## What this section is
+
+The July report above is a defect inventory of an older commit. This section
+records what has been fixed in the current tree, how each fix was verified, and
+what risk deliberately remains. The counts below are derived from the working
+diff and the audit notes, not carried over from the historic 158.
+
+## Confirmed addressed root causes
+
+**65 confirmed addressed root causes**, counted once per root cause rather than
+once per observable symptom. A single defect that surfaced in several panels
+(for example unvalidated command envelopes) is one entry.
+
+| Area | Root causes |
+|---|---:|
+| Privilege and destructive-operation hardening | 16 |
+| Rollback, history, and data integrity | 8 |
+| Frontend reliability and IPC contracts | 13 |
+| Correctness and parsing | 6 |
+| Release engineering, supply chain, and policy | 22 |
+| **Total** | **65** |
+
+### Privilege and destructive-operation hardening (16)
+
+1. Elevated cleanup followed reparse points, so a junction could redirect
+   privileged deletion outside the intended target.
+2. A single locked child aborted the whole cleanup target.
+3. Missing optional folders (for example WER) were reported as failures instead
+   of being idempotent no-ops.
+4. Nested folders were not removed post-order, leaving partial deletions.
+5. Uninstall executed arbitrary registered uninstall strings from an elevated
+   process. Execution is now limited to revalidated MSI product codes.
+6. Uninstall trusted HKCU-registered entries, which an unprivileged user can
+   write. Only freshly revalidated HKLM MSI registrations are accepted, invoked
+   through a trusted System32 `msiexec.exe`.
+7. Heuristic/shared-folder leftover discovery could delete folders the program
+   did not own. Automatic leftover deletion is removed, not merely gated.
+8. Elevated startup-folder file moves are disabled.
+9. Registry Run toggles accepted unapproved roots; they are now limited to
+   approved roots.
+10. A Run-key toggle silently overwrote a colliding destination value; it is now
+    refused.
+11. A failed Run-key toggle left a partial destination copy behind; it now rolls
+    back.
+12. The adjacent `portable.marker` / `cove-app-data` state mode let an
+    unprivileged junction redirect elevated writes. State now lives in per-user
+    AppData (`crates/optimizer-app/src/portable.rs`).
+13. A read-only temperature diagnostic silently installed the PawnIO kernel
+    driver. Temperature collection is now read-only over already-installed
+    providers.
+14. Inbox executables were resolved by bare name; they now resolve through the
+    Windows directory/System32.
+15. Optional vendor tools were located through the inherited `ProgramFiles`
+    environment variable; they now use the Known Folder API
+    (`optimizer_core::program_files_directory`).
+16. The Windows Security URI was launched through `explorer`; it now uses
+    `ShellExecuteW` directly.
+
+### Rollback, history, and data integrity (8)
+
+17. Repeated Apply overwrote the original pre-change snapshot. The first
+    snapshot is now preserved until an undo consumes it.
+18. Concurrent apply/undo/preset requests raced snapshot and registry state.
+    `TWEAK_MUTATION_LOCK` serializes the whole read to snapshot to mutate
+    sequence.
+19. Snapshots used the display inventory value, so a failed registry query was
+    indistinguishable from an absent value. The value is now re-read immediately
+    before mutation and query failure is an error.
+20. Corrupt or wrongly typed rollback JSON was treated as "value absent", so
+    Undo deleted a live registry value. Parsing now fails closed.
+21. A failed apply left an unused snapshot behind, blocking later correct
+    snapshots.
+22. Multiple committed history rows offered Undo for one snapshot. Only the
+    latest snapshot-backed row is undoable, and panel/History undo reconcile all
+    matching rows.
+23. Corrupt history was displayed as empty and then overwritten. It is now
+    reported as unreadable.
+24. A failed program inventory produced a false "all programs removed" machine
+    diff.
+
+### Frontend reliability and IPC contracts (13)
+
+25. Command envelopes (Cleanup, Security, Diff, History, Startup, Uninstaller)
+    were consumed without validation, and worker failures had no fallback.
+26. Cleanup reported success for failed runs.
+27. The Uninstaller reported completion that had not happened.
+28. A post-uninstall location rescan re-ran the uninstaller; it now retries only
+    the scan.
+29. Mutations had no in-flight guard, allowing duplicate submissions.
+30. Polling workflows accepted stale-generation responses.
+31. Temperature/SFC/Security polling overlapped and wrote after unmount
+    (including React StrictMode double-invocation).
+32. Visual/Performance Undo availability did not follow real rollback capability.
+33. Visual, Performance, Privacy, Services, and Dashboard preset actions allowed
+    duplicate/concurrent mutations.
+34. A restore-status failure also blanked restore history; the two are now
+    independent.
+35. Restore-point descriptions were unvalidated and unbounded; they are now
+    backend-validated and capped at 120 characters.
+36. External open/copy/download/update failures were silently ignored.
+37. Browser mocks and the title bar diverged from the production contracts,
+    producing unhandled Tauri invoke rejections in browser development.
+
+### Correctness and parsing (6)
+
+38. AppX bloatware matching used a lowercase substring test, so
+    `Contoso.Microsoft.GamingApp.Helper` matched `Microsoft.GamingApp`. Matching
+    is now exact and case-insensitive.
+39. Hosts-file parsing only recognized two byte-exact default lines, so ordinary
+    whitespace or comment variants were reported as suspicious entries.
+40. .NET runtime patch thresholds were stale, and channel 8 pointed at the
+    .NET 10 download.
+41. DISM was invoked by bare name; it now resolves through
+    `optimizer_core::system_executable`.
+42. System-drive and Windows-directory derivation relied on `$env:SystemDrive` /
+    `$env:SystemRoot` inside elevated PowerShell (BSOD dump paths, chkdsk state,
+    disk-space health, restore protection, Windows Update reset, free-space
+    probe). All now derive from `[Environment]::SystemDirectory`.
+43. Browser-extension counting used `$env:LOCALAPPDATA` / `$env:APPDATA`; it now
+    uses `[Environment]::GetFolderPath`.
+
+### Release engineering, supply chain, and policy (22)
+
+44-48. CI/release correctness: CI targeted a non-existent default branch, was
+not reusable by the release workflow, release builds did not require the quality
+job, the Tauri hook working directory was wrong (`pnpm --dir ../ui ...`), and the
+`optimizer-app` admin-manifest test-harness limitation was undocumented.
+
+49-55. Supply chain: all external GitHub Actions pinned to verified commit SHAs
+(8 pins, all re-validated against the GitHub commit API in this pass), release
+write permission scoped to the publishing job only, frontend auditing made a CI
+gate, and the brace-expansion, nanoid, and postcss advisories removed from the
+lockfile.
+
+56-59. Reproducibility/toolchain: Rust, Node, pnpm, and Tauri CLI versions
+pinned (`rust-toolchain.toml`), and Cargo and pnpm builds use their lockfiles.
+
+60-62. Manifest/legal: MIT `LICENSE` added, package license metadata added to
+all 26 workspace members, and the unfinished `optimizer-helper` stub excluded
+from the workspace and marked `publish = false`.
+
+63-65. Documentation/policy: README corrected to describe the standalone EXE as
+no-install with per-user AppData state; `SECURITY.md` dependency policy aligned
+with what CI actually enforces; and the gap that produced that mismatch closed
+by `scripts/check-cargo-audit-warnings.ps1`, which parses `cargo audit --json`
+and fails CI on any maintenance warning whose advisory ID is not on the reviewed
+list in `scripts/audit-approved-warnings.txt`. Plain `cargo audit` exits nonzero
+only for published vulnerabilities, so before this change a newly introduced
+unmaintained/unsound advisory would have passed CI despite the policy text.
+
+## Regression coverage added
+
+Rust library tests now cover cleanup target handling (missing, empty, locked,
+linked, swapped, special-character, nested, and unknown targets), startup and
+uninstall authorization, snapshot insert/parse semantics, checked registry
+reads, history undo normalization and reconciliation, restore-description
+validation, hosts-file parsing, AppX matching, and .NET lifecycle thresholds.
+`cargo test --workspace --lib --locked` runs 47 tests, up from zero at the July
+audit.
+
+## Verification results (2026-08-12)
+
+Run with the complete `stable` toolchain (Rust 1.96.0) via `rustup run stable`.
+
+| Check | Result | Notes |
+|---|---|---|
+| `cargo fmt --all -- --check` | Pass | No formatting drift. |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Pass | Every target compiles warning-free. |
+| `cargo test --workspace --lib --locked` | Pass | 47 passed, 0 failed. |
+| `pnpm --dir ui install --frozen-lockfile --offline` | Pass | Lockfile already satisfied. |
+| `pnpm --dir ui audit --audit-level low` | Pass | No known vulnerabilities. |
+| `pnpm --dir ui run lint` | Pass | ESLint clean. |
+| `pnpm --dir ui run build` | Pass | Vite production build completed. |
+| `cargo audit` | Pass | 0 vulnerabilities; 17 maintenance warnings. |
+| `scripts/check-cargo-audit-warnings.ps1` | Pass | 17 warnings, all on the approved list; verified to fail when an ID is removed from the list. |
+| PowerShell parser over all tracked `*.ps1` | Pass | 3 files, 0 syntax errors (plus the new CI gate script). |
+| `cargo metadata --locked --no-deps` | Pass | 26 workspace members, all MIT, all version 2.3.2. |
+| GitHub commit-API validation of Action pins | Pass | 8/8 40-character SHAs resolve. |
+| `git diff --check` | Pass | No whitespace errors. |
+
+Not run on this machine: no destructive repair operation (cleanup of real locked
+files, uninstall, chkdsk, DISM/SFC repair, AppX removal, Windows Update reset,
+restore-point creation) was executed. The `optimizer-app` unit-test binary
+embeds `requireAdministrator` and cannot start in a normal non-interactive shell
+(Windows error 740), which is why CI runs `--lib` tests while Clippy and check
+still compile every target.
+
+## Residual risks and intentionally disabled behavior
+
+- **The whole Tauri UI still runs as Administrator.** Individual operations are
+  hardened, but the privilege boundary remains large. The intended design is a
+  normal-user UI plus a narrow authenticated helper that accepts typed operation
+  IDs rather than commands or paths. The excluded `optimizer-helper` crate is a
+  placeholder only and must not ship until it is implemented and reviewed.
+- Elevated writes (support logs, history/snapshot JSON, exported reports) target
+  the elevated token's own profile via Known Folder lookups
+  (`directories::ProjectDirs` / `UserDirs`), so no environment variable or
+  adjacent junction can redirect them. Re-audit this if a shared or
+  machine-scoped location is ever introduced.
+- **Automatic leftover deletion is disabled by design.** Registered install
+  locations may be reviewed, but nothing is deleted automatically because
+  scan-time identity is not yet bound to handle-relative, no-reparse deletion.
+- **Elevated startup-folder file moves are disabled by design.**
+- **Adjacent side-by-side portable state is disabled by design**; the standalone
+  EXE is no-install but stores state in per-user AppData.
+- **PawnIO/kernel-driver installation is removed**, so CPU package temperatures
+  are unavailable on machines without an already-installed provider. This is a
+  deliberate capability loss.
+- 17 RustSec maintenance warnings remain in the resolved graph (GTK/GLib from
+  Tauri's non-Windows path, `proc-macro-error`, and the `unic-*` crates reached
+  through `tauri-utils -> urlpattern`). None has a published vulnerability;
+  review is due no later than 2026-11-10.
+- Console-code-page decoding of localized tool output, and the report-export
+  privacy disclosure noted in the July report, are not addressed here.
+- Tester-only validation on a disposable VM is still outstanding: cleanup with
+  locked/nested/missing targets, direct and History undo after repeated Apply
+  and a preset, HKCU/non-MSI uninstall refusal versus a legitimate HKLM MSI
+  uninstall, startup collision refusal, SFC/DISM polling across tab changes and
+  remounts, Defender scan guards, Windows Update reset, restore-point creation,
+  chkdsk scheduling, bloatware removal, log copy/save privacy, no-install EXE
+  behavior without an adjacent marker, and Windows 10/11, non-English Windows,
+  and paths containing apostrophes or non-ASCII characters.
+
+## Audit boundary
+
+A finite audit cannot prove the absence of every bug. This section records every
+defect found and fixed in this pass, on one branch, on one machine, without
+destructive execution. It is evidence of specific verified improvements, not a
+guarantee of correctness.

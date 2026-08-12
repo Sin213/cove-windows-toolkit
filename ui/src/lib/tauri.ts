@@ -47,6 +47,7 @@ const MOCKS: Record<string, unknown> = {
   // ── Health ───────────────────────────────────────────────────────────
   get_health_report: {
     score: 72,
+    complete: true,
     findings: [
       {
         id: "disk.free_space",
@@ -445,7 +446,10 @@ const MOCKS: Record<string, unknown> = {
   },
 
   // ── Startup Items ────────────────────────────────────────────────────
-  get_startup_items: [
+  get_startup_items: {
+    success: true,
+    message: "Startup inventory loaded.",
+    items: [
     {
       id: "startup.onedrive",
       name: "Microsoft OneDrive",
@@ -510,7 +514,8 @@ const MOCKS: Record<string, unknown> = {
       impact: "Medium",
       enabled: true,
     },
-  ],
+    ].map((item) => ({ ...item, can_toggle: true, toggle_reason: "" })),
+  },
 
   // ── Cleanup Targets ──────────────────────────────────────────────────
   get_cleanup_targets: [
@@ -521,6 +526,8 @@ const MOCKS: Record<string, unknown> = {
       size_bytes: 2_147_483_648,
       file_count: 12480,
       safety: "green",
+      scan_error: null,
+      scan_warning: null,
     },
     {
       id: "clean.system_temp",
@@ -529,6 +536,8 @@ const MOCKS: Record<string, unknown> = {
       size_bytes: 536_870_912,
       file_count: 3210,
       safety: "green",
+      scan_error: null,
+      scan_warning: null,
     },
     {
       id: "clean.prefetch",
@@ -537,6 +546,8 @@ const MOCKS: Record<string, unknown> = {
       size_bytes: 134_217_728,
       file_count: 284,
       safety: "green",
+      scan_error: null,
+      scan_warning: null,
     },
     {
       id: "clean.thumbnails",
@@ -545,6 +556,8 @@ const MOCKS: Record<string, unknown> = {
       size_bytes: 314_572_800,
       file_count: 12,
       safety: "green",
+      scan_error: null,
+      scan_warning: null,
     },
     {
       id: "clean.recycle_bin",
@@ -553,6 +566,8 @@ const MOCKS: Record<string, unknown> = {
       size_bytes: 1_073_741_824,
       file_count: 89,
       safety: "green",
+      scan_error: null,
+      scan_warning: null,
     },
     {
       id: "clean.wu_cache",
@@ -561,6 +576,8 @@ const MOCKS: Record<string, unknown> = {
       size_bytes: 3_221_225_472,
       file_count: 1540,
       safety: "yellow",
+      scan_error: null,
+      scan_warning: null,
     },
     {
       id: "clean.crash_dumps",
@@ -569,6 +586,8 @@ const MOCKS: Record<string, unknown> = {
       size_bytes: 268_435_456,
       file_count: 5,
       safety: "green",
+      scan_error: null,
+      scan_warning: null,
     },
     {
       id: "clean.delivery_opt",
@@ -577,6 +596,8 @@ const MOCKS: Record<string, unknown> = {
       size_bytes: 524_288_000,
       file_count: 48,
       safety: "yellow",
+      scan_error: null,
+      scan_warning: null,
     },
   ],
 
@@ -684,7 +705,7 @@ const MOCKS: Record<string, unknown> = {
   },
 
   // ── Change History ───────────────────────────────────────────────────
-  get_change_history: [
+  get_change_history: { success: true, message: "", entries: [
     {
       id: 1,
       timestamp: "2026-06-08T10:30:00Z",
@@ -741,7 +762,10 @@ const MOCKS: Record<string, unknown> = {
       tier: "green",
       status: "failed",
     },
-  ],
+  ].map((entry) => ({
+    ...entry,
+    can_undo: entry.status === "committed" && ["visual", "performance", "privacy"].includes(entry.module),
+  })) },
 
   // ── System Restore ────────────────────────────────────────────────────
   get_restore_status: {
@@ -787,37 +811,34 @@ const MOCKS: Record<string, unknown> = {
   ],
 
   // ── Uninstaller ──────────────────────────────────────────────────────
-  get_installed_programs: [
-    { name: "SignalRGB", publisher: "WhirlwindFX", version: "2.2.40", install_date: "2026-05-15", size_bytes: 524288000, uninstall_string: "\"C:\\Program Files\\SignalRGB\\unins000.exe\"", quiet_uninstall_string: "\"C:\\Program Files\\SignalRGB\\unins000.exe\" /VERYSILENT", install_location: "C:\\Program Files\\SignalRGB", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\SignalRGB_is1", is_system: false },
+  get_installed_programs: { success: true, message: "", programs: [
+    { name: "SignalRGB", publisher: "WhirlwindFX", version: "2.2.40", install_date: "2026-05-15", size_bytes: 524288000, uninstall_string: "MsiExec.exe /I{7A0FCA84-3F8D-4B65-9E0C-3A7C9F21D516}", quiet_uninstall_string: "MsiExec.exe /X{7A0FCA84-3F8D-4B65-9E0C-3A7C9F21D516} /qn", install_location: "C:\\Program Files\\SignalRGB", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7A0FCA84-3F8D-4B65-9E0C-3A7C9F21D516}", is_system: false },
     { name: "Google Chrome", publisher: "Google LLC", version: "125.0.6422.142", install_date: "2026-06-01", size_bytes: 268435456, uninstall_string: "", quiet_uninstall_string: "", install_location: "C:\\Program Files\\Google\\Chrome", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Google Chrome", is_system: false },
     { name: "Discord", publisher: "Discord Inc.", version: "1.0.9035", install_date: "2026-05-20", size_bytes: 314572800, uninstall_string: "\"C:\\Users\\User\\AppData\\Local\\Discord\\Update.exe\" --uninstall", quiet_uninstall_string: "", install_location: "", registry_key: "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Discord", is_system: false },
     { name: "Steam", publisher: "Valve Corporation", version: "2.10.91.91", install_date: "2026-04-10", size_bytes: 734003200, uninstall_string: "\"C:\\Program Files (x86)\\Steam\\uninstall.exe\"", quiet_uninstall_string: "", install_location: "C:\\Program Files (x86)\\Steam", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam", is_system: false },
     { name: "7-Zip 24.08 (x64)", publisher: "Igor Pavlov", version: "24.08", install_date: "2026-03-20", size_bytes: 5242880, uninstall_string: "\"C:\\Program Files\\7-Zip\\Uninstall.exe\"", quiet_uninstall_string: "", install_location: "C:\\Program Files\\7-Zip", registry_key: "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\7-Zip", is_system: false },
     { name: "Microsoft Visual C++ 2015-2022 Redistributable (x64)", publisher: "Microsoft Corporation", version: "14.38.33135", install_date: "2026-01-15", size_bytes: 25165824, uninstall_string: "", quiet_uninstall_string: "", install_location: "", registry_key: "", is_system: true },
-  ].map((program, index) => ({ ...program, id: `mock-program-${index}` })),
+  ].map((program, index) => ({
+    ...program,
+    id: `mock-program-${index}`,
+    can_uninstall: index === 0,
+    uninstall_reason: index === 0
+      ? "Machine-wide Windows Installer package."
+      : "Browser mock entry is not a trusted machine-wide MSI registration.",
+  })) },
   uninstall_program: { success: true, message: "Uninstall completed.", output: "" },
   scan_leftovers: {
     success: true,
     scan_id: "mock-scan-1",
     leftovers: [
-      { path: "C:\\ProgramData\\SignalRGB", category: "Folder", size_bytes: 15728640 },
-      { path: "C:\\Users\\User\\AppData\\Local\\SignalRGB", category: "Folder", size_bytes: 8388608 },
-      { path: "C:\\Users\\User\\AppData\\Roaming\\SignalRGB", category: "Folder", size_bytes: 2097152 },
-      { path: "HKCU\\Software\\SignalRGB", category: "Registry", size_bytes: 0 },
-      { path: "HKLM\\SOFTWARE\\WhirlwindFX", category: "Registry", size_bytes: 0 },
-      { path: "Task: \\SignalRGB\\UpdateCheck", category: "Scheduled Task", size_bytes: 0 },
+      { path: "C:\\Program Files\\SignalRGB", category: "Folder", size_bytes: 26214400 },
     ],
     total_size_bytes: 26214400,
   },
   remove_leftovers: {
-    results: [
-      { path: "C:\\ProgramData\\SignalRGB", success: true, message: "Removed" },
-      { path: "C:\\Users\\User\\AppData\\Local\\SignalRGB", success: true, message: "Removed" },
-      { path: "C:\\Users\\User\\AppData\\Roaming\\SignalRGB", success: true, message: "Removed" },
-      { path: "HKCU\\Software\\SignalRGB", success: true, message: "Removed" },
-      { path: "HKLM\\SOFTWARE\\WhirlwindFX", success: true, message: "Removed" },
-      { path: "Task: \\SignalRGB\\UpdateCheck", success: true, message: "Removed" },
-    ],
+    success: false,
+    message: "Automatic leftover deletion is disabled in this release.",
+    results: [],
   },
 
   // ── Full System Info ──────────────────────────────────────────────────
@@ -1112,11 +1133,14 @@ const MOCKS: Record<string, unknown> = {
   },
   open_log_folder: null,
   record_ui_event: null,
-  run_cleanup: { success: true, message: "Cleaned", cleaned: 1, results: [{ id: "clean.user_temp", success: true, partial: false, message: "Cleaned 12 MB", freed_bytes: 12_582_912, deleted_files: 42, skipped_items: 0 }] },
   set_power_plan: { success: true, message: "Power plan changed." },
   set_power_timeout: { success: true, message: "Timeout updated." },
   apply_service_change: { success: true, message: "Applied" },
   undo_change: { success: true, message: "Undone" },
+  win_start_drag: null,
+  win_minimize: null,
+  win_toggle_maximize: null,
+  win_close: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -1157,6 +1181,34 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
   }
   // Simulate a brief network delay
   await new Promise((r) => setTimeout(r, 120 + Math.random() * 200));
+  if (cmd === "run_cleanup") {
+    const ids = Array.isArray(args?.ids) ? args.ids.filter((id): id is string => typeof id === "string") : [];
+    return {
+      success: ids.length > 0,
+      message: `Cleaned ${ids.length} of ${ids.length} targets`,
+      cleaned: ids.length,
+      results: ids.map((id) => ({
+        id,
+        success: true,
+        partial: false,
+        message: "Cleaned mock target",
+        freed_bytes: 12_582_912,
+        deleted_files: 42,
+        skipped_items: 0,
+      })),
+    } as T;
+  }
+  if (cmd === "get_visual_tweaks" || cmd === "get_performance_tweaks") {
+    const tweaks = JSON.parse(JSON.stringify(MOCKS[cmd])) as Array<{
+      current_value?: string | null;
+      optimized_value?: string;
+    }>;
+    return tweaks.map((tweak) => ({
+      ...tweak,
+      applied: tweak.current_value === tweak.optimized_value,
+      can_undo: false,
+    })) as T;
+  }
   if (cmd in MOCKS) {
     // Deep-clone to prevent mutation of mock data
     return JSON.parse(JSON.stringify(MOCKS[cmd])) as T;

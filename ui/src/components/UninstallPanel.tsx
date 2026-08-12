@@ -13,6 +13,8 @@ interface InstalledProgram {
   install_location: string;
   registry_key: string;
   is_system: boolean;
+  can_uninstall: boolean;
+  uninstall_reason: string;
 }
 
 interface Leftover {
@@ -23,13 +25,16 @@ interface Leftover {
 
 interface ScanResult {
   success: boolean;
+  message?: string;
   scan_id: string;
   leftovers: Leftover[];
   total_size_bytes: number;
 }
 
-interface RemoveResult {
-  results: { path: string; success: boolean; message: string }[];
+interface ProgramInventory {
+  success: boolean;
+  message: string;
+  programs: InstalledProgram[];
 }
 
 function fmtBytes(b: number): string {
@@ -42,7 +47,7 @@ function fmtBytes(b: number): string {
 // Stable identity for a program row. registry_key can be empty for some entries
 // (e.g. system VC++ redists), so fall back to a composite of name/version/publisher
 // to avoid duplicate React keys and mis-highlighting rows that share a name.
-type Step = "list" | "uninstalling" | "scanning" | "leftovers" | "cleaning" | "done";
+type Step = "list" | "uninstalling" | "scanning" | "leftovers";
 
 export default function UninstallPanel() {
   const [programs, setPrograms] = useState<InstalledProgram[]>([]);
@@ -53,14 +58,18 @@ export default function UninstallPanel() {
   const [selected, setSelected] = useState<InstalledProgram | null>(null);
   const [step, setStep] = useState<Step>("list");
   const [scan, setScan] = useState<ScanResult | null>(null);
-  const [checkedLeftovers, setCheckedLeftovers] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [removeResults, setRemoveResults] = useState<RemoveResult | null>(null);
-  const [confirmAction, setConfirmAction] = useState<"uninstall" | "clean" | null>(null);
+  const [uninstallCompleted, setUninstallCompleted] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(false);
 
   useEffect(() => {
-    invoke<InstalledProgram[]>("get_installed_programs")
-      .then(setPrograms)
+    invoke<ProgramInventory>("get_installed_programs")
+      .then((result) => {
+        if (!result.success || !Array.isArray(result.programs)) {
+          throw new Error(result.message || "The installed-program inventory failed.");
+        }
+        setPrograms(result.programs);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -77,7 +86,7 @@ export default function UninstallPanel() {
     setStep("list");
     setScan(null);
     setFeedback(null);
-    setRemoveResults(null);
+    setUninstallCompleted(false);
   };
 
   const handleUninstall = async () => {
@@ -93,6 +102,7 @@ export default function UninstallPanel() {
         setStep("list");
         return;
       }
+      setUninstallCompleted(true);
       setPrograms((current) => current.filter((program) => program.id !== selected.id));
       setFeedback("Standard uninstall completed. Scanning for leftovers...");
     } catch (e) {
@@ -106,58 +116,17 @@ export default function UninstallPanel() {
   const handleScan = async () => {
     if (!selected) return;
     setStep("scanning");
+    setFeedback(null);
     try {
       const result = await invoke<ScanResult>("scan_leftovers", {
         programId: selected.id,
       });
-      if (!result.success) throw new Error("The leftover scan failed.");
+      if (!result.success) throw new Error(result.message || "The leftover scan failed.");
       setScan(result);
-      // Pre-check only files/registry; require a conscious choice to remove
-      // services and scheduled tasks.
-      setCheckedLeftovers(
-        new Set(
-          result.leftovers
-            .filter((l) => l.category === "Folder" || l.category === "Registry")
-            .map((l) => l.path)
-        )
-      );
       setStep("leftovers");
     } catch (e) {
       setFeedback(`Scan error: ${e}`);
       setStep("list");
-    }
-  };
-
-  const handleClean = async () => {
-    if (!scan) return;
-    const paths = Array.from(checkedLeftovers);
-    if (paths.length === 0) return;
-    setStep("cleaning");
-    try {
-      const result = await invoke<RemoveResult>("remove_leftovers", { scanId: scan.scan_id, paths });
-      setRemoveResults(result);
-      setStep("done");
-    } catch (e) {
-      setFeedback(`Clean error: ${e}`);
-      setStep("leftovers");
-    }
-  };
-
-  const toggleLeftover = (path: string) => {
-    setCheckedLeftovers((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
-  };
-
-  const toggleAll = () => {
-    if (!scan) return;
-    if (checkedLeftovers.size === scan.leftovers.length) {
-      setCheckedLeftovers(new Set());
-    } else {
-      setCheckedLeftovers(new Set(scan.leftovers.map((l) => l.path)));
     }
   };
 
@@ -166,7 +135,7 @@ export default function UninstallPanel() {
     setStep("list");
     setScan(null);
     setFeedback(null);
-    setRemoveResults(null);
+    setUninstallCompleted(false);
   };
 
   if (loading) return <div className="panel-loading">Loading installed programs...</div>;
@@ -179,6 +148,7 @@ export default function UninstallPanel() {
         <div className="search-bar">
           <input
             type="text"
+            aria-label="Search installed programs"
             placeholder="Search programs..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -228,17 +198,39 @@ export default function UninstallPanel() {
               {selected.install_location && <DetailRow label="Location" value={selected.install_location} />}
             </div>
             <div className="action-buttons">
-              <button className="action-btn action-primary" onClick={() => setConfirmAction("uninstall")}>
-                Uninstall + Deep Clean
+              <button
+                className="action-btn action-primary"
+                onClick={() => {
+                  if (uninstallCompleted) void handleScan();
+                  else setConfirmAction(true);
+                }}
+                disabled={!uninstallCompleted && !selected.can_uninstall}
+                title={
+                  !uninstallCompleted && !selected.can_uninstall
+                    ? selected.uninstall_reason
+                    : undefined
+                }
+              >
+                {uninstallCompleted ? "Retry Location Scan" : "Uninstall + Review Location"}
               </button>
             </div>
+            {feedback && (
+              <div className="progress-feedback" role="alert">
+                {feedback}
+              </div>
+            )}
+            {!uninstallCompleted && !selected.can_uninstall && (
+              <div className="progress-feedback" role="status">
+                This entry cannot be uninstalled by Cove: {selected.uninstall_reason || "Only trusted machine-wide MSI entries are supported."}
+              </div>
+            )}
           </div>
         )}
 
         {(step === "uninstalling" || step === "scanning") && (
           <div className="progress-state">
             <div className="progress-spinner" />
-            <p>{step === "uninstalling" ? "Running uninstaller..." : "Scanning for leftover files, registry keys, services..."}</p>
+            <p>{step === "uninstalling" ? "Running uninstaller..." : "Scanning for leftover application folders..."}</p>
             {feedback && <div className="progress-feedback">{feedback}</div>}
           </div>
         )}
@@ -246,7 +238,7 @@ export default function UninstallPanel() {
         {step === "leftovers" && scan && (
           <div className="leftovers-view">
             <div className="leftovers-header">
-              <h3>Leftovers Found</h3>
+              <h3>Registered Location Review</h3>
               <span className="leftover-summary">
                 {scan.leftovers.length} items - {fmtBytes(scan.total_size_bytes)}
               </span>
@@ -254,96 +246,45 @@ export default function UninstallPanel() {
             {feedback && <div className="progress-feedback">{feedback}</div>}
             {scan.leftovers.length === 0 ? (
               <div className="no-leftovers">
-                <p>No leftover files or registry entries found. Clean uninstall!</p>
+                <p>No dedicated registered install folder remains.</p>
                 <button className="action-btn action-secondary" onClick={resetToList}>Back to list</button>
               </div>
             ) : (
               <>
-                <div className="leftovers-toolbar">
-                  <button className="select-all-btn" onClick={toggleAll}>
-                    {checkedLeftovers.size === scan.leftovers.length ? "Deselect All" : "Select All"}
-                  </button>
-                  <span className="checked-count">{checkedLeftovers.size} selected</span>
+                <div className="progress-feedback" role="status">
+                  Automatic deletion is disabled because Windows cannot reliably prove that a registered folder is exclusively owned by one program. Review this location and remove it manually only if you recognize it.
                 </div>
                 <div className="leftovers-list">
                   {scan.leftovers.map((l) => (
-                    <label key={l.path} className="leftover-item">
-                      <input
-                        type="checkbox"
-                        checked={checkedLeftovers.has(l.path)}
-                        onChange={() => toggleLeftover(l.path)}
-                      />
+                    <div key={l.path} className="leftover-item">
                       <span className={`leftover-cat cat-${l.category.toLowerCase().replace(/\s/g, '-')}`}>
                         {l.category}
                       </span>
                       <span className="leftover-path">{l.path}</span>
                       {l.size_bytes > 0 && <span className="leftover-size">{fmtBytes(l.size_bytes)}</span>}
-                    </label>
+                    </div>
                   ))}
                 </div>
                 <div className="leftovers-actions">
-                  <button className="action-btn action-danger" onClick={() => setConfirmAction("clean")} disabled={checkedLeftovers.size === 0}>
-                    Remove Selected ({checkedLeftovers.size})
-                  </button>
-                  <button className="action-btn action-secondary" onClick={resetToList}>Cancel</button>
+                  <button className="action-btn action-secondary" onClick={handleScan}>Rescan</button>
+                  <button className="action-btn action-secondary" onClick={resetToList}>Back to list</button>
                 </div>
               </>
             )}
           </div>
         )}
 
-        {step === "cleaning" && (
-          <div className="progress-state">
-            <div className="progress-spinner" />
-            <p>Removing leftover files and registry entries...</p>
-          </div>
-        )}
-
-        {step === "done" && removeResults && (
-          <div className="done-view">
-            <h3>Cleanup Complete</h3>
-            <div className="results-list">
-              {removeResults.results.map((r, i) => (
-                <div key={i} className={`result-row ${r.success ? "result-ok" : "result-fail"}`}>
-                  <span className="result-icon">{r.success ? "✔" : "✖"}</span>
-                  <span className="result-path">{r.path}</span>
-                  {r.message && r.message !== "Removed" && (
-                    <span className="result-msg">{r.message}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-            {removeResults.results.some((r) => r.message.toLowerCase().includes("restart")) && (
-              <div className="restart-note">
-                ⟳ Some items were in use and will be removed after you restart Windows.
-              </div>
-            )}
-            <div className="done-summary">
-              {removeResults.results.filter((r) => r.success).length} of {removeResults.results.length} items removed.
-            </div>
-            <button className="action-btn action-secondary" onClick={resetToList}>Back to list</button>
-          </div>
-        )}
       </div>
       <ConfirmDialog
-        open={!!confirmAction}
-        title={
-          confirmAction === "uninstall"
-            ? `Uninstall ${selected?.name ?? ""}`
-            : `Remove ${checkedLeftovers.size} Leftover Items`
-        }
-        message={
-          confirmAction === "uninstall"
-            ? `This will uninstall ${selected?.name ?? ""} and scan for leftover files. This cannot be undone.`
-            : `This will permanently delete ${checkedLeftovers.size} leftover files and registry entries. This cannot be undone.`
-        }
+        open={confirmAction}
+        title={`Uninstall ${selected?.name ?? ""}`}
+        message={`This will uninstall ${selected?.name ?? ""} and review its registered install location. The uninstall cannot be undone.`}
         safetyTier="Red"
         onConfirm={() => {
-          if (confirmAction === "uninstall") handleUninstall();
-          else if (confirmAction === "clean") handleClean();
-          setConfirmAction(null);
+          handleUninstall();
+          setConfirmAction(false);
         }}
-        onCancel={() => setConfirmAction(null)}
+        onCancel={() => setConfirmAction(false)}
       />
     </div>
   );

@@ -8,6 +8,8 @@ pub struct StartupItem {
     pub command: String,
     pub impact: String,
     pub enabled: bool,
+    pub can_toggle: bool,
+    pub toggle_reason: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -72,6 +74,12 @@ if (Test-Path $disabledFolder) {
                         command: cmd,
                         impact,
                         enabled: p[4].trim() == "true",
+                        can_toggle: p[2].trim().starts_with("HK"),
+                        toggle_reason: if p[2].trim().starts_with("HK") {
+                            String::new()
+                        } else {
+                            elevated_file_toggle_reason().into()
+                        },
                     });
                 }
             }
@@ -104,99 +112,18 @@ fn estimate_impact(name: &str, _cmd: &str) -> String {
 
 #[cfg(target_os = "windows")]
 pub fn toggle(name: &str, enabled: bool) -> Result<String, String> {
-    let action = if enabled { "enable" } else { "disable" };
-    // Inject name/action as PS variables once (avoids brittle positional format
-    // substitution and lets the body be a plain raw string).
-    let prefix = format!(
-        "$name = '{}'\n$action = '{}'\n",
-        name.replace('\'', "''"),
-        action
-    );
-    let body = r#"
-$paths = @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Run', 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run')
-$found = $false
-
-# Copy a Run value between keys preserving its original value kind (REG_SZ vs
-# REG_EXPAND_SZ). Reading the raw value with DoNotExpandEnvironmentNames keeps
-# %VAR% tokens intact so a disable->enable round-trip doesn't break entries that
-# rely on environment expansion at boot.
-function Copy-RunValue($src, $dst, $valueName) {
-    $key = Get-Item $src
-    $kind = $key.GetValueKind($valueName)
-    $raw = $key.GetValue($valueName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-    if (-not (Test-Path $dst)) { New-Item $dst -Force | Out-Null }
-    New-ItemProperty -Path $dst -Name $valueName -Value $raw -PropertyType $kind -Force | Out-Null
-}
-
-# Registry Run keys
-foreach ($p in $paths) {
-    try {
-        $val = (Get-ItemProperty $p -Name $name -ErrorAction Stop).$name
-        if ($val) {
-            if ($action -eq 'disable') {
-                $disabledPath = $p -replace 'Run$','Run_Disabled'
-                Copy-RunValue $p $disabledPath $name
-                Remove-ItemProperty -Path $p -Name $name -Force
-            }
-            $found = $true
-            break
-        }
-    } catch {}
-}
-if (-not $found -and $action -eq 'enable') {
-    foreach ($p in $paths) {
-        $disabledPath = $p -replace 'Run$','Run_Disabled'
-        try {
-            $val = (Get-ItemProperty $disabledPath -Name $name -ErrorAction Stop).$name
-            if ($val) {
-                Copy-RunValue $disabledPath $p $name
-                Remove-ItemProperty -Path $disabledPath -Name $name -Force
-                $found = $true
-                break
-            }
-        } catch {}
+    let mut matches = list_items_v2()?
+        .into_iter()
+        .filter(|item| item.name.eq_ignore_ascii_case(name));
+    let item = matches
+        .next()
+        .ok_or_else(|| format!("Startup item '{name}' not found"))?;
+    if matches.next().is_some() {
+        return Err(format!(
+            "More than one startup item is named '{name}'. Refresh and select the source-specific item."
+        ));
     }
-}
-
-# Startup folder (.lnk/.exe) items - disable by moving to a Disabled subfolder
-if (-not $found) {
-    $startupFolder = [Environment]::GetFolderPath('Startup')
-    $disabledFolder = Join-Path $startupFolder 'Disabled'
-    if ($action -eq 'disable') {
-        $file = Get-ChildItem $startupFolder -File -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -eq $name } | Select-Object -First 1
-        if ($file) {
-            if (-not (Test-Path $disabledFolder)) { New-Item $disabledFolder -ItemType Directory -Force | Out-Null }
-            Move-Item $file.FullName -Destination $disabledFolder -Force
-            $found = $true
-        }
-    } else {
-        if (Test-Path $disabledFolder) {
-            $file = Get-ChildItem $disabledFolder -File -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -eq $name } | Select-Object -First 1
-            if ($file) {
-                Move-Item $file.FullName -Destination $startupFolder -Force
-                $found = $true
-            }
-        }
-    }
-}
-
-if ($found) { Write-Output 'OK' } else { Write-Output 'NOTFOUND' }
-"#;
-    let ps = format!("{}{}", prefix, body);
-
-    let o = optimizer_core::powershell(&ps)
-        .output()
-        .map_err(|e| e.to_string())?;
-    let result = String::from_utf8_lossy(&o.stdout).trim().to_string();
-    if result == "OK" {
-        Ok(format!(
-            "Startup item '{}' {}",
-            name,
-            if enabled { "enabled" } else { "disabled" }
-        ))
-    } else {
-        Err(format!("Startup item '{}' not found", name))
-    }
+    toggle_by_id(&item.id, enabled)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -263,13 +190,22 @@ foreach ($folder in @([Environment]::GetFolderPath('Startup'), [Environment]::Ge
     Ok(envelope
         .items
         .into_iter()
-        .map(|raw| StartupItem {
-            id: startup_id(&raw.path, &raw.name),
-            impact: estimate_impact(&raw.name, &raw.command),
-            name: raw.name,
-            path: raw.path,
-            command: raw.command,
-            enabled: raw.enabled,
+        .map(|raw| {
+            let can_toggle = is_registry_startup_path(&raw.path);
+            StartupItem {
+                id: startup_id(&raw.path, &raw.name),
+                impact: estimate_impact(&raw.name, &raw.command),
+                name: raw.name,
+                path: raw.path,
+                command: raw.command,
+                enabled: raw.enabled,
+                can_toggle,
+                toggle_reason: if can_toggle {
+                    String::new()
+                } else {
+                    elevated_file_toggle_reason().into()
+                },
+            }
         })
         .collect())
 }
@@ -300,49 +236,12 @@ pub fn toggle_by_id(id: &str, enabled: bool) -> Result<String, String> {
             if enabled { "enabled" } else { "disabled" }
         ));
     }
-    let quote = |value: &str| value.replace('\'', "''");
-    let script = if item.path.starts_with("HK") {
-        let source = quote(&item.path);
-        let destination_path = if enabled {
-            item.path.replace("Run_Disabled", "Run")
-        } else {
-            item.path.replace("Run", "Run_Disabled")
-        };
-        let destination = quote(&destination_path);
-        format!(
-            r#"
-$ErrorActionPreference='Stop'; $src='{source}'; $dst='{destination}'; $name='{name}'
-$key=Get-Item -LiteralPath $src -ErrorAction Stop
-$kind=$key.GetValueKind($name)
-$raw=$key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-if (-not (Test-Path -LiteralPath $dst)) {{ New-Item -Path $dst -Force -ErrorAction Stop | Out-Null }}
-New-ItemProperty -LiteralPath $dst -Name $name -Value $raw -PropertyType $kind -Force -ErrorAction Stop | Out-Null
-Remove-ItemProperty -LiteralPath $src -Name $name -Force -ErrorAction Stop
-"#,
-            name = quote(&item.name)
-        )
-    } else {
-        let source = quote(&item.path);
-        let parent = std::path::Path::new(&item.path)
-            .parent()
-            .ok_or("Invalid startup path.")?;
-        let destination = if enabled {
-            parent
-                .parent()
-                .ok_or("Invalid disabled startup path.")?
-                .to_path_buf()
-        } else {
-            parent.join("Disabled")
-        };
-        format!(
-            r#"
-$ErrorActionPreference='Stop'; $src='{source}'; $dst='{destination}'
-if (-not (Test-Path -LiteralPath $dst)) {{ New-Item -ItemType Directory -Path $dst -Force -ErrorAction Stop | Out-Null }}
-Move-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
-"#,
-            destination = quote(&destination.to_string_lossy())
-        )
-    };
+    if !item.can_toggle || !is_registry_startup_path(&item.path) {
+        return Err(elevated_file_toggle_reason().into());
+    }
+    let destination_path = registry_destination_path(&item.path, enabled)
+        .ok_or_else(|| "The startup registry source is not an approved Run key.".to_string())?;
+    let script = registry_move_script(&item.path, &destination_path, &item.name);
     let output = optimizer_core::powershell(&script)
         .output()
         .map_err(|e| e.to_string())?;
@@ -357,7 +256,123 @@ Move-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop
     }
 }
 
+fn registry_move_script(source: &str, destination: &str, name: &str) -> String {
+    let quote = |value: &str| value.replace('\'', "''");
+    format!(
+        r#"
+$ErrorActionPreference='Stop'; $src='{source}'; $dst='{destination}'; $name='{name}'
+$key=Get-Item -LiteralPath $src -ErrorAction Stop
+$kind=$key.GetValueKind($name)
+$raw=$key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+if (Test-Path -LiteralPath $dst) {{
+  $destinationKey=Get-Item -LiteralPath $dst -ErrorAction Stop
+  if ($destinationKey.GetValueNames() -contains $name) {{ throw "A startup value named '$name' already exists at the destination; nothing was changed." }}
+}} else {{
+  New-Item -Path $dst -ErrorAction Stop | Out-Null
+}}
+New-ItemProperty -LiteralPath $dst -Name $name -Value $raw -PropertyType $kind -ErrorAction Stop | Out-Null
+try {{
+  Remove-ItemProperty -LiteralPath $src -Name $name -Force -ErrorAction Stop
+}} catch {{
+  $sourceError=$_.Exception.Message
+  try {{
+    Remove-ItemProperty -LiteralPath $dst -Name $name -Force -ErrorAction Stop
+  }} catch {{
+    throw "Could not remove the source startup value ($sourceError), and rollback of the destination copy also failed: $($_.Exception.Message)"
+  }}
+  throw "Could not remove the source startup value; the destination copy was rolled back: $sourceError"
+}}
+"#,
+        source = quote(source),
+        destination = quote(destination),
+        name = quote(name)
+    )
+}
+
+fn is_registry_startup_path(path: &str) -> bool {
+    registry_destination_path(path, path.to_ascii_lowercase().ends_with("\\run_disabled")).is_some()
+}
+
+fn elevated_file_toggle_reason() -> &'static str {
+    "Startup-folder files cannot be moved safely while Cove is elevated. Move this item manually or use Windows Startup Apps settings."
+}
+
+fn registry_destination_path(path: &str, enabling: bool) -> Option<String> {
+    const ENABLED: &str = "\\run";
+    const DISABLED: &str = "\\run_disabled";
+    let lower = path.to_ascii_lowercase();
+    let source_suffix = if enabling { DISABLED } else { ENABLED };
+    if !lower.ends_with(source_suffix) {
+        return None;
+    }
+    let base = &lower[..lower.len() - source_suffix.len()];
+    if !matches!(
+        base,
+        "hkcu:\\software\\microsoft\\windows\\currentversion"
+            | "hklm:\\software\\microsoft\\windows\\currentversion"
+            | "hklm:\\software\\wow6432node\\microsoft\\windows\\currentversion"
+    ) {
+        return None;
+    }
+    let destination_suffix = if enabling { "\\Run" } else { "\\Run_Disabled" };
+    Some(format!(
+        "{}{}",
+        &path[..path.len() - source_suffix.len()],
+        destination_suffix
+    ))
+}
+
 #[cfg(not(target_os = "windows"))]
 pub fn toggle_by_id(_id: &str, _enabled: bool) -> Result<String, String> {
     Ok("[stub] Toggled".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_destination_mapping_is_source_specific() {
+        assert_eq!(
+            registry_destination_path(
+                r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+                false
+            )
+            .as_deref(),
+            Some(r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Run_Disabled")
+        );
+        assert_eq!(
+            registry_destination_path(
+                r"HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run_Disabled",
+                true
+            )
+            .as_deref(),
+            Some(r"HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run")
+        );
+    }
+
+    #[test]
+    fn file_and_lookalike_paths_are_not_registry_startup_sources() {
+        assert!(!is_registry_startup_path(
+            r"C:\Users\Alice\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\tool.lnk"
+        ));
+        assert!(
+            registry_destination_path(r"HKCU:\Software\Other\CurrentVersion\Run", false).is_none()
+        );
+    }
+
+    #[test]
+    fn registry_move_script_refuses_collisions_and_rolls_back_partial_copy() {
+        let script = registry_move_script(
+            r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Run",
+            r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Run_Disabled",
+            "Example",
+        );
+        assert!(script.contains("already exists at the destination"));
+        assert!(script.contains("rollback of the destination copy also failed"));
+        assert!(script.contains("the destination copy was rolled back"));
+        assert!(!script.contains(
+            "New-ItemProperty -LiteralPath $dst -Name $name -Value $raw -PropertyType $kind -Force"
+        ));
+    }
 }

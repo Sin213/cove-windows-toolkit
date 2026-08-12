@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from "react";
 import { invoke } from "../lib/tauri";
 import "./TempsPanel.css";
 
@@ -39,32 +39,55 @@ export default function TempsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const mountedRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const retryTimerRef = useRef<number | null>(null);
+  const requestGenerationRef = useRef(0);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    const generation = ++requestGenerationRef.current;
     setError(null);
-    invoke<TempReport>("get_temperatures")
-      .then((r) => {
-        setReport(r);
-        // LHM just launched - retry after it registers WMI
-        if (r.lhm_status !== "active" && r.readings.length === 0) {
-          setTimeout(() => {
-            invoke<TempReport>("get_temperatures")
-              .then(setReport)
-              .catch(() => {});
-          }, 4000);
-        }
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setLoading(false));
+    try {
+      const nextReport = await invoke<TempReport>("get_temperatures");
+      if (!mountedRef.current || generation !== requestGenerationRef.current) return;
+      setReport(nextReport);
+      // LHM just launched - retry once it has had time to register WMI.
+      if (nextReport.lhm_status !== "active" && nextReport.readings.length === 0) {
+        if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = window.setTimeout(() => {
+          retryTimerRef.current = null;
+          void loadRef.current();
+        }, 4000);
+      }
+    } catch (loadError) {
+      if (mountedRef.current && generation === requestGenerationRef.current) {
+        setError(String(loadError));
+      }
+    } finally {
+      inFlightRef.current = false;
+      if (mountedRef.current && generation === requestGenerationRef.current) setLoading(false);
+    }
   }, []);
+  useLayoutEffect(() => {
+    loadRef.current = load;
+  }, [load]);
 
   useEffect(() => {
+    mountedRef.current = true;
     queueMicrotask(load);
+    return () => {
+      mountedRef.current = false;
+      requestGenerationRef.current += 1;
+      if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+    };
   }, [load]);
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const id = setInterval(load, 3000);
+    const id = window.setInterval(() => void load(), 3000);
     return () => clearInterval(id);
   }, [autoRefresh, load]);
 
@@ -82,7 +105,7 @@ export default function TempsPanel() {
   return (
     <div className="temps-panel">
       <div className="temps-toolbar">
-        <button className="temps-refresh-btn" onClick={load}>Refresh</button>
+        <button className="temps-refresh-btn" onClick={() => void load()}>Refresh</button>
         <label className="auto-refresh-label">
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
           Auto-refresh (3s)

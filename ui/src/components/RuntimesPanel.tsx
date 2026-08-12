@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "../lib/tauri";
+import { openExternal } from "../lib/openExternal";
 import "./RuntimesPanel.css";
 
 interface RuntimeEntry {
@@ -37,6 +38,7 @@ export default function RuntimesPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<RuntimesData>("get_installed_runtimes")
@@ -45,7 +47,7 @@ export default function RuntimesPanel() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!data) return;
     const lines: string[] = [
       "=== Installed Runtimes ===",
@@ -74,10 +76,14 @@ export default function RuntimesPanel() {
         ? data.java.map((r) => `[OK] ${r.name} (${r.version})${r.path ? " - " + r.path : ""}`)
         : ["[--] No Java installation detected"]),
     ];
-    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
       setCopied(true);
+      setActionError(null);
       setTimeout(() => setCopied(false), 2000);
-    });
+    } catch (copyError) {
+      setActionError(`Could not copy the runtime summary: ${String(copyError)}`);
+    }
   };
 
   if (loading) return <div className="panel-loading">Detecting installed runtimes...</div>;
@@ -86,13 +92,14 @@ export default function RuntimesPanel() {
 
   return (
     <div className="runtimes-panel">
+      {actionError && <div className="panel-error" role="alert">{actionError}</div>}
       {/* .NET */}
       <div className="runtimes-category">
         <div className="runtimes-category-title">.NET</div>
         <ProbeWarning state={data.coverage.dotnet} family=".NET" />
         <div className="runtimes-list">
           {data.dotnet.map((r) => (
-            <RuntimeRow key={r.name} entry={r} />
+            <RuntimeRow key={r.name} entry={r} onError={setActionError} />
           ))}
         </div>
       </div>
@@ -103,7 +110,7 @@ export default function RuntimesPanel() {
         <ProbeWarning state={data.coverage.vcredist} family="Visual C++" />
         <div className="runtimes-list">
           {data.vcredist.map((r) => (
-            <RuntimeRow key={r.name} entry={r} />
+            <RuntimeRow key={r.name} entry={r} onError={setActionError} />
           ))}
         </div>
       </div>
@@ -132,7 +139,7 @@ export default function RuntimesPanel() {
         ) : (
           <div className="runtimes-list">
             {data.java.map((r) => (
-              <RuntimeRow key={r.name} entry={r} />
+              <RuntimeRow key={r.name} entry={r} onError={setActionError} />
             ))}
           </div>
         )}
@@ -156,7 +163,7 @@ function ProbeWarning({ state, family }: { state: ProbeState; family: string }) 
   );
 }
 
-function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
+function RuntimeRow({ entry, onError }: { entry: RuntimeEntry; onError: (message: string | null) => void }) {
   const statusClass = entry.installed
     ? entry.outdated
       ? "outdated"
@@ -164,9 +171,10 @@ function RuntimeRow({ entry }: { entry: RuntimeEntry }) {
     : "missing";
   const icon = entry.installed ? (entry.outdated ? "⚠" : "✔") : "-";
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (entry.download_url) {
-      invoke("open_url", { url: entry.download_url });
+      const result = await openExternal(entry.download_url);
+      onError(result.ok ? null : `Could not open the download link: ${result.message}`);
     }
   };
 

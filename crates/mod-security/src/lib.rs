@@ -41,6 +41,20 @@ pub struct HeuristicResult {
     pub scan_time_ms: u64,
 }
 
+fn is_default_hosts_entry(line: &str) -> bool {
+    let content = line.split('#').next().unwrap_or_default().trim();
+    if content.is_empty() {
+        return true;
+    }
+    let fields = content.split_whitespace().collect::<Vec<_>>();
+    if fields.len() < 2 || !matches!(fields[0], "127.0.0.1" | "::1") {
+        return false;
+    }
+    fields[1..]
+        .iter()
+        .all(|host| host.eq_ignore_ascii_case("localhost"))
+}
+
 #[cfg(target_os = "windows")]
 pub fn get_defender_status() -> DefenderStatus {
     let ps = r#"
@@ -212,13 +226,7 @@ Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\L
         };
         let extra_entries: Vec<&str> = contents
             .lines()
-            .filter(|l| {
-                let trimmed = l.trim();
-                !trimmed.is_empty()
-                    && !trimmed.starts_with('#')
-                    && trimmed != "127.0.0.1       localhost"
-                    && trimmed != "::1             localhost"
-            })
+            .filter(|line| !is_default_hosts_entry(line))
             .collect();
         if !extra_entries.is_empty() {
             findings.push(HeuristicFinding {
@@ -247,14 +255,16 @@ Get-Process | Where-Object { $_.Path -and ($_.Path -match '\\Temp\\|\\AppData\\L
     progress(3, total, "Counting browser extensions…");
     let ps_ext = r#"
 $count = @{}
-foreach ($browser in @(@('Chrome', "$env:LOCALAPPDATA\Google\Chrome\User Data"), @('Edge', "$env:LOCALAPPDATA\Microsoft\Edge\User Data"))) {
+$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+$roamingAppData = [Environment]::GetFolderPath('ApplicationData')
+foreach ($browser in @(@('Chrome', (Join-Path $localAppData 'Google\Chrome\User Data')), @('Edge', (Join-Path $localAppData 'Microsoft\Edge\User Data')))) {
   if (Test-Path -LiteralPath $browser[1]) {
     $count[$browser[0]] = @(Get-ChildItem -LiteralPath $browser[1] -Directory -ErrorAction Stop | ForEach-Object {
       $ext = Join-Path $_.FullName 'Extensions'; if (Test-Path -LiteralPath $ext) { Get-ChildItem -LiteralPath $ext -Directory -ErrorAction Stop }
     }).Count
   }
 }
-$firefox = Join-Path $env:APPDATA 'Mozilla\Firefox\Profiles'
+$firefox = Join-Path $roamingAppData 'Mozilla\Firefox\Profiles'
 if (Test-Path -LiteralPath $firefox) { $count['Firefox profiles'] = @(Get-ChildItem -LiteralPath $firefox -Directory -ErrorAction Stop | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'extensions.json') }).Count }
 $total = ($count.Values | Measure-Object -Sum).Sum
 $detail = ($count.GetEnumerator() | ForEach-Object { "$($_.Key): $($_.Value)" }) -join ', '
@@ -318,4 +328,24 @@ pub fn run_heuristics() -> HeuristicResult {
 pub fn run_heuristics_with_progress<F: FnMut(u32, u32, &str)>(mut progress: F) -> HeuristicResult {
     progress(3, 3, "Done");
     run_heuristics()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_default_hosts_entry;
+
+    #[test]
+    fn hosts_parser_accepts_normal_localhost_format_variants() {
+        assert!(is_default_hosts_entry("127.0.0.1 localhost"));
+        assert!(is_default_hosts_entry("::1\tLOCALHOST # standard mapping"));
+        assert!(is_default_hosts_entry("   # comment"));
+        assert!(is_default_hosts_entry(""));
+    }
+
+    #[test]
+    fn hosts_parser_keeps_nonstandard_mappings() {
+        assert!(!is_default_hosts_entry("0.0.0.0 example.com"));
+        assert!(!is_default_hosts_entry("127.0.0.1 telemetry.example"));
+        assert!(!is_default_hosts_entry("10.0.0.5 localhost"));
+    }
 }

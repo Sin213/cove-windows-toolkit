@@ -140,8 +140,7 @@ fn run_one(
     };
     // Use the explicit full path: C:\Windows\System32\Dism is a *directory*, so a
     // bare "dism" PATH lookup resolves to the folder and fails with access-denied.
-    let sysroot = std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".to_string());
-    let program = format!("{}\\System32\\{}", sysroot, exe_name);
+    let program = optimizer_core::system_executable(exe_name);
 
     let sys = native_pty_system();
     let pair = match sys.openpty(PtySize {
@@ -164,7 +163,7 @@ fn run_one(
             return (
                 false,
                 -1,
-                format!("Failed to start {}: {}", program, e),
+                format!("Failed to start {}: {}", program.display(), e),
                 Vec::new(),
             );
         }

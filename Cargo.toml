@@ -28,6 +28,7 @@ members = [
     "crates/mod-security",
     "crates/mod-diskhealth",
 ]
+exclude = ["crates/optimizer-helper"]
 
 [workspace.package]
 version = "2.3.2"

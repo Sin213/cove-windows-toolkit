@@ -12,6 +12,7 @@ interface CleanupTarget {
   file_count: number;
   safety: string;
   scan_error: string | null;
+  scan_warning: string | null;
 }
 
 interface CleanupRunResult {
@@ -24,10 +25,24 @@ interface CleanupRunResult {
   skipped_items: number;
 }
 
+interface CleanupResponse {
+  success: boolean;
+  message?: string;
+  results?: CleanupRunResult[];
+}
+
+function requireCleanupTargets(value: unknown): CleanupTarget[] {
+  if (!Array.isArray(value)) {
+    throw new Error("The backend returned an invalid cleanup-target list.");
+  }
+  return value as CleanupTarget[];
+}
+
 export default function CleanupPanel() {
   const [targets, setTargets] = useState<CleanupTarget[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [cleaning, setCleaning] = useState(false);
   const [cleaned, setCleaned] = useState<Record<string, boolean>>({});
@@ -35,8 +50,9 @@ export default function CleanupPanel() {
   const [results, setResults] = useState<Record<string, CleanupRunResult>>({});
 
   useEffect(() => {
-    invoke<CleanupTarget[]>("get_cleanup_targets")
-      .then((data) => {
+    invoke<unknown>("get_cleanup_targets")
+      .then((value) => {
+        const data = requireCleanupTargets(value);
         setTargets(data);
         // Select all green (safe) targets by default
         const sel: Record<string, boolean> = {};
@@ -45,17 +61,17 @@ export default function CleanupPanel() {
         });
         setSelected(sel);
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setLoadError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
   const toggle = (id: string) => {
-    if (cleaned[id]) return;
+    if (targets.find((target) => target.id === id)?.scan_error) return;
     setSelected((s) => ({ ...s, [id]: !s[id] }));
   };
 
   const toggleAll = () => {
-    const selectable = targets.filter((t) => !cleaned[t.id] && !t.scan_error);
+    const selectable = targets.filter((target) => !target.scan_error);
     const allSelected = selectable.every((t) => selected[t.id]);
     const next: Record<string, boolean> = { ...selected };
     selectable.forEach((t) => {
@@ -65,11 +81,9 @@ export default function CleanupPanel() {
   };
 
   const selectedTargets = targets.filter(
-    (t) => selected[t.id] && !cleaned[t.id] && !t.scan_error
+    (t) => selected[t.id] && !t.scan_error
   );
-  const uncleanedTargets = targets.filter(
-    (t) => !cleaned[t.id] && !t.scan_error
-  );
+  const uncleanedTargets = targets.filter((target) => !target.scan_error);
   const allSelected =
     uncleanedTargets.length > 0 && uncleanedTargets.every((t) => selected[t.id]);
   const totalSize = selectedTargets.reduce((s, t) => s + t.size_bytes, 0);
@@ -77,39 +91,81 @@ export default function CleanupPanel() {
 
   const handleClean = async () => {
     setCleaning(true);
+    setActionError(null);
     try {
       const ids = selectedTargets.map((t) => t.id);
-      const res = await invoke<{ success: boolean; results: CleanupRunResult[] }>(
+      const res = await invoke<CleanupResponse>(
         "run_cleanup",
         { ids }
       );
-      const runResults = res.results || [];
+      const returnedResults = Array.isArray(res.results) ? res.results : [];
+      const returnedById = new Map(returnedResults.map((result) => [result.id, result]));
+      const runResults = ids.map((id) => returnedById.get(id) ?? {
+        id,
+        success: false,
+        partial: false,
+        message: res.message || "The cleanup command did not return a result for this target.",
+        freed_bytes: 0,
+        deleted_files: 0,
+        skipped_items: 0,
+      });
       setResults(Object.fromEntries(runResults.map((result) => [result.id, result])));
+      if (!res.success) {
+        setActionError(res.message || "Cleanup did not complete for every selected target.");
+      }
       setCleaned((current) => {
         const next = { ...current };
         runResults.forEach((result) => {
           // A partial run leaves skipped files available for a later retry.
-          if (result.success && !result.partial) next[result.id] = true;
+          next[result.id] = result.success && !result.partial;
         });
         return next;
       });
       setSelected((current) => {
         const next = { ...current };
-        ids.forEach((id) => {
-          next[id] = false;
+        runResults.forEach((result) => {
+          // Keep partial, failed, and missing results selected for a one-click retry.
+          next[result.id] = !result.success || result.partial;
         });
         return next;
       });
 
       // Reflect what remains instead of retaining the pre-clean sizes/counts.
       try {
-        setTargets(await invoke<CleanupTarget[]>("get_cleanup_targets"));
+        const refreshed = requireCleanupTargets(await invoke<unknown>("get_cleanup_targets"));
+        setTargets(refreshed);
+        setSelected((current) => {
+          const next = { ...current };
+          refreshed.forEach((target) => {
+            if (target.scan_error) next[target.id] = false;
+          });
+          return next;
+        });
+        setCleaned((current) => {
+          const next = { ...current };
+          refreshed.forEach((target) => {
+            if (
+              target.size_bytes > 0 ||
+              target.file_count > 0 ||
+              target.scan_error ||
+              target.scan_warning
+            ) {
+              next[target.id] = false;
+            }
+          });
+          return next;
+        });
       } catch (scanError) {
         console.error("Cleanup rescan failed:", scanError);
+        setActionError((current) =>
+          [current, `Cleanup finished, but the remaining files could not be rescanned: ${String(scanError)}`]
+            .filter(Boolean)
+            .join(" ")
+        );
       }
     } catch (e) {
       console.error("Cleanup failed:", e);
-      setError(`Cleanup failed: ${String(e)}`);
+      setActionError(`Cleanup failed: ${String(e)}`);
     } finally {
       setCleaning(false);
     }
@@ -117,7 +173,7 @@ export default function CleanupPanel() {
 
   if (loading)
     return <div className="panel-loading">Scanning cleanup targets...</div>;
-  if (error) return <div className="panel-error">Error: {error}</div>;
+  if (loadError) return <div className="panel-error">Error: {loadError}</div>;
 
   return (
     <div className="cleanup-panel">
@@ -133,7 +189,7 @@ export default function CleanupPanel() {
           <span className="stat-label">files</span>
         </div>
         <div className="summary-actions">
-          <button className="select-all-btn" onClick={toggleAll}>
+          <button className="select-all-btn" onClick={toggleAll} disabled={cleaning}>
             {allSelected ? "Deselect All" : "Select All"}
           </button>
           <button
@@ -152,6 +208,7 @@ export default function CleanupPanel() {
           </button>
         </div>
       </div>
+      {actionError && <div className="panel-error" role="alert">{actionError}</div>}
       {Object.keys(results).length > 0 && (
         <div className="cleanup-results">
           {Object.entries(results).map(([id, result]) => (
@@ -182,13 +239,18 @@ export default function CleanupPanel() {
               type="checkbox"
               checked={!!selected[target.id]}
               onChange={() => toggle(target.id)}
-              disabled={cleaned[target.id] || !!target.scan_error}
+              disabled={cleaning || !!target.scan_error}
               className="cleanup-check"
             />
             <div className="cleanup-info">
               <div className="cleanup-name">{target.name}</div>
               <div className="cleanup-path">{target.path}</div>
               {target.scan_error && <div className="panel-error">Scan failed: {target.scan_error}</div>}
+              {target.scan_warning && (
+                <div className="panel-error">
+                  Scan incomplete: {target.scan_warning}. Cleanup can still be attempted.
+                </div>
+              )}
             </div>
             <div className="cleanup-meta">
               <span className={`safety-badge safety-${target.safety}`}>{target.safety}</span>

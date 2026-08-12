@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/tauri";
 import ConfirmDialog from "./ConfirmDialog";
 import "./PrivacyPanel.css";
@@ -30,14 +30,17 @@ const TIER_LABELS: Record<string, string> = {
 export default function PrivacyPanel() {
   const [data, setData] = useState<PrivacyData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     basic: true,
     standard: true,
     advanced: false,
   });
   const [applied, setApplied] = useState<Record<string, boolean>>({});
+  const [applying, setApplying] = useState<Record<string, boolean>>({});
   const [pendingConfirm, setPendingConfirm] = useState<PrivacyTweak | null>(null);
+  const inFlightRef = useRef(new Set<string>());
 
   useEffect(() => {
     invoke<PrivacyData>("get_privacy_tweaks")
@@ -46,7 +49,7 @@ export default function PrivacyPanel() {
         const items = [...response.basic, ...response.standard, ...response.advanced];
         setApplied(Object.fromEntries(items.map((item) => [item.id, item.current === item.optimized])));
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => setLoadError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -54,6 +57,10 @@ export default function PrivacyPanel() {
     setExpanded((s) => ({ ...s, [tier]: !s[tier] }));
 
   const handleApply = async (tweak: PrivacyTweak) => {
+    if (inFlightRef.current.size > 0) return;
+    inFlightRef.current.add(tweak.id);
+    setApplying((current) => ({ ...current, [tweak.id]: true }));
+    setActionError(null);
     try {
       const res = await invoke<{ success: boolean; message?: string }>("apply_tweak", {
         module: "privacy",
@@ -67,15 +74,18 @@ export default function PrivacyPanel() {
           advanced: current.advanced.map((item) => item.id === tweak.id ? { ...item, current: item.optimized } : item),
         } : current);
       } else {
-        setError(res.message || "Failed to apply tweak.");
+        setActionError(res.message || "Failed to apply tweak.");
       }
     } catch (e) {
-      setError(String(e));
+      setActionError(String(e));
+    } finally {
+      inFlightRef.current.delete(tweak.id);
+      setApplying((current) => ({ ...current, [tweak.id]: false }));
     }
   };
 
   if (loading) return <div className="panel-loading">Loading privacy tweaks...</div>;
-  if (error) return <div className="panel-error">Error: {error}</div>;
+  if (loadError) return <div className="panel-error">Error: {loadError}</div>;
   if (!data) return null;
 
   const grouped = TIER_ORDER.map((tier) => ({
@@ -86,11 +96,13 @@ export default function PrivacyPanel() {
 
   return (
     <div className="privacy-panel">
+      {actionError && <div className="panel-error" role="alert">{actionError}</div>}
       {grouped.map((group) => (
         <div key={group.tier} className="privacy-tier">
           <button
             className="tier-header"
             onClick={() => toggle(group.tier)}
+            aria-expanded={expanded[group.tier]}
           >
             <span className="tier-chevron">
               {expanded[group.tier] ? "▾" : "▸"}
@@ -136,8 +148,9 @@ export default function PrivacyPanel() {
                             handleApply(tweak);
                           }
                         }}
+                        disabled={Object.values(applying).some(Boolean)}
                       >
-                        Apply
+                        {applying[tweak.id] ? "Applying..." : "Apply"}
                       </button>
                     )}
                   </div>

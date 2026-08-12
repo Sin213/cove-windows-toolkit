@@ -9,9 +9,9 @@ A desktop toolkit built for tech support teams to diagnose and optimize Windows 
 Grab the latest build from the [Releases page](https://github.com/Sin213/cove-windows-toolkit/releases/latest):
 
 - **`Cove-Windows-Toolkit-{version}-Setup.exe`** - guided installer with a Start-menu shortcut and uninstaller.
-- **`Cove-Windows-Toolkit-{version}-Portable.exe`** - single file, no install; just run it.
+- **`Cove-Windows-Toolkit-{version}-Portable.exe`** - single-file standalone build; no install required. Settings and logs still use your per-user AppData folder.
 
-Requires Windows 10/11. The app runs elevated (administrator) - accept the UAC prompt so diagnostics and repairs can reach system data. Optionally verify your download against each artifact's `.sha256` sidecar file.
+Requires 64-bit Windows 10/11. The app runs elevated (administrator) - accept the UAC prompt so diagnostics and repairs can reach system data. Optionally verify your download against the `.sha256` sidecar attached to the same GitHub Release. Those CI-generated sidecars are authoritative; files under a local `release/` working directory are tester outputs and must not be used to verify published downloads.
 
 ## What It Does
 
@@ -37,7 +37,7 @@ Requires Windows 10/11. The app runs elevated (administrator) - accept the UAC p
 - Temperature monitoring
 
 **System Tools:**
-- Deep uninstaller with leftover scanning
+- Conservative MSI uninstaller with registered-location review (unsafe automatic leftover deletion is intentionally disabled)
 - Bloatware removal
 - Full system info (Speccy-style), with recognized motherboard models linking to the manufacturer's product page
 - Tools tab with curated links to trusted third-party utilities (OCCT, Prime95, FurMark, TestMem5, MemTest86, HWiNFO, CPU-Z, GPU-Z, Display Driver Uninstaller, AdwCleaner) - links only, nothing is downloaded or installed by Cove
@@ -66,9 +66,9 @@ Yellow and Red actions require confirmation before executing.
 
 ### Prerequisites
 - [Rust](https://rustup.rs/) (stable)
-- [Node.js](https://nodejs.org/) 18+
-- [pnpm](https://pnpm.io/) 9+
-- Tauri CLI: `cargo install tauri-cli --version "^2"`
+- [Node.js](https://nodejs.org/) 24.16.0
+- [pnpm](https://pnpm.io/) 11.5.2
+- Tauri CLI: `cargo install tauri-cli --version 2.11.2 --locked`
 
 ### Development
 
@@ -91,7 +91,7 @@ cargo tauri build
 
 Output (the workspace target lives at the repo root):
 - `target/release/bundle/nsis/*.exe` - NSIS installer
-- `target/release/optimizer-app.exe` - Standalone portable exe
+- `target/release/optimizer-app.exe` - Standalone no-install exe
 
 ## Project Structure
 
@@ -143,8 +143,13 @@ Or run manually from the Actions tab with a version number.
 
 Each release includes:
 - `Cove-Windows-Toolkit-{version}-Setup.exe` - NSIS installer
-- `Cove-Windows-Toolkit-{version}-Portable.exe` - Single-file portable
+- `Cove-Windows-Toolkit-{version}-Portable.exe` - Single-file no-install build (per-user AppData state)
 - A matching `.sha256` sidecar for each executable
+
+Release checksums are calculated in CI after the final executables are built and
+are uploaded beside those exact bytes. Do not commit or publish a checksum from a
+separate local rebuild: Windows executables are not assumed to be reproducible
+byte-for-byte across toolchain or runner changes.
 
 ## Tech Stack
 

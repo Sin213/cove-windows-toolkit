@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledProgram {
     #[serde(default)]
     pub id: String,
@@ -16,6 +16,10 @@ pub struct InstalledProgram {
     pub install_location: String,
     pub registry_key: String,
     pub is_system: bool,
+    #[serde(default)]
+    pub can_uninstall: bool,
+    #[serde(default)]
+    pub uninstall_reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,10 +44,28 @@ pub struct UninstallResult {
 
 #[cfg(target_os = "windows")]
 pub fn list_programs() -> Vec<InstalledProgram> {
-    let json = run_ps(include_str!("list_programs.ps1"));
-    let mut programs: Vec<InstalledProgram> = serde_json::from_str(&json).unwrap_or_default();
+    list_programs_checked().unwrap_or_default()
+}
+
+#[cfg(target_os = "windows")]
+pub fn list_programs_checked() -> Result<Vec<InstalledProgram>, String> {
+    let json = run_ps_checked(include_str!("list_programs.ps1"))?;
+    if json.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    let value: serde_json::Value = serde_json::from_str(&json)
+        .map_err(|error| format!("Could not parse installed-program inventory: {error}"))?;
+    let mut programs = if value.is_array() {
+        serde_json::from_value(value)
+            .map_err(|error| format!("Could not parse installed-program inventory: {error}"))?
+    } else {
+        vec![
+            serde_json::from_value(value)
+                .map_err(|error| format!("Could not parse installed-program inventory: {error}"))?,
+        ]
+    };
     assign_program_ids(&mut programs);
-    programs
+    Ok(programs)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -51,6 +73,11 @@ pub fn list_programs() -> Vec<InstalledProgram> {
     let mut programs = stub_programs();
     assign_program_ids(&mut programs);
     programs
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn list_programs_checked() -> Result<Vec<InstalledProgram>, String> {
+    Ok(list_programs())
 }
 
 fn assign_program_ids(programs: &mut [InstalledProgram]) {
@@ -63,47 +90,73 @@ fn assign_program_ids(programs: &mut [InstalledProgram]) {
         program.version.hash(&mut hasher);
         program.install_location.hash(&mut hasher);
         program.id = format!("program-{:016x}", hasher.finish());
+        let capability = uninstall_capability(program);
+        program.can_uninstall = capability.can_uninstall;
+        program.uninstall_reason = capability.reason;
     }
 }
 
+struct UninstallCapability {
+    can_uninstall: bool,
+    reason: String,
+}
+
+fn uninstall_capability(program: &InstalledProgram) -> UninstallCapability {
+    match trusted_msi_product_code(program) {
+        Ok(_) => UninstallCapability {
+            can_uninstall: true,
+            reason: "Machine-wide Windows Installer package.".into(),
+        },
+        Err(reason) => UninstallCapability {
+            can_uninstall: false,
+            reason,
+        },
+    }
+}
+
+/// Re-read the registry inventory and require every cached field to remain
+/// identical. In particular, the stable display id deliberately does not hash
+/// the uninstall command, so this equality check catches a command replaced
+/// after the UI was populated.
+pub fn revalidate_program(expected: &InstalledProgram) -> Result<InstalledProgram, String> {
+    let programs = list_programs_checked()?;
+    let mut matches = programs
+        .into_iter()
+        .filter(|program| program.id == expected.id);
+    let current = matches.next().ok_or_else(|| {
+        "The selected program is no longer registered. Refresh the list.".to_string()
+    })?;
+    if matches.next().is_some() {
+        return Err("The selected program registration is ambiguous. Refresh the list.".into());
+    }
+    if &current != expected {
+        return Err(
+            "The selected program registration changed after it was listed. Refresh and review it before uninstalling."
+                .into(),
+        );
+    }
+    Ok(current)
+}
+
 #[cfg(target_os = "windows")]
-pub fn run_uninstall(uninstall_string: &str, quiet_string: &str) -> UninstallResult {
-    let cmd = if !quiet_string.is_empty() {
-        quiet_string
-    } else {
-        uninstall_string
+pub fn run_uninstall(program: &InstalledProgram) -> UninstallResult {
+    let current = match revalidate_program(program) {
+        Ok(current) => current,
+        Err(reason) => return uninstall_error(&reason),
     };
-    if cmd.is_empty() {
-        return UninstallResult {
-            success: false,
-            message: "No uninstall command available.".into(),
-            output: String::new(),
-        };
+    if !current.can_uninstall {
+        return uninstall_error(&current.uninstall_reason);
     }
-
-    let argv = match split_windows_command_line(cmd) {
-        Ok(argv) if !argv.is_empty() => argv,
-        Ok(_) => return uninstall_error("The registered uninstall command is empty."),
-        Err(e) => return uninstall_error(&e),
+    let product_code = match trusted_msi_product_code(&current) {
+        Ok(product_code) => product_code,
+        Err(reason) => return uninstall_error(&reason),
     };
-    let executable = std::path::Path::new(&argv[0]);
-    let is_msiexec = executable
-        .file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| {
-            n.eq_ignore_ascii_case("msiexec") || n.eq_ignore_ascii_case("msiexec.exe")
-        });
-    if (!executable.is_absolute() && !is_msiexec)
-        || executable
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
-    {
-        return uninstall_error("Refused an unsafe registered uninstall command.");
-    }
 
-    let output = optimizer_core::silent_cmd(&argv[0].to_string_lossy())
-        .args(&argv[1..])
+    // Never execute the registry's executable path in this always-elevated
+    // process. The only enabled policy is an HKLM MSI product registration, and
+    // even then we invoke Windows' trusted System32 copy with normalized args.
+    let output = optimizer_core::silent_cmd("msiexec")
+        .args(["/x", &product_code])
         .output();
 
     match output {
@@ -115,12 +168,16 @@ pub fn run_uninstall(uninstall_string: &str, quiet_string: &str) -> UninstallRes
             } else {
                 format!("{}\n{}", stdout, stderr)
             };
+            let exit_code = o.status.code();
+            let success = o.status.success() || matches!(exit_code, Some(1641 | 3010));
             UninstallResult {
-                success: o.status.success(),
-                message: if o.status.success() {
-                    "Uninstall completed.".into()
-                } else {
-                    "Uninstall may have failed or requires user interaction.".into()
+                success,
+                message: match exit_code {
+                    Some(1641) => "Uninstall completed and Windows initiated a restart.".into(),
+                    Some(3010) => "Uninstall completed. A restart is required.".into(),
+                    _ if success => "Uninstall completed.".into(),
+                    Some(code) => format!("Windows Installer reported failure (exit code {code})."),
+                    None => "Windows Installer ended without an exit code.".into(),
                 },
                 output: text,
             }
@@ -130,6 +187,116 @@ pub fn run_uninstall(uninstall_string: &str, quiet_string: &str) -> UninstallRes
             message: format!("Failed to run uninstaller: {}", e),
             output: String::new(),
         },
+    }
+}
+
+fn trusted_msi_product_code(program: &InstalledProgram) -> Result<String, String> {
+    if !is_machine_registry_key(&program.registry_key) {
+        return Err(
+            "Cove will not run per-user or user-writable uninstall commands while elevated. Use Windows Settings for this program."
+                .into(),
+        );
+    }
+    let product_code = program
+        .registry_key
+        .rsplit('\\')
+        .next()
+        .and_then(normalize_product_code)
+        .ok_or_else(|| {
+            "This elevated build only runs machine-wide Windows Installer product-code uninstallers. Use Windows Settings for this program."
+                .to_string()
+        })?;
+    let registered_as_msi = [&program.quiet_uninstall_string, &program.uninstall_string]
+        .into_iter()
+        .filter(|command| !command.trim().is_empty())
+        .any(|command| command_references_product(command, &product_code));
+    if !registered_as_msi {
+        return Err(
+            "The registered uninstall command is not a matching Windows Installer product-code command, so Cove refused to run it elevated."
+                .into(),
+        );
+    }
+    Ok(product_code)
+}
+
+fn is_machine_registry_key(registry_key: &str) -> bool {
+    registry_key
+        .get(..5)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("HKLM\\"))
+}
+
+fn normalize_product_code(value: &str) -> Option<String> {
+    let value = value.trim();
+    let bytes = value.as_bytes();
+    if bytes.len() != 38
+        || bytes.first() != Some(&b'{')
+        || bytes.last() != Some(&b'}')
+        || ![9, 14, 19, 24]
+            .into_iter()
+            .all(|index| bytes[index] == b'-')
+        || !bytes.iter().enumerate().all(|(index, byte)| {
+            matches!(index, 0 | 37) && matches!(*byte, b'{' | b'}')
+                || matches!(index, 9 | 14 | 19 | 24) && *byte == b'-'
+                || !matches!(index, 0 | 9 | 14 | 19 | 24 | 37) && byte.is_ascii_hexdigit()
+        })
+    {
+        return None;
+    }
+    Some(value.to_ascii_uppercase())
+}
+
+fn command_references_product(command: &str, product_code: &str) -> bool {
+    let Some(argv) = split_command_for_policy(command) else {
+        return false;
+    };
+    let Some(executable) = argv.first() else {
+        return false;
+    };
+    let is_msiexec = std::path::Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name.eq_ignore_ascii_case("msiexec") || name.eq_ignore_ascii_case("msiexec.exe")
+        });
+    if !is_msiexec {
+        return false;
+    }
+    let args = &argv[1..];
+    args.iter().enumerate().any(|(index, arg)| {
+        if arg.eq_ignore_ascii_case("/i") || arg.eq_ignore_ascii_case("/x") {
+            return args
+                .get(index + 1)
+                .and_then(|next| normalize_product_code(next))
+                .is_some_and(|code| code == product_code);
+        }
+        arg.get(..2)
+            .filter(|prefix| prefix.eq_ignore_ascii_case("/i") || prefix.eq_ignore_ascii_case("/x"))
+            .and_then(|_| arg.get(2..))
+            .and_then(normalize_product_code)
+            .is_some_and(|code| code == product_code)
+    })
+}
+
+fn split_command_for_policy(command: &str) -> Option<Vec<String>> {
+    #[cfg(target_os = "windows")]
+    {
+        split_windows_command_line(command).ok().map(|parts| {
+            parts
+                .into_iter()
+                .map(|part| part.to_string_lossy().into_owned())
+                .collect()
+        })
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Inventory stubs and policy unit tests only use simple MSI command
+        // forms. Windows uses CommandLineToArgvW above for the authoritative
+        // parsing before execution.
+        let parts: Vec<String> = command
+            .split_whitespace()
+            .map(|part| part.trim_matches('"').to_string())
+            .collect();
+        (!parts.is_empty()).then_some(parts)
     }
 }
 
@@ -171,7 +338,7 @@ fn split_windows_command_line(command: &str) -> Result<Vec<std::ffi::OsString>, 
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn run_uninstall(_uninstall_string: &str, _quiet_string: &str) -> UninstallResult {
+pub fn run_uninstall(_program: &InstalledProgram) -> UninstallResult {
     UninstallResult {
         success: true,
         message: "[stub] Uninstall would run on Windows.".into(),
@@ -181,30 +348,22 @@ pub fn run_uninstall(_uninstall_string: &str, _quiet_string: &str) -> UninstallR
 
 #[cfg(target_os = "windows")]
 pub fn scan_leftovers(
-    name: &str,
-    publisher: &str,
+    _name: &str,
+    _publisher: &str,
     install_location: &str,
     registry_key: &str,
 ) -> ScanResult {
-    let script = format!(
-        r#"$name = '{}'; $publisher = '{}'; $installLoc = '{}'; $regKey = '{}';{}"#,
-        name.replace('\'', "''"),
-        publisher.replace('\'', "''"),
-        install_location.replace('\'', "''"),
-        registry_key.replace('\'', "''"),
-        include_str!("scan_leftovers.ps1")
-    );
-    let json = run_ps(&script);
-    let mut result: ScanResult = serde_json::from_str(&json).unwrap_or(ScanResult {
-        leftovers: Vec::new(),
-        total_size_bytes: 0,
-    });
-    // Destructive service/task/registry cleanup requires ownership evidence we
-    // do not currently have.  Only direct, exact-name application folders are
-    // offered until those resource types have a native identity model.
-    result.leftovers.retain(|item| item.category == "Folder");
-    result.total_size_bytes = result.leftovers.iter().map(|item| item.size_bytes).sum();
-    result
+    let candidate = validate_install_location_candidate(install_location, registry_key)
+        .ok()
+        .map(|(path, size_bytes)| Leftover {
+            path: path.to_string_lossy().into_owned(),
+            category: "Folder".into(),
+            size_bytes,
+        });
+    ScanResult {
+        total_size_bytes: candidate.as_ref().map_or(0, |item| item.size_bytes),
+        leftovers: candidate.into_iter().collect(),
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -247,73 +406,114 @@ pub fn scan_leftovers(
 }
 
 #[cfg(target_os = "windows")]
-fn remove_verified_folder(path: &str) -> (bool, String) {
-    let target = match std::fs::canonicalize(path) {
-        Ok(path) => path,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return (true, "Already removed".into());
-        }
-        Err(e) => return (false, format!("Could not resolve folder: {e}")),
-    };
-    let Some(parent) = target.parent() else {
-        return (false, "Refused: folder has no parent.".into());
-    };
+fn validate_install_location_candidate(
+    install_location: &str,
+    registry_key: &str,
+) -> Result<(std::path::PathBuf, u64), String> {
+    use std::os::windows::fs::MetadataExt;
 
-    let mut allowed_parents = Vec::new();
-    for key in [
-        "ProgramFiles",
-        "ProgramFiles(x86)",
-        "ProgramData",
-        "LOCALAPPDATA",
-        "APPDATA",
-        "TEMP",
-    ] {
-        if let Some(value) = std::env::var_os(key) {
-            let root = std::path::PathBuf::from(value);
-            if let Ok(root) = std::fs::canonicalize(&root) {
-                allowed_parents.push(root.clone());
-                if key == "LOCALAPPDATA" {
-                    if let Ok(programs) = std::fs::canonicalize(root.join("Programs")) {
-                        allowed_parents.push(programs);
-                    }
-                    if let Ok(low) = std::fs::canonicalize(root.join("Low")) {
-                        allowed_parents.push(low);
-                    }
-                }
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    const GENERIC_OR_SHARED: &[&str] = &[
+        "amd",
+        "common",
+        "common files",
+        "google",
+        "intel",
+        "microsoft",
+        "nvidia",
+        "package cache",
+        "program files",
+        "program files (x86)",
+        "realtek",
+        "windows",
+        "windows defender",
+        "windowsapps",
+    ];
+
+    if !is_machine_registry_key(registry_key) || install_location.trim().is_empty() {
+        return Err("Only nonempty HKLM install locations can be considered.".into());
+    }
+    let path = std::path::PathBuf::from(install_location.trim());
+    if !path.is_absolute() {
+        return Err("The registered install location is not absolute.".into());
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            std::path::Component::CurDir | std::path::Component::ParentDir
+        )
+    }) {
+        return Err("The registered install location contains a relative path component.".into());
+    }
+    let leaf = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .ok_or_else(|| "The registered install location is a filesystem root.".to_string())?;
+    if GENERIC_OR_SHARED
+        .iter()
+        .any(|generic| leaf.eq_ignore_ascii_case(generic))
+    {
+        return Err("The registered install location is a generic or shared folder.".into());
+    }
+
+    // `symlink_metadata(target)` detects a reparse point at the final component,
+    // but Windows still follows reparse points in earlier components. Inspect
+    // every existing ancestor as well as every descendant before offering it.
+    for ancestor in path.ancestors() {
+        let metadata = std::fs::symlink_metadata(ancestor).map_err(|error| {
+            format!("Could not validate the registered install location: {error}")
+        })?;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err("The registered install location traverses a reparse point.".into());
+        }
+    }
+
+    let mut total = 0u64;
+    let mut pending = vec![path.clone()];
+    let mut visited = 0usize;
+    while let Some(current) = pending.pop() {
+        visited = visited.saturating_add(1);
+        if visited > 1_000_000 {
+            return Err("The registered install location is too large to validate safely.".into());
+        }
+        let metadata = std::fs::symlink_metadata(&current).map_err(|error| {
+            format!("Could not validate the registered install location: {error}")
+        })?;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err("The registered install location contains a reparse point.".into());
+        }
+        if metadata.is_dir() {
+            for entry in std::fs::read_dir(&current).map_err(|error| {
+                format!("Could not inspect the registered install location: {error}")
+            })? {
+                pending.push(
+                    entry
+                        .map_err(|error| {
+                            format!("Could not inspect the registered install location: {error}")
+                        })?
+                        .path(),
+                );
             }
+        } else {
+            total = total.saturating_add(metadata.len());
         }
     }
-    let parent = match std::fs::canonicalize(parent) {
-        Ok(parent) => parent,
-        Err(e) => return (false, format!("Could not resolve parent folder: {e}")),
-    };
-    if !allowed_parents.iter().any(|root| root == &parent) {
-        return (
-            false,
-            "Refused: folder is outside approved application-data roots.".into(),
-        );
-    }
-
-    match std::fs::remove_dir_all(&target) {
-        Ok(()) => (true, "Removed".into()),
-        Err(e) => (false, format!("Removal failed: {e}")),
-    }
+    Ok((path, total))
 }
 
 #[cfg(target_os = "windows")]
 pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
     paths
         .iter()
-        .map(|p| {
-            if p.starts_with("HK") || p.starts_with("Service: ") || p.starts_with("Task: ") {
-                return (
-                    p.clone(),
-                    false,
-                    "Refused: this resource has no verified application ownership.".to_string(),
-                );
-            }
-            let (ok, msg) = remove_verified_folder(p);
-            (p.clone(), ok, msg)
+        .map(|path| {
+            (
+                path.clone(),
+                false,
+                "Automatic leftover deletion is disabled in this release because folder ownership cannot be proven race-free. Remove the reviewed folder manually if appropriate."
+                    .to_string(),
+            )
         })
         .collect()
 }
@@ -327,11 +527,19 @@ pub fn remove_leftovers(paths: &[String]) -> Vec<(String, bool, String)> {
 }
 
 #[cfg(target_os = "windows")]
-fn run_ps(script: &str) -> String {
-    match optimizer_core::powershell(script).output() {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
-        Err(_) => "[]".to_string(),
+fn run_ps_checked(script: &str) -> Result<String, String> {
+    let output = optimizer_core::powershell(script)
+        .output()
+        .map_err(|error| format!("Could not start the installed-program query: {error}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            "The installed-program query failed.".into()
+        } else {
+            format!("The installed-program query failed: {detail}")
+        });
     }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 #[allow(dead_code)]
@@ -351,6 +559,8 @@ fn stub_programs() -> Vec<InstalledProgram> {
             registry_key: r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\SignalRGB_is1"
                 .into(),
             is_system: false,
+            can_uninstall: false,
+            uninstall_reason: String::new(),
         },
         InstalledProgram {
             id: String::new(),
@@ -365,6 +575,8 @@ fn stub_programs() -> Vec<InstalledProgram> {
             registry_key: r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome"
                 .into(),
             is_system: false,
+            can_uninstall: false,
+            uninstall_reason: String::new(),
         },
         InstalledProgram {
             id: String::new(),
@@ -379,6 +591,8 @@ fn stub_programs() -> Vec<InstalledProgram> {
             registry_key: r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Discord"
                 .into(),
             is_system: false,
+            can_uninstall: false,
+            uninstall_reason: String::new(),
         },
         InstalledProgram {
             id: String::new(),
@@ -392,6 +606,8 @@ fn stub_programs() -> Vec<InstalledProgram> {
             install_location: r"C:\Program Files (x86)\Steam".into(),
             registry_key: r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam".into(),
             is_system: false,
+            can_uninstall: false,
+            uninstall_reason: String::new(),
         },
         InstalledProgram {
             id: String::new(),
@@ -405,6 +621,8 @@ fn stub_programs() -> Vec<InstalledProgram> {
             install_location: String::new(),
             registry_key: String::new(),
             is_system: true,
+            can_uninstall: false,
+            uninstall_reason: String::new(),
         },
         InstalledProgram {
             id: String::new(),
@@ -418,6 +636,100 @@ fn stub_programs() -> Vec<InstalledProgram> {
             install_location: r"C:\Program Files\7-Zip".into(),
             registry_key: r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\7-Zip".into(),
             is_system: false,
+            can_uninstall: false,
+            uninstall_reason: String::new(),
         },
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PRODUCT: &str = "{00112233-4455-6677-8899-AABBCCDDEEFF}";
+
+    fn program(registry_key: &str, command: &str) -> InstalledProgram {
+        InstalledProgram {
+            id: "test".into(),
+            name: "Test Product".into(),
+            publisher: "Test".into(),
+            version: "1".into(),
+            install_date: String::new(),
+            size_bytes: 0,
+            uninstall_string: command.into(),
+            quiet_uninstall_string: String::new(),
+            install_location: r"C:\Program Files\Test Product".into(),
+            registry_key: registry_key.into(),
+            is_system: false,
+            can_uninstall: false,
+            uninstall_reason: String::new(),
+        }
+    }
+
+    #[test]
+    fn product_code_validation_is_strict_and_normalized() {
+        assert_eq!(
+            normalize_product_code(&PRODUCT.to_ascii_lowercase()).as_deref(),
+            Some(PRODUCT)
+        );
+        assert!(normalize_product_code("{00112233-4455-6677-8899-AABBCCDDEEFG}").is_none());
+        assert!(normalize_product_code("00112233-4455-6677-8899-AABBCCDDEEFF").is_none());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn elevated_uninstall_policy_accepts_only_matching_hklm_msi() {
+        let allowed = program(
+            &format!(r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{PRODUCT}"),
+            &format!("MsiExec.exe /I{PRODUCT}"),
+        );
+        assert_eq!(trusted_msi_product_code(&allowed).as_deref(), Ok(PRODUCT));
+
+        let per_user = program(
+            &format!(r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{PRODUCT}"),
+            &format!("MsiExec.exe /X {PRODUCT}"),
+        );
+        assert!(trusted_msi_product_code(&per_user).is_err());
+
+        let arbitrary_exe = program(
+            &format!(r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{PRODUCT}"),
+            r"C:\Users\Alice\AppData\Local\evil.exe",
+        );
+        assert!(trusted_msi_product_code(&arbitrary_exe).is_err());
+
+        let other_product = program(
+            &format!(r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{PRODUCT}"),
+            "MsiExec.exe /X{11111111-2222-3333-4444-555555555555}",
+        );
+        assert!(trusted_msi_product_code(&other_product).is_err());
+    }
+
+    #[test]
+    fn inventory_capability_explains_unsupported_programs() {
+        let per_user = program(
+            &format!(r"HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{PRODUCT}"),
+            &format!("MsiExec.exe /X {PRODUCT}"),
+        );
+        let capability = uninstall_capability(&per_user);
+        assert!(!capability.can_uninstall);
+        assert!(capability.reason.contains("per-user"));
+
+        let non_msi = program(
+            r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Example",
+            r"C:\Program Files\Example\uninstall.exe",
+        );
+        let capability = uninstall_capability(&non_msi);
+        assert!(!capability.can_uninstall);
+        assert!(capability.reason.contains("Windows Installer"));
+    }
+
+    #[test]
+    fn installed_program_inventory_script_fails_closed() {
+        let script = include_str!("list_programs.ps1");
+        assert!(script.contains("$ErrorActionPreference = 'Stop'"));
+        assert!(script.contains("required = $true"));
+        assert!(script.contains("Get-ChildItem -LiteralPath $root.path -ErrorAction Stop"));
+        assert!(script.contains("Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction Stop"));
+        assert!(!script.contains("-ErrorAction SilentlyContinue"));
+    }
 }

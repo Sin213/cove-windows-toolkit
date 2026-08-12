@@ -26,6 +26,7 @@ export default function RestorePanel() {
   const [status, setStatus] = useState<RestoreStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pointsWarning, setPointsWarning] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [enabling, setEnabling] = useState(false);
   const [description, setDescription] = useState("Cove Optimizer - Pre-optimization backup");
@@ -35,16 +36,41 @@ export default function RestorePanel() {
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([
+    setPointsWarning(null);
+    Promise.allSettled([
       invoke<RestoreStatus>("get_restore_status"),
       invoke<{ complete: boolean; error: string | null; points: RestorePoint[] }>("get_restore_points"),
     ])
-      .then(([s, p]) => {
-        setStatus(s);
-        setPoints(p.points);
-        if (!p.complete) setError(p.error || "Restore-point query failed.");
+      .then(([statusResult, pointsResult]) => {
+        if (
+          statusResult.status === "fulfilled" &&
+          typeof statusResult.value.known === "boolean" &&
+          typeof statusResult.value.enabled === "boolean" &&
+          typeof statusResult.value.message === "string"
+        ) {
+          setStatus(statusResult.value);
+        } else {
+          setError(
+            statusResult.status === "rejected"
+              ? String(statusResult.reason)
+              : "The backend returned an invalid System Restore status."
+          );
+        }
+
+        if (pointsResult.status === "fulfilled" && Array.isArray(pointsResult.value.points)) {
+          setPoints(pointsResult.value.points);
+          if (!pointsResult.value.complete) {
+            setPointsWarning(pointsResult.value.error || "Restore-point query failed.");
+          }
+        } else {
+          setPoints([]);
+          setPointsWarning(
+            pointsResult.status === "rejected"
+              ? String(pointsResult.reason)
+              : "The backend returned an invalid restore-point list."
+          );
+        }
       })
-      .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   };
 
@@ -98,9 +124,14 @@ export default function RestorePanel() {
 
   return (
     <div className="restore-panel">
+      {pointsWarning && (
+        <div className="panel-error" role="alert">
+          Restore-point history is incomplete: {pointsWarning}
+        </div>
+      )}
       {/* Status banner */}
       <div className={`restore-status ${status?.enabled ? "status-enabled" : "status-disabled"}`}>
-        <span className="status-icon">{status?.enabled ? "✔" : "⚠"}</span>
+        <span className="status-icon" aria-hidden="true">{status?.enabled ? "\u2714" : "\u26A0"}</span>
         <span className="status-text">{status?.message}</span>
         {status?.known && !status.enabled && (
           <button className="enable-btn" onClick={handleEnable} disabled={enabling}>
@@ -118,9 +149,11 @@ export default function RestorePanel() {
         <div className="create-row">
           <input
             type="text"
+            aria-label="Restore point description"
             className="restore-input"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+            maxLength={120}
             placeholder="Restore point description..."
             disabled={creating || !status?.enabled}
           />

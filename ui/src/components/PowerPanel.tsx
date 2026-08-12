@@ -179,8 +179,11 @@ export default function PowerPanel() {
 function TimeoutRow({ label, value, onChange, disabled }: { label: string; value: number; onChange: (v: number) => void; disabled: boolean }) {
   return (
     <div className="setting-row">
-      <span className="setting-label">{label}</span>
+      <label className="setting-label" htmlFor={`power-timeout-${label.toLowerCase().replace(/\W+/g, "-")}`}>
+        {label}
+      </label>
       <select
+        id={`power-timeout-${label.toLowerCase().replace(/\W+/g, "-")}`}
         className="timeout-select"
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}

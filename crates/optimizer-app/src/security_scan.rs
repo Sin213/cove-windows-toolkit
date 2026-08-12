@@ -115,13 +115,33 @@ pub fn open_windows_security() -> serde_json::Value {
     {
         // The windowsdefender: URI opens the Windows Security app (Virus & threat
         // protection page), which shows Microsoft's real scan progress bar.
-        match optimizer_core::silent_cmd("explorer")
-            .arg("windowsdefender://threat")
-            .spawn()
-        {
-            Ok(_) => serde_json::json!({ "success": true }),
-            Err(e) => serde_json::json!({ "success": false, "message": e.to_string() }),
-        }
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        let operation: Vec<u16> = std::ffi::OsStr::new("open")
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let target: Vec<u16> = std::ffi::OsStr::new("windowsdefender://threat")
+            .encode_wide()
+            .chain(Some(0))
+            .collect();
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                operation.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            ) as isize
+                > 32
+        };
+        serde_json::json!({
+            "success": result,
+            "message": if result { "Opened Windows Security." } else { "Windows could not open the Security app." }
+        })
     }
     #[cfg(not(target_os = "windows"))]
     {

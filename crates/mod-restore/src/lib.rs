@@ -172,7 +172,7 @@ pub fn create_restore_point(description: &str) -> Result<String, String> {
 #[cfg(target_os = "windows")]
 pub fn enable_system_protection() -> Result<String, String> {
     let output = optimizer_core::powershell(
-        "Enable-ComputerRestore -Drive $env:SystemDrive -ErrorAction Stop",
+        "$drive=[IO.Path]::GetPathRoot([Environment]::SystemDirectory).TrimEnd('\\'); Enable-ComputerRestore -Drive $drive -ErrorAction Stop",
     )
     .output()
     .map_err(|e| format!("Failed to run PowerShell: {}", e))?;

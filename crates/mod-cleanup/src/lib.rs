@@ -9,6 +9,7 @@ pub struct CleanupTarget {
     pub file_count: u64,
     pub safety: String,
     pub scan_error: Option<String>,
+    pub scan_warning: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -108,9 +109,17 @@ pub fn scan_targets() -> Vec<CleanupTarget> {
         .into_iter()
         .map(|target| {
             let measurement = measure_dir(&target.path);
-            let (size, count, scan_error) = match measurement {
-                Ok((size, count)) => (size, count, None),
-                Err(error) => (0, 0, Some(error)),
+            let (size, count, scan_error, scan_warning) = match measurement {
+                Ok(measurement) => {
+                    let warning = (measurement.skipped_items > 0).then(|| {
+                        format!(
+                            "Size estimate is partial; {} inaccessible or linked item(s) were skipped.",
+                            measurement.skipped_items
+                        )
+                    });
+                    (measurement.size_bytes, measurement.file_count, None, warning)
+                }
+                Err(error) => (0, 0, Some(error), None),
             };
             CleanupTarget {
                 id: target.id.to_string(),
@@ -120,6 +129,7 @@ pub fn scan_targets() -> Vec<CleanupTarget> {
                 file_count: count,
                 safety: target.safety.to_string(),
                 scan_error,
+                scan_warning,
             }
         })
         .collect()
@@ -131,33 +141,13 @@ pub fn scan_targets() -> Vec<CleanupTarget> {
 }
 
 #[cfg(target_os = "windows")]
-fn measure_dir(path: &str) -> Result<(u64, u64), String> {
-    // Escape single quotes so profile paths containing an apostrophe
-    // (e.g. C:\Users\O'Brien\...) don't break the single-quoted PS strings.
-    let safe = path.replace('\'', "''");
-    let ps = format!(
-        r#"
-if (-not (Test-Path -LiteralPath '{}')) {{ Write-Output '0|0'; exit }}
-$ErrorActionPreference='Stop'
-$files = Get-ChildItem -LiteralPath '{}' -Recurse -File -Force -ErrorAction Stop
-$size = ($files | Measure-Object -Property Length -Sum).Sum
-$count = ($files | Measure-Object).Count
-if ($null -eq $size) {{ $size = 0 }}
-Write-Output "$size|$count"
-"#,
-        safe, safe
-    );
+fn measure_dir(path: &str) -> Result<DirectoryMeasurement, String> {
+    use std::path::Path;
 
-    if let Ok(o) = optimizer_core::powershell(&ps).output() {
-        let line = String::from_utf8_lossy(&o.stdout).trim().to_string();
-        let parts: Vec<&str> = line.split('|').collect();
-        if parts.len() >= 2 {
-            let size: u64 = parts[0].trim().parse().unwrap_or(0);
-            let count: u64 = parts[1].trim().parse().unwrap_or(0);
-            return Ok((size, count));
-        }
-    }
-    Err("Could not measure this cleanup target.".into())
+    let Some(root) = secure_cleanup::open_root(Path::new(path))? else {
+        return Ok(DirectoryMeasurement::default());
+    };
+    secure_cleanup::measure_tree(root)
 }
 
 #[cfg(target_os = "windows")]
@@ -214,6 +204,14 @@ struct CleanOutcome {
     deleted_files: u64,
     skipped_items: u64,
     root_missing: bool,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Default)]
+struct DirectoryMeasurement {
+    size_bytes: u64,
+    file_count: u64,
+    skipped_items: u64,
 }
 
 #[cfg(target_os = "windows")]
@@ -310,6 +308,7 @@ mod secure_cleanup {
     const MAX_PENDING_DIRECTORIES: usize = 8_192;
     const SHARE_ALL: u32 = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
     const DIRECTORY_ACCESS: u32 = FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+    const CHILD_DIRECTORY_ACCESS: u32 = DIRECTORY_ACCESS | DELETE;
     const TRAVERSE_ACCESS: u32 = FILE_READ_ATTRIBUTES;
     const FILE_ACCESS: u32 = DELETE | FILE_READ_ATTRIBUTES;
 
@@ -372,6 +371,7 @@ mod secure_cleanup {
                 &component,
                 EntryKind::Directory,
                 index == last_component,
+                false,
             ) {
                 Ok(handle) => handle,
                 Err(error) if is_missing(&error) => return Ok(None),
@@ -397,11 +397,23 @@ mod secure_cleanup {
 
     pub(super) fn clean_tree(root: OwnedHandle) -> Result<CleanOutcome, String> {
         let mut outcome = CleanOutcome::default();
-        let mut pending = vec![(root, true)];
+        // The final flag is a post-order marker. Parent handles stay open until
+        // every child directory has been emptied and deleted; otherwise a
+        // parent containing a nested directory is attempted too early and is
+        // never retried.
+        let mut pending = vec![(root, true, false)];
 
-        while let Some((directory, is_root)) = pending.pop() {
+        while let Some((directory, is_root, delete_after_children)) = pending.pop() {
+            if delete_after_children {
+                if !is_root && delete_by_handle(&directory).is_err() {
+                    outcome.skipped_items = outcome.skipped_items.saturating_add(1);
+                }
+                continue;
+            }
+
             let mut restart = true;
             let mut enumerated_any = false;
+            let mut child_directories = Vec::new();
             loop {
                 let entry = match query_next(&directory, restart) {
                     Ok(Some(entry)) => entry,
@@ -432,7 +444,13 @@ mod secure_cleanup {
                 } else {
                     EntryKind::File
                 };
-                let child = match open_relative(&directory, &entry.name, kind, true) {
+                let child = match open_relative(
+                    &directory,
+                    &entry.name,
+                    kind,
+                    true,
+                    matches!(kind, EntryKind::Directory),
+                ) {
                     Ok(handle) => handle,
                     Err(error) if is_missing(&error) => continue,
                     Err(_) => {
@@ -447,10 +465,12 @@ mod secure_cleanup {
 
                 match kind {
                     EntryKind::Directory => {
-                        if pending.len() >= MAX_PENDING_DIRECTORIES {
+                        if pending.len().saturating_add(child_directories.len())
+                            >= MAX_PENDING_DIRECTORIES
+                        {
                             outcome.skipped_items = outcome.skipped_items.saturating_add(1);
                         } else {
-                            pending.push((child, false));
+                            child_directories.push(child);
                         }
                     }
                     EntryKind::File => {
@@ -464,9 +484,89 @@ mod secure_cleanup {
                     }
                 }
             }
+            if !is_root {
+                pending.push((directory, false, true));
+            }
+            for child in child_directories {
+                pending.push((child, false, false));
+            }
         }
 
         Ok(outcome)
+    }
+
+    pub(super) fn measure_tree(root: OwnedHandle) -> Result<super::DirectoryMeasurement, String> {
+        let mut measurement = super::DirectoryMeasurement::default();
+        let mut pending = vec![(root, true)];
+
+        while let Some((directory, is_root)) = pending.pop() {
+            let mut restart = true;
+            let mut enumerated_any = false;
+            loop {
+                let entry = match query_next(&directory, restart) {
+                    Ok(Some(entry)) => entry,
+                    Ok(None) => break,
+                    Err(error) if is_root && !enumerated_any => {
+                        return Err(format!("Could not enumerate cleanup folder: {error}"));
+                    }
+                    Err(_) => {
+                        measurement.skipped_items = measurement.skipped_items.saturating_add(1);
+                        break;
+                    }
+                };
+                restart = false;
+                enumerated_any = true;
+
+                if is_dot_entry(&entry.name) {
+                    continue;
+                }
+                if !is_safe_child_name(&entry.name)
+                    || entry.attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+                {
+                    measurement.skipped_items = measurement.skipped_items.saturating_add(1);
+                    continue;
+                }
+
+                let kind = if entry.attributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
+                    EntryKind::Directory
+                } else {
+                    EntryKind::File
+                };
+                let child = match open_relative(&directory, &entry.name, kind, true, false) {
+                    Ok(handle) => handle,
+                    Err(error) if is_missing(&error) => continue,
+                    Err(_) => {
+                        measurement.skipped_items = measurement.skipped_items.saturating_add(1);
+                        continue;
+                    }
+                };
+                if validate_kind(&child, kind).is_err() {
+                    measurement.skipped_items = measurement.skipped_items.saturating_add(1);
+                    continue;
+                }
+
+                match kind {
+                    EntryKind::Directory => {
+                        if pending.len() >= MAX_PENDING_DIRECTORIES {
+                            measurement.skipped_items = measurement.skipped_items.saturating_add(1);
+                        } else {
+                            pending.push((child, false));
+                        }
+                    }
+                    EntryKind::File => match file_length(&child) {
+                        Ok(length) => {
+                            measurement.file_count = measurement.file_count.saturating_add(1);
+                            measurement.size_bytes = measurement.size_bytes.saturating_add(length);
+                        }
+                        Err(_) => {
+                            measurement.skipped_items = measurement.skipped_items.saturating_add(1);
+                        }
+                    },
+                }
+            }
+        }
+
+        Ok(measurement)
     }
 
     fn parse_absolute_drive_path(path: &Path) -> Result<(u8, Vec<Vec<u16>>), String> {
@@ -504,6 +604,7 @@ mod secure_cleanup {
         name: &[u16],
         kind: EntryKind,
         enumerate_directory: bool,
+        delete_directory: bool,
     ) -> io::Result<OwnedHandle> {
         let byte_length = name
             .len()
@@ -526,6 +627,9 @@ mod secure_cleanup {
         let mut handle: HANDLE = null_mut();
         let mut status_block: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
         let (access, type_option) = match kind {
+            EntryKind::Directory if enumerate_directory && delete_directory => {
+                (CHILD_DIRECTORY_ACCESS, FILE_DIRECTORY_FILE)
+            }
             EntryKind::Directory if enumerate_directory => (DIRECTORY_ACCESS, FILE_DIRECTORY_FILE),
             EntryKind::Directory => (TRAVERSE_ACCESS, FILE_DIRECTORY_FILE),
             EntryKind::File => (FILE_ACCESS, FILE_NON_DIRECTORY_FILE),
@@ -768,6 +872,32 @@ mod tests {
     }
 
     #[test]
+    fn measurement_skips_locked_children_but_keeps_partial_totals() {
+        let test_directory = TestDirectory::new("measure-locked");
+        let locked_path = test_directory.path().join("locked.tmp");
+        let readable_path = test_directory.path().join("readable.tmp");
+        fs::write(&locked_path, b"locked").unwrap();
+        fs::write(&readable_path, b"read me").unwrap();
+        let locked_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .share_mode(0)
+            .open(&locked_path)
+            .unwrap();
+
+        let root = secure_cleanup::open_root(test_directory.path())
+            .unwrap()
+            .unwrap();
+        let measurement = secure_cleanup::measure_tree(root).unwrap();
+
+        assert_eq!(measurement.file_count, 1);
+        assert_eq!(measurement.size_bytes, 7);
+        assert_eq!(measurement.skipped_items, 1);
+
+        drop(locked_file);
+    }
+
+    #[test]
     fn locked_child_does_not_abort_other_deletions() {
         let test_directory = TestDirectory::new("locked");
         let locked_path = test_directory.path().join("locked.tmp");
@@ -851,13 +981,38 @@ mod tests {
     }
 
     #[test]
+    fn linked_child_is_skipped_without_touching_its_target() {
+        let root = TestDirectory::new("linked-child");
+        let outside = TestDirectory::new("linked-child-outside");
+        let link = root.path().join("redirected-child");
+        let removable_file = root.path().join("remove-me.tmp");
+        let outside_file = outside.path().join("must-remain.tmp");
+        fs::write(&removable_file, b"remove me").unwrap();
+        fs::write(&outside_file, b"keep me").unwrap();
+        if symlink_dir(outside.path(), &link).is_err() {
+            // Creating symlinks requires Developer Mode or the symlink privilege.
+            return;
+        }
+
+        let outcome = clean(root.path()).unwrap();
+
+        assert_eq!(outcome.deleted_files, 1);
+        assert_eq!(outcome.skipped_items, 1);
+        assert!(!removable_file.exists());
+        assert!(outside_file.exists());
+        assert!(link.exists());
+        let _ = fs::remove_dir(&link);
+    }
+
+    #[test]
     fn literal_special_character_path_is_cleaned() {
         let test_directory = TestDirectory::new("special-path");
         let special_directory = test_directory.path().join("O'Brien [cache]");
         let nested_directory = special_directory.join("nested");
-        fs::create_dir_all(&nested_directory).unwrap();
+        let deep_directory = nested_directory.join("deeper");
+        fs::create_dir_all(&deep_directory).unwrap();
         fs::write(special_directory.join("one.tmp"), b"1234").unwrap();
-        fs::write(nested_directory.join("two.tmp"), b"56789").unwrap();
+        fs::write(deep_directory.join("two.tmp"), b"56789").unwrap();
 
         let outcome = clean(&special_directory).unwrap();
 
@@ -865,7 +1020,7 @@ mod tests {
         assert_eq!(outcome.freed_bytes, 9);
         assert_eq!(outcome.skipped_items, 0);
         assert!(!special_directory.join("one.tmp").exists());
-        assert!(!nested_directory.join("two.tmp").exists());
+        assert!(!nested_directory.exists());
     }
 
     #[test]

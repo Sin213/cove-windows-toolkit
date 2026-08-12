@@ -24,9 +24,12 @@ pub fn scan_dumps_report() -> BsodReport {
     let script = r#"
 $ErrorActionPreference='Stop'
 try {
+  $windows = [IO.Directory]::GetParent([Environment]::SystemDirectory).FullName
+  $env:SystemRoot = $windows; $env:windir = $windows
+  $env:SystemDrive = [IO.Path]::GetPathRoot($windows).TrimEnd('\')
   $config = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl' -ErrorAction Stop
-  $mini = if ($config.MinidumpDir) { [Environment]::ExpandEnvironmentVariables([string]$config.MinidumpDir) } else { Join-Path $env:SystemRoot 'Minidump' }
-  $full = if ($config.DumpFile) { [Environment]::ExpandEnvironmentVariables([string]$config.DumpFile) } else { Join-Path $env:SystemRoot 'MEMORY.DMP' }
+  $mini = if ($config.MinidumpDir) { [Environment]::ExpandEnvironmentVariables([string]$config.MinidumpDir) } else { Join-Path $windows 'Minidump' }
+  $full = if ($config.DumpFile) { [Environment]::ExpandEnvironmentVariables([string]$config.DumpFile) } else { Join-Path $windows 'MEMORY.DMP' }
   $found = @()
   if (Test-Path -LiteralPath $mini) {
     $found += Get-ChildItem -LiteralPath $mini -Filter '*.dmp' -File -ErrorAction Stop | Sort-Object LastWriteTime -Descending | Select-Object -First 10 | ForEach-Object { [pscustomobject]@{ file=$_.FullName; date=$_.LastWriteTime.ToString('o') } }
@@ -120,7 +123,8 @@ pub fn scan_dumps_report() -> BsodReport {
 #[cfg(target_os = "windows")]
 pub fn scan_dumps() -> Vec<BsodDump> {
     let ps = r#"
-$dir = "$env:SystemRoot\Minidump"
+$windows = [IO.Directory]::GetParent([Environment]::SystemDirectory).FullName
+$dir = Join-Path $windows 'Minidump'
 if (Test-Path $dir) {
     Get-ChildItem -Path $dir -Filter '*.dmp' -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending |
@@ -130,7 +134,7 @@ if (Test-Path $dir) {
         }
 }
 # Full/kernel memory dump (used when minidumps are disabled)
-$full = "$env:SystemRoot\MEMORY.DMP"
+$full = Join-Path $windows 'MEMORY.DMP'
 if (Test-Path $full) {
     $f = Get-Item $full -ErrorAction SilentlyContinue
     if ($f) { Write-Output "DUMP|$($f.FullName)|$($f.LastWriteTime.ToString('o'))|$($f.Length)" }

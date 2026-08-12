@@ -10,6 +10,14 @@ interface StartupItem {
   command: string;
   impact: string;
   enabled: boolean;
+  can_toggle: boolean;
+  toggle_reason: string;
+}
+
+interface StartupResponse {
+  success: boolean;
+  message: string;
+  items: StartupItem[];
 }
 
 export default function StartupPanel() {
@@ -21,13 +29,22 @@ export default function StartupPanel() {
   const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
-    invoke<StartupItem[]>("get_startup_items")
-      .then(setItems)
+    invoke<StartupResponse>("get_startup_items")
+      .then((response) => {
+        if (!response.success || !Array.isArray(response.items)) {
+          throw new Error(response.message || "Startup inventory could not be queried.");
+        }
+        setItems(response.items);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
 
   const handleToggle = async (item: StartupItem) => {
+    if (!item.can_toggle) {
+      setFeedback(item.toggle_reason || "This startup entry cannot be changed by Cove.");
+      return;
+    }
     setToggling((s) => ({ ...s, [item.id]: true }));
     try {
       setFeedback(null);
@@ -84,10 +101,18 @@ export default function StartupPanel() {
               <button
                 className={`toggle-btn ${item.enabled ? "toggle-on" : "toggle-off"}`}
                 onClick={() => setPendingConfirm(item)}
-                disabled={toggling[item.id]}
+                disabled={toggling[item.id] || !item.can_toggle}
+                aria-label={`${item.enabled ? "Disable" : "Enable"} ${item.name} at startup`}
+                aria-pressed={item.enabled}
+                title={!item.can_toggle ? item.toggle_reason : undefined}
               >
                 <span className="toggle-knob" />
               </button>
+              {!item.can_toggle && (
+                <span className="startup-toggle-reason">
+                  {item.toggle_reason || "This entry cannot be changed by Cove."}
+                </span>
+              )}
             </div>
           </div>
         ))}

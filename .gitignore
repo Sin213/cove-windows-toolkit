@@ -6,3 +6,7 @@
 *.pdb
 .env
 handoff.md
+
+# CI generates authoritative hashes from the exact GitHub Release artifacts.
+# Keep local tester-build sidecars out of source control.
+release/*.sha256

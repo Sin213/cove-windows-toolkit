@@ -39,7 +39,17 @@ export default function HealthPanel() {
     setLoading(true);
     setError(null);
     invoke<HealthReport>("get_health_report")
-      .then(setReport)
+      .then((response) => {
+        if (
+          !response ||
+          !Array.isArray(response.findings) ||
+          !(typeof response.score === "number" || response.score === null) ||
+          typeof response.complete !== "boolean"
+        ) {
+          throw new Error("The backend returned an invalid health report.");
+        }
+        setReport(response);
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   };

@@ -25,6 +25,44 @@ pub fn windows_directory() -> std::path::PathBuf {
     std::path::PathBuf::from("/")
 }
 
+/// Resolve the machine's Program Files directory through the Windows Known
+/// Folder API. Do not use the inherited `ProgramFiles` environment variable to
+/// locate executables from an elevated process: a caller-controlled environment
+/// can redirect it to a user-writable directory.
+#[cfg(target_os = "windows")]
+pub fn program_files_directory() -> Option<std::path::PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{
+        FOLDERID_ProgramFiles, KF_FLAG_DEFAULT, SHGetKnownFolderPath,
+    };
+
+    let mut raw = std::ptr::null_mut();
+    let status = unsafe {
+        SHGetKnownFolderPath(
+            &FOLDERID_ProgramFiles,
+            KF_FLAG_DEFAULT as u32,
+            std::ptr::null_mut(),
+            &mut raw,
+        )
+    };
+    if status < 0 || raw.is_null() {
+        return None;
+    }
+    let path = unsafe {
+        let length = (0..).take_while(|&index| *raw.add(index) != 0).count();
+        let path = std::ffi::OsString::from_wide(std::slice::from_raw_parts(raw, length)).into();
+        CoTaskMemFree(raw.cast());
+        path
+    };
+    Some(path)
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn program_files_directory() -> Option<std::path::PathBuf> {
+    None
+}
+
 #[cfg(target_os = "windows")]
 pub fn system_executable(program: &str) -> std::path::PathBuf {
     use std::path::Path;

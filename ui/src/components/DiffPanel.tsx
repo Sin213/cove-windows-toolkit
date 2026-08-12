@@ -17,9 +17,50 @@ interface DiffChanges {
 
 interface DiffData {
   has_previous: boolean;
+  success?: boolean;
+  message?: string;
   previous_timestamp?: string;
   error?: string;
   changes?: DiffChanges;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function requireDiffData(value: unknown): DiffData {
+  if (!isRecord(value)) {
+    throw new Error("The backend returned an invalid machine-diff response.");
+  }
+  if (value.success === false) {
+    throw new Error(
+      typeof value.message === "string" ? value.message : "The machine comparison failed."
+    );
+  }
+  if (typeof value.has_previous !== "boolean") {
+    throw new Error(
+      typeof value.message === "string"
+        ? value.message
+        : "The backend returned an invalid machine-diff response."
+    );
+  }
+  if (value.has_previous) {
+    const changes = value.changes;
+    const listFields = [
+      "new_startup_items",
+      "removed_startup_items",
+      "new_programs",
+      "removed_programs",
+      "new_bloatware",
+    ];
+    if (
+      !isRecord(changes) ||
+      !listFields.every((field) => Array.isArray(changes[field]))
+    ) {
+      throw new Error("The backend returned an incomplete machine-diff response.");
+    }
+  }
+  return value as unknown as DiffData;
 }
 
 function formatBytes(b: number): string {
@@ -48,8 +89,8 @@ export default function DiffPanel() {
   const [snapDone, setSnapDone] = useState(false);
 
   useEffect(() => {
-    invoke<DiffData>("get_machine_diff")
-      .then(setData)
+    invoke<unknown>("get_machine_diff")
+      .then((value) => setData(requireDiffData(value)))
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   }, []);
@@ -61,7 +102,7 @@ export default function DiffPanel() {
       const result = await invoke<{ success: boolean; message?: string }>("take_snapshot");
       if (!result.success) throw new Error(result.message || "Snapshot save failed.");
       setSnapDone(true);
-      setData(await invoke<DiffData>("get_machine_diff"));
+      setData(requireDiffData(await invoke<unknown>("get_machine_diff")));
     } catch (e) {
       console.error("Snapshot failed:", e);
       setError(String(e));
@@ -75,6 +116,24 @@ export default function DiffPanel() {
   if (!data) return null;
 
   if (!data.has_previous) {
+    if (data.error) {
+      return (
+        <div className="diff-panel">
+          <div className="diff-first-visit">
+            <div className="panel-error" role="alert">
+              The previous snapshot could not be read: {data.error}
+            </div>
+            <p>
+              Taking a new baseline will replace the unreadable snapshot. Only continue if you no
+              longer need the previous comparison.
+            </p>
+            <button className="diff-snapshot-btn" onClick={handleSnapshot} disabled={snapping || snapDone}>
+              {snapDone ? "Snapshot Replaced" : snapping ? "Replacing..." : "Replace with New Baseline"}
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="diff-panel">
         <div className="diff-first-visit">

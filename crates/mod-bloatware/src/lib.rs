@@ -143,6 +143,13 @@ pub const BLOATWARE_LIST: &[(&str, &str, &str)] = &[
     ("NortonLifeLock.NortonSecurity", "Norton Security", "oem"),
 ];
 
+#[cfg(any(target_os = "windows", test))]
+fn package_is_installed(installed: &[String], approved: &str) -> bool {
+    installed
+        .iter()
+        .any(|installed_name| installed_name.eq_ignore_ascii_case(approved))
+}
+
 #[cfg(target_os = "windows")]
 pub fn scan_installed() -> BloatwareReport {
     let script = r#"
@@ -188,8 +195,7 @@ $provisioned = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop | Select-O
         .map(|(pkg, name, cat)| {
             // AppX package-name casing can vary across machines/locales, so match
             // case-insensitively to avoid reporting an installed app as absent.
-            let pkg_l = pkg.to_lowercase();
-            let is_installed = installed.iter().any(|i| i.to_lowercase().contains(&pkg_l));
+            let is_installed = package_is_installed(&installed, pkg);
             BloatwareApp {
                 package_name: pkg.to_string(),
                 display_name: name.to_string(),
@@ -285,6 +291,22 @@ pub fn remove_apps(packages: &[String]) -> Vec<RemoveResult> {
             Err(e) => RemoveResult { package_name: pkg.clone(), success: false, message: e.to_string() },
         }
     }).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::package_is_installed;
+
+    #[test]
+    fn installed_package_matching_is_case_insensitive_but_not_substring_based() {
+        let installed = vec![
+            "microsoft.bingweather".to_string(),
+            "Contoso.Microsoft.GamingApp.Helper".to_string(),
+        ];
+
+        assert!(package_is_installed(&installed, "Microsoft.BingWeather"));
+        assert!(!package_is_installed(&installed, "Microsoft.GamingApp"));
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
