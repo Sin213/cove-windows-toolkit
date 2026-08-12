@@ -48,23 +48,15 @@ fn unknown_finding(id: &str, title: &str, detail: &str) -> (Finding, i32) {
 
 #[cfg(target_os = "windows")]
 fn check_disk_space() -> (Finding, i32) {
-    let ps = r#"$sd = [IO.Path]::GetPathRoot([Environment]::SystemDirectory).TrimEnd('\')
-$d = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sd'" -ErrorAction SilentlyContinue
-Write-Output "$($d.FreeSpace)|$($d.Size)""#;
-    if let Ok(o) = optimizer_core::powershell(ps).output() {
-        let s = String::from_utf8_lossy(&o.stdout);
-        let p: Vec<&str> = s.trim().split('|').collect();
-        if p.len() == 2
-            && let (Ok(free), Ok(total)) = (p[0].trim().parse::<u64>(), p[1].trim().parse::<u64>())
-            && total > 0
-        {
-            return disk_finding(free, total);
-        }
-    }
-    unknown_finding(
-        "disk.free_space",
-        "System Drive Free Space",
-        "Could not read disk free space",
+    read_disk_space().map_or_else(
+        || {
+            unknown_finding(
+                "disk.free_space",
+                "System Drive Free Space",
+                "Could not read disk free space",
+            )
+        },
+        |(free, total)| disk_finding(free, total),
     )
 }
 
@@ -74,6 +66,14 @@ fn check_disk_space() -> (Finding, i32) {
 }
 
 fn disk_finding(free: u64, total: u64) -> (Finding, i32) {
+    if total == 0 || free > total {
+        return unknown_finding(
+            "disk.free_space",
+            "System Drive Free Space",
+            "Could not read disk free space",
+        );
+    }
+
     let pct_free = (free as f32 / total as f32) * 100.0;
 
     let (severity, deduction) = if pct_free < 5.0 {
@@ -109,27 +109,15 @@ fn disk_finding(free: u64, total: u64) -> (Finding, i32) {
 
 #[cfg(target_os = "windows")]
 fn check_ram() -> (Finding, i32) {
-    let ps = r#"$os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
-Write-Output "$($os.FreePhysicalMemory)|$($os.TotalVisibleMemorySize)""#;
-    if let Ok(o) = optimizer_core::powershell(ps).output() {
-        let s = String::from_utf8_lossy(&o.stdout);
-        let p: Vec<&str> = s.trim().split('|').collect();
-        if p.len() == 2 {
-            // Win32_OperatingSystem reports memory in kilobytes.
-            if let (Ok(free_kb), Ok(total_kb)) =
-                (p[0].trim().parse::<u64>(), p[1].trim().parse::<u64>())
-                && total_kb > 0
-                && let (Some(free), Some(total)) =
-                    (free_kb.checked_mul(1024), total_kb.checked_mul(1024))
-            {
-                return ram_finding(free, total);
-            }
-        }
-    }
-    unknown_finding(
-        "ram.available",
-        "Available RAM",
-        "Could not read memory status",
+    read_memory_status().map_or_else(
+        || {
+            unknown_finding(
+                "ram.available",
+                "Available RAM",
+                "Could not read memory status",
+            )
+        },
+        |(available, total)| ram_finding(available, total),
     )
 }
 
@@ -139,6 +127,14 @@ fn check_ram() -> (Finding, i32) {
 }
 
 fn ram_finding(available: u64, total: u64) -> (Finding, i32) {
+    if total == 0 || available > total {
+        return unknown_finding(
+            "ram.available",
+            "Available RAM",
+            "Could not read memory status",
+        );
+    }
+
     let pct_available = (available as f32 / total as f32) * 100.0;
 
     let (severity, deduction) = if available < 200_000_000 {
@@ -170,4 +166,144 @@ fn ram_finding(available: u64, total: u64) -> (Finding, i32) {
         },
         deduction,
     )
+}
+
+#[cfg(target_os = "windows")]
+fn read_disk_space() -> Option<(u64, u64)> {
+    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+
+    let root = system_drive_root()?;
+    let mut total = 0u64;
+    let mut free = 0u64;
+    let succeeded =
+        unsafe { GetDiskFreeSpaceExW(root.as_ptr(), std::ptr::null_mut(), &mut total, &mut free) }
+            != 0;
+
+    succeeded
+        .then_some((free, total))
+        .filter(|(free, total)| *total > 0 && *free <= *total)
+}
+
+#[cfg(target_os = "windows")]
+fn system_drive_root() -> Option<Vec<u16>> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    use std::path::{Path, PathBuf};
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+
+    // The API reports the required size when the buffer is too small. Retry
+    // with that size so long-path-compatible installations remain valid.
+    let mut buffer = vec![0u16; 260];
+    let length = loop {
+        let length =
+            unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
+        if length == 0 {
+            return None;
+        }
+        if length < buffer.len() {
+            break length;
+        }
+        if length >= 32_768 {
+            return None;
+        }
+        buffer.resize(length + 1, 0);
+    };
+
+    let system_directory = OsString::from_wide(&buffer[..length]);
+    let root: PathBuf = Path::new(&system_directory).components().take(2).collect();
+    if root.as_os_str().is_empty() {
+        return None;
+    }
+
+    let mut wide: Vec<u16> = root.as_os_str().encode_wide().collect();
+    wide.push(0);
+    Some(wide)
+}
+
+#[cfg(target_os = "windows")]
+fn read_memory_status() -> Option<(u64, u64)> {
+    use std::mem::size_of;
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
+    status.dwLength = size_of::<MEMORYSTATUSEX>() as u32;
+    let succeeded = unsafe { GlobalMemoryStatusEx(&mut status) } != 0;
+
+    succeeded
+        .then_some((status.ullAvailPhys, status.ullTotalPhys))
+        .filter(|(available, total)| *total > 0 && *available <= *total)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn percent(finding: &Finding) -> f32 {
+        match finding.metric {
+            Some(MetricValue::Percent(value)) => value,
+            _ => panic!("expected a percentage metric"),
+        }
+    }
+
+    #[test]
+    fn disk_thresholds_preserve_severity_and_deduction() {
+        let (critical, critical_deduction) = disk_finding(4, 100);
+        assert_eq!(critical.id, "disk.free_space");
+        assert_eq!(critical.severity, Severity::Critical);
+        assert_eq!(critical_deduction, 25);
+        assert!((percent(&critical) - 4.0).abs() < f32::EPSILON);
+
+        let (warning, warning_deduction) = disk_finding(14, 100);
+        assert_eq!(warning.severity, Severity::Warning);
+        assert_eq!(warning_deduction, 10);
+
+        let (ok, ok_deduction) = disk_finding(15, 100);
+        assert_eq!(ok.severity, Severity::Ok);
+        assert_eq!(ok_deduction, 0);
+    }
+
+    #[test]
+    fn ram_thresholds_preserve_severity_and_deduction() {
+        let (critical, critical_deduction) = ram_finding(199_999_999, 2_000_000_000);
+        assert_eq!(critical.id, "ram.available");
+        assert_eq!(critical.severity, Severity::Critical);
+        assert_eq!(critical_deduction, 25);
+
+        let (warning, warning_deduction) = ram_finding(500_000_000, 20_000_000_000);
+        assert_eq!(warning.severity, Severity::Warning);
+        assert_eq!(warning_deduction, 10);
+
+        let (ok, ok_deduction) = ram_finding(2_000_000_000, 20_000_000_000);
+        assert_eq!(ok.severity, Severity::Ok);
+        assert_eq!(ok_deduction, 0);
+    }
+
+    #[test]
+    fn invalid_metrics_are_unknown_and_do_not_affect_score() {
+        let (disk, disk_deduction) = disk_finding(1, 0);
+        assert_eq!(disk.id, "disk.free_space");
+        assert_eq!(disk.severity, Severity::Info);
+        assert!(disk.metric.is_none());
+        assert_eq!(disk_deduction, 0);
+
+        let (ram, ram_deduction) = ram_finding(21, 20);
+        assert_eq!(ram.id, "ram.available");
+        assert_eq!(ram.severity, Severity::Info);
+        assert!(ram.metric.is_none());
+        assert_eq!(ram_deduction, 0);
+
+        let (unknown, deduction) = unknown_finding("metric", "Metric", "Unavailable");
+        assert!(unknown.metric.is_none());
+        assert_eq!(deduction, 0);
+    }
+
+    #[test]
+    fn quick_scan_score_is_only_present_when_all_metrics_are_known() {
+        let report = quick_scan();
+        assert_eq!(report.findings.len(), 2);
+        assert_eq!(report.complete, report.score.is_some());
+        if report.complete {
+            assert!(report.score.unwrap() <= 100);
+        }
+    }
 }
