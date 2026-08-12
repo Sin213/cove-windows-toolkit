@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm --dir ui install --frozen-lockfile
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
