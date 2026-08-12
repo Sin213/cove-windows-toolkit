@@ -86,6 +86,38 @@
   cursor: not-allowed;
 }
 
+.cleanup-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.cleanup-result {
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  font-size: 12px;
+}
+
+.cleanup-result-success {
+  color: var(--green);
+  background: var(--green-soft);
+  border-color: color-mix(in oklch, var(--green) 30%, transparent);
+}
+
+.cleanup-result-partial {
+  color: var(--yellow);
+  background: var(--yellow-soft);
+  border-color: color-mix(in oklch, var(--yellow) 30%, transparent);
+}
+
+.cleanup-result-error {
+  color: var(--red);
+  background: var(--red-soft);
+  border-color: color-mix(in oklch, var(--red) 30%, transparent);
+}
+
 /* Hairline row list: cleanup targets */
 .cleanup-list {
   display: flex;

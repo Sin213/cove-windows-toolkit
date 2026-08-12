@@ -14,6 +14,16 @@ interface CleanupTarget {
   scan_error: string | null;
 }
 
+interface CleanupRunResult {
+  id: string;
+  success: boolean;
+  partial: boolean;
+  message: string;
+  freed_bytes: number;
+  deleted_files: number;
+  skipped_items: number;
+}
+
 export default function CleanupPanel() {
   const [targets, setTargets] = useState<CleanupTarget[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,7 +32,7 @@ export default function CleanupPanel() {
   const [cleaning, setCleaning] = useState(false);
   const [cleaned, setCleaned] = useState<Record<string, boolean>>({});
   const [showConfirm, setShowConfirm] = useState(false);
-  const [results, setResults] = useState<Record<string, { success: boolean; message: string }>>({});
+  const [results, setResults] = useState<Record<string, CleanupRunResult>>({});
 
   useEffect(() => {
     invoke<CleanupTarget[]>("get_cleanup_targets")
@@ -45,19 +55,21 @@ export default function CleanupPanel() {
   };
 
   const toggleAll = () => {
-    const uncleaned = targets.filter((t) => !cleaned[t.id]);
-    const allSelected = uncleaned.every((t) => selected[t.id]);
+    const selectable = targets.filter((t) => !cleaned[t.id] && !t.scan_error);
+    const allSelected = selectable.every((t) => selected[t.id]);
     const next: Record<string, boolean> = { ...selected };
-    uncleaned.forEach((t) => {
+    selectable.forEach((t) => {
       next[t.id] = !allSelected;
     });
     setSelected(next);
   };
 
   const selectedTargets = targets.filter(
-    (t) => selected[t.id] && !cleaned[t.id]
+    (t) => selected[t.id] && !cleaned[t.id] && !t.scan_error
   );
-  const uncleanedTargets = targets.filter((t) => !cleaned[t.id]);
+  const uncleanedTargets = targets.filter(
+    (t) => !cleaned[t.id] && !t.scan_error
+  );
   const allSelected =
     uncleanedTargets.length > 0 && uncleanedTargets.every((t) => selected[t.id]);
   const totalSize = selectedTargets.reduce((s, t) => s + t.size_bytes, 0);
@@ -67,15 +79,33 @@ export default function CleanupPanel() {
     setCleaning(true);
     try {
       const ids = selectedTargets.map((t) => t.id);
-      const res = await invoke<{ success: boolean; results: { id: string; success: boolean; message: string }[] }>(
+      const res = await invoke<{ success: boolean; results: CleanupRunResult[] }>(
         "run_cleanup",
         { ids }
       );
-      // Mark only the targets that actually succeeded, per-result.
-      const ok = new Set((res.results || []).filter((r) => r.success).map((r) => r.id));
-      setResults(Object.fromEntries((res.results || []).map((r) => [r.id, r])));
-      for (const t of selectedTargets) {
-        if (ok.has(t.id)) setCleaned((s) => ({ ...s, [t.id]: true }));
+      const runResults = res.results || [];
+      setResults(Object.fromEntries(runResults.map((result) => [result.id, result])));
+      setCleaned((current) => {
+        const next = { ...current };
+        runResults.forEach((result) => {
+          // A partial run leaves skipped files available for a later retry.
+          if (result.success && !result.partial) next[result.id] = true;
+        });
+        return next;
+      });
+      setSelected((current) => {
+        const next = { ...current };
+        ids.forEach((id) => {
+          next[id] = false;
+        });
+        return next;
+      });
+
+      // Reflect what remains instead of retaining the pre-clean sizes/counts.
+      try {
+        setTargets(await invoke<CleanupTarget[]>("get_cleanup_targets"));
+      } catch (scanError) {
+        console.error("Cleanup rescan failed:", scanError);
       }
     } catch (e) {
       console.error("Cleanup failed:", e);
@@ -122,11 +152,25 @@ export default function CleanupPanel() {
           </button>
         </div>
       </div>
-      {Object.entries(results).map(([id, result]) => (
-        <div key={id} className={result.success ? "panel-success" : "panel-error"} role="status">
-          {targets.find((target) => target.id === id)?.name || id}: {result.message}
+      {Object.keys(results).length > 0 && (
+        <div className="cleanup-results">
+          {Object.entries(results).map(([id, result]) => (
+            <div
+              key={id}
+              className={`cleanup-result ${
+                !result.success
+                  ? "cleanup-result-error"
+                  : result.partial
+                    ? "cleanup-result-partial"
+                    : "cleanup-result-success"
+              }`}
+              role={result.success ? "status" : "alert"}
+            >
+              {targets.find((target) => target.id === id)?.name || id}: {result.message}
+            </div>
+          ))}
         </div>
-      ))}
+      )}
 
       <div className="cleanup-list">
         {targets.map((target) => (

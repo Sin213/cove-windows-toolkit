@@ -2,6 +2,37 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 
 const IS_TAURI = "__TAURI__" in window || "__TAURI_INTERNALS__" in window;
 
+const INTERNAL_LOG_COMMANDS = new Set([
+  "get_support_logs",
+  "record_ui_event",
+  "open_log_folder",
+]);
+
+function errorText(value: unknown): string {
+  if (value instanceof Error) return `${value.name}: ${value.message}`;
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+export function recordUiEvent(
+  level: "info" | "warn" | "error",
+  event: string,
+  message: unknown,
+): void {
+  if (!IS_TAURI) return;
+  void tauriInvoke("record_ui_event", {
+    level,
+    event,
+    message: errorText(message),
+  }).catch(() => {
+    // Logging must never mask or recursively report the original failure.
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Mock data for browser development
 // ---------------------------------------------------------------------------
@@ -1072,7 +1103,16 @@ const MOCKS: Record<string, unknown> = {
   undo_tweak: { success: true, message: "Reverted" },
   apply_batch: { success: true, applied: 6 },
   toggle_startup: { success: true, message: "Toggled" },
-  run_cleanup: { success: true, message: "Cleaned", cleaned: 1, results: [{ id: "clean.user_temp", success: true, message: "Cleaned 12 MB" }] },
+  get_support_logs: {
+    report:
+      "Cove Windows Toolkit support log\nGenerated: 2026-08-11T17:00:00-07:00\nApp version: 2.3.2\nPrivacy: personal data is redacted.\n\n2026-08-11 INFO Cove Windows Toolkit started",
+    file_count: 1,
+    bytes_read: 184,
+    truncated: false,
+  },
+  open_log_folder: null,
+  record_ui_event: null,
+  run_cleanup: { success: true, message: "Cleaned", cleaned: 1, results: [{ id: "clean.user_temp", success: true, partial: false, message: "Cleaned 12 MB", freed_bytes: 12_582_912, deleted_files: 42, skipped_items: 0 }] },
   set_power_plan: { success: true, message: "Power plan changed." },
   set_power_timeout: { success: true, message: "Timeout updated." },
   apply_service_change: { success: true, message: "Applied" },
@@ -1085,7 +1125,35 @@ const MOCKS: Record<string, unknown> = {
 
 export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (IS_TAURI) {
-    return tauriInvoke<T>(cmd, args);
+    try {
+      const result = await tauriInvoke<T>(cmd, args);
+      if (!INTERNAL_LOG_COMMANDS.has(cmd) && result && typeof result === "object") {
+        const status = result as {
+          success?: unknown;
+          partial?: unknown;
+          message?: unknown;
+        };
+        if (status.success === false) {
+          recordUiEvent(
+            "warn",
+            "command_reported_failure",
+            `${cmd}: ${errorText(status.message)}`,
+          );
+        } else if (status.partial === true) {
+          recordUiEvent(
+            "warn",
+            "command_reported_partial",
+            `${cmd}: ${errorText(status.message)}`,
+          );
+        }
+      }
+      return result;
+    } catch (error) {
+      if (!INTERNAL_LOG_COMMANDS.has(cmd)) {
+        recordUiEvent("error", "command_rejected", `${cmd}: ${errorText(error)}`);
+      }
+      throw error;
+    }
   }
   // Simulate a brief network delay
   await new Promise((r) => setTimeout(r, 120 + Math.random() * 200));

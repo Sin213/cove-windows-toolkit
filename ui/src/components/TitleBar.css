@@ -63,3 +63,15 @@
 .titlebar-btn:hover { background: rgba(255, 255, 255, 0.07); color: var(--ink); }
 .titlebar-btn-close:hover { background: #e81123; color: #fff; }
 .titlebar-btn svg { width: 10px; height: 10px; }
+.titlebar-logs-btn {
+  width: auto;
+  min-width: 52px;
+  padding: 0 12px;
+  cursor: pointer;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.4px;
+}

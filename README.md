@@ -46,6 +46,12 @@ Requires Windows 10/11. The app runs elevated (administrator) - accept the UAC p
 - What Changed diff (compare machine state between visits)
 - Change history with undo
 - Export report (full HTML diagnostic summary)
+- Built-in support logs with privacy redaction, copy/save, and one-click access to the log folder
+
+Use the **Logs** button in the title bar when something goes wrong. The support view reads a
+bounded recent excerpt and redacts user-profile paths, URLs, and common credential fields before
+anything is displayed, copied, or saved. Logs remain on the computer unless the user chooses to
+share them.
 
 ## Safety Model
 

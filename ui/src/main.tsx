@@ -3,6 +3,15 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { recordUiEvent } from './lib/tauri.ts'
+
+window.addEventListener('error', (event) => {
+  recordUiEvent('error', 'window_error', event.error ?? event.message)
+})
+
+window.addEventListener('unhandledrejection', (event) => {
+  recordUiEvent('error', 'unhandled_rejection', event.reason)
+})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

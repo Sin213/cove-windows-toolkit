@@ -1156,11 +1156,37 @@ pub async fn run_cleanup(ids: Vec<String>) -> serde_json::Value {
     tokio::task::spawn_blocking(move || {
         let total = ids.len();
         let results = mod_cleanup::clean_targets(&ids);
-        let succeeded = results.iter().filter(|(_, ok, _)| *ok).count();
-        let items: Vec<serde_json::Value> = results.into_iter().map(|(id, ok, mut msg)| {
-            if ok && let Err(error) = append_history("cleanup", Some(&id), &id, "green", "committed") { msg.push_str(&format!(" Warning: {error}")); }
-            serde_json::json!({ "id": id, "success": ok, "message": msg })
-        }).collect();
+        let succeeded = results.iter().filter(|result| result.success).count();
+        let partial = results.iter().filter(|result| result.partial).count();
+        let failed = total.saturating_sub(succeeded);
+        if failed > 0 || partial > 0 {
+            tracing::warn!(
+                targets = total,
+                succeeded,
+                partial,
+                failed,
+                "Disk cleanup completed with skipped or failed targets"
+            );
+        } else {
+            tracing::info!(targets = total, succeeded, "Disk cleanup completed");
+        }
+        let items: Vec<serde_json::Value> = results
+            .into_iter()
+            .map(|mut result| {
+                if result.success
+                    && let Err(error) = append_history(
+                        "cleanup",
+                        Some(&result.id),
+                        &result.id,
+                        "green",
+                        "committed",
+                    )
+                {
+                    result.message.push_str(&format!(" Warning: {error}"));
+                }
+                serde_json::to_value(result).unwrap_or_default()
+            })
+            .collect();
         serde_json::json!({ "success": succeeded == total && total > 0, "message": format!("Cleaned {} of {} targets", succeeded, total), "cleaned": succeeded, "results": items })
     }).await.unwrap_or_else(|_| join_fallback())
 }
