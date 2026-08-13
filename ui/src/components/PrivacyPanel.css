@@ -233,3 +233,10 @@
   background: var(--bg-card-2);
   color: var(--ink);
 }
+
+/* Panel-level revert action, above the tier groups. */
+.privacy-panel .privacy-batch-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}

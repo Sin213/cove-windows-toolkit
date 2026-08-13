@@ -7,14 +7,29 @@
 .env
 handoff.md
 
+# Bundled sensor components. They are deliberately redistributed (see
+# THIRD-PARTY-NOTICES.md) and must survive the blanket *.exe / *.dll rules
+# above, or a clean checkout cannot build mod-temps.
+!crates/mod-temps/resources/PawnIO_setup.exe
+!crates/mod-temps/resources/LibreHardwareMonitor.zip
+
 # Internal audit reports, handoffs, and the dependency-exception policy.
 # These describe unfixed risk and internal process and are not published.
 /audit/
 
-# CI generates authoritative hashes from the exact GitHub Release artifacts.
-# Keep local tester-build sidecars out of source control.
-release/*.sha256
+# Local build outputs staged for testers. CI generates the authoritative
+# release assets and checksums from the exact published bytes, so nothing in
+# here belongs in source control.
+/release/
 
 # Codex workflow private, machine-local state and personalization source.
 # AGENTS.md and agent_docs/ remain tracked as the shareable workflow surface.
 /.codex_workflow_hidden_resource/
+
+# Machine-local Claude Code permissions. Shared project settings belong in
+# .claude/settings.json instead.
+/.claude/settings.local.json
+
+# Scratch notes and local screenshots that occasionally land in the tree.
+/*.local.md
+/screenshots/

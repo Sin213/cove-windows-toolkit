@@ -44,6 +44,7 @@ impl Drop for FinishGuard<'_> {
             if p.summary.is_empty() {
                 p.summary = "The scan ended unexpectedly.".into();
             }
+            tracing::error!(target: "cove::scan", tool = self.0, "scan worker ended unexpectedly");
         }
     }
 }
@@ -78,6 +79,7 @@ pub fn start_scan(tool: String) -> serde_json::Value {
             },
         );
     }
+    tracing::info!(target: "cove::scan", tool = %tool, "scan started");
     let t = tool.clone();
     std::thread::spawn(move || run_scan_thread(&t));
     serde_json::json!({ "success": true })
@@ -160,6 +162,7 @@ fn run_one(
     let mut child = match pair.slave.spawn_command(cmd) {
         Ok(c) => c,
         Err(e) => {
+            tracing::warn!(target: "cove::scan", tool, program = %program.display(), error = %e, "scan tool failed to start");
             return (
                 false,
                 -1,
@@ -168,9 +171,13 @@ fn run_one(
             );
         }
     };
+    tracing::info!(target: "cove::scan", tool, program = %program.display(), "scan tool running");
     let reader = match pair.master.try_clone_reader() {
         Ok(r) => r,
-        Err(e) => return (false, -1, format!("PTY reader error: {}", e), Vec::new()),
+        Err(e) => {
+            tracing::warn!(target: "cove::scan", tool, error = %e, "PTY reader could not be opened");
+            return (false, -1, format!("PTY reader error: {}", e), Vec::new());
+        }
     };
     drop(pair.slave); // so the pty can close once the child and master are gone
 
@@ -185,6 +192,12 @@ fn run_one(
     let key_t = key.to_string();
     let label_t = label.to_string();
     let acc_t = acc.clone();
+    // Set when the reader gives up while the child is still alive. Nothing is
+    // draining the ConPTY at that point, so the child blocks on its first full
+    // write and never exits - the scan would sit at a frozen percentage until
+    // the two-hour deadline. Kill it instead and report the failure.
+    let reader_gave_up = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let reader_gave_up_t = reader_gave_up.clone();
     let reader_thread = std::thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
@@ -210,6 +223,7 @@ fn run_one(
                 Err(_) => {
                     errs += 1;
                     if errs > 200 {
+                        reader_gave_up_t.store(true, std::sync::atomic::Ordering::SeqCst);
                         break;
                     }
                     std::thread::sleep(std::time::Duration::from_millis(10));
@@ -218,12 +232,35 @@ fn run_one(
         }
     });
 
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2 * 60 * 60);
+    let started_at = std::time::Instant::now();
+    let deadline = started_at + std::time::Duration::from_secs(2 * 60 * 60);
     let mut timed_out = false;
+    let mut abandoned = false;
+    let mut next_heartbeat = started_at + HEARTBEAT_EVERY;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Ok(status),
+            Ok(None) if reader_gave_up.load(std::sync::atomic::Ordering::SeqCst) => {
+                abandoned = true;
+                let _ = child.kill();
+                break child.wait();
+            }
             Ok(None) if std::time::Instant::now() < deadline => {
+                let now = std::time::Instant::now();
+                if now >= next_heartbeat {
+                    next_heartbeat = now + HEARTBEAT_EVERY;
+                    // The only record of a stalled scan: without it a hang looks
+                    // identical to a slow run in the support log.
+                    let (percent, phase) = snapshot(key);
+                    tracing::info!(
+                        target: "cove::scan",
+                        tool,
+                        elapsed_s = started_at.elapsed().as_secs(),
+                        percent = percent,
+                        phase = %phase,
+                        "scan still running"
+                    );
+                }
                 std::thread::sleep(std::time::Duration::from_millis(500))
             }
             Ok(None) => {
@@ -235,7 +272,7 @@ fn run_one(
         }
     };
     let code = status.as_ref().map(|s| s.exit_code() as i32).unwrap_or(-1);
-    let success = status.as_ref().map(|s| s.success()).unwrap_or(false) && !timed_out;
+    let success = status.as_ref().map(|s| s.success()).unwrap_or(false) && !timed_out && !abandoned;
     drop(pair.master); // closes the ConPTY -> the reader thread sees EOF
     let _ = reader_thread.join();
 
@@ -244,8 +281,44 @@ fn run_one(
         strip_vt(&String::from_utf8_lossy(&a))
     };
     let lines = split_lines(&final_text);
-    let summary = summarize(tool, &final_text, code);
+    let summary = if abandoned {
+        format!(
+            "{} stopped responding and was cancelled. Run it from an elevated Command Prompt to check.",
+            tool.to_uppercase()
+        )
+    } else if timed_out {
+        format!(
+            "{} was still running after 2 hours and was cancelled.",
+            tool.to_uppercase()
+        )
+    } else {
+        summarize(tool, &final_text, code)
+    };
+    tracing::info!(
+        target: "cove::scan",
+        tool,
+        exit_code = code,
+        success,
+        timed_out,
+        abandoned,
+        elapsed_s = started_at.elapsed().as_secs(),
+        summary = %summary,
+        "scan tool finished"
+    );
     (success, code, summary, lines)
+}
+
+/// How often a still-running scan writes a progress line to the log.
+#[cfg(target_os = "windows")]
+const HEARTBEAT_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Current percent/phase for `key`, for logging.
+#[cfg(target_os = "windows")]
+fn snapshot(key: &str) -> (f32, String) {
+    let g = scans().lock().unwrap_or_else(|e| e.into_inner());
+    g.get(key)
+        .map(|p| (p.percent, p.phase.clone()))
+        .unwrap_or_default()
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -395,6 +468,7 @@ fn finish(tool: &str, success: bool, code: i32, summary: &str, lines: Vec<String
     } else {
         "Finished with issues".into()
     };
+    tracing::info!(target: "cove::scan", tool, success, exit_code = code, summary, "scan finished");
 }
 
 fn summarize(tool: &str, output: &str, code: i32) -> String {

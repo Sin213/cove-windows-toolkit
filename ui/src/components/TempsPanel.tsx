@@ -1,6 +1,16 @@
-import { useEffect, useState, useCallback, useRef, useLayoutEffect } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "../lib/tauri";
+import ConfirmDialog from "./ConfirmDialog";
 import "./TempsPanel.css";
+
+/** Values of `TempReport.lhm_status`, mirroring the backend constants. */
+const CPU_PROVIDER_DRIVER_MISSING = "driver-missing";
+
+const DRIVER_CONSENT_MESSAGE =
+  "CPU temperature sensors can only be read through a kernel-mode driver. " +
+  "Cove will install PawnIO, a signed open-source driver, for this purpose. " +
+  "It stays installed until you remove it from Apps & Features, and Cove will " +
+  "need a restart afterwards. Nothing else on this screen installs anything.";
 
 interface TempReading {
   sensor: string;
@@ -39,11 +49,12 @@ export default function TempsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
+  const [driverPrompt, setDriverPrompt] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [driverMessage, setDriverMessage] = useState<string | null>(null);
   const mountedRef = useRef(true);
   const inFlightRef = useRef(false);
-  const retryTimerRef = useRef<number | null>(null);
   const requestGenerationRef = useRef(0);
-  const loadRef = useRef<() => Promise<void>>(async () => {});
 
   const load = useCallback(async () => {
     if (inFlightRef.current) return;
@@ -54,14 +65,9 @@ export default function TempsPanel() {
       const nextReport = await invoke<TempReport>("get_temperatures");
       if (!mountedRef.current || generation !== requestGenerationRef.current) return;
       setReport(nextReport);
-      // LHM just launched - retry once it has had time to register WMI.
-      if (nextReport.lhm_status !== "active" && nextReport.readings.length === 0) {
-        if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
-        retryTimerRef.current = window.setTimeout(() => {
-          retryTimerRef.current = null;
-          void loadRef.current();
-        }, 4000);
-      }
+      // No sensor provider is started in the background any more, so an empty
+      // result is final - re-polling it every few seconds only spawned repeated
+      // storage queries for a result that cannot change on its own.
     } catch (loadError) {
       if (mountedRef.current && generation === requestGenerationRef.current) {
         setError(String(loadError));
@@ -71,8 +77,23 @@ export default function TempsPanel() {
       if (mountedRef.current && generation === requestGenerationRef.current) setLoading(false);
     }
   }, []);
-  useLayoutEffect(() => {
-    loadRef.current = load;
+
+  // Only ever reached from the confirmation dialog below.
+  const installDriver = useCallback(async () => {
+    setInstalling(true);
+    setDriverMessage(null);
+    try {
+      const result = await invoke<{ success: boolean; message?: string }>(
+        "install_cpu_sensor_driver",
+      );
+      if (!mountedRef.current) return;
+      setDriverMessage(result.message ?? (result.success ? "Driver installed." : "Install failed."));
+      if (result.success) void load();
+    } catch (installError) {
+      if (mountedRef.current) setDriverMessage(String(installError));
+    } finally {
+      if (mountedRef.current) setInstalling(false);
+    }
   }, [load]);
 
   useEffect(() => {
@@ -81,7 +102,6 @@ export default function TempsPanel() {
     return () => {
       mountedRef.current = false;
       requestGenerationRef.current += 1;
-      if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
     };
   }, [load]);
 
@@ -123,11 +143,25 @@ export default function TempsPanel() {
         </div>
       )}
 
-      {report.readings.length === 0 && report.warnings.length === 0 && (
-        <div className="temps-empty">
-          No temperature sensors detected. Run as Administrator for ACPI access, or install
-          Libre Hardware Monitor for detailed readings.
+      {report.lhm_status === CPU_PROVIDER_DRIVER_MISSING && (
+        <div className="temps-driver-optin">
+          <button
+            className="temps-driver-btn"
+            onClick={() => setDriverPrompt(true)}
+            disabled={installing}
+          >
+            {installing ? "Installing..." : "Enable CPU sensors"}
+          </button>
+          <span className="temps-driver-hint">
+            Installs the signed PawnIO driver. Cove asks first and never installs it during a scan.
+          </span>
         </div>
+      )}
+
+      {driverMessage && <div className="temps-driver-result">{driverMessage}</div>}
+
+      {report.readings.length === 0 && report.warnings.length === 0 && (
+        <div className="temps-empty">No temperature sensors were detected on this machine.</div>
       )}
 
       {categories.map((cat) => {
@@ -137,13 +171,27 @@ export default function TempsPanel() {
           <div key={cat} className="temps-category">
             <h3 className="temps-cat-title">{cat}</h3>
             <div className="temps-grid">
-              {readings.map((r) => (
-                <TempGauge key={r.sensor} reading={r} />
+              {/* Sensor names are not unique across sources (a machine can
+                  report several identically named ACPI zones), so index in. */}
+              {readings.map((r, index) => (
+                <TempGauge key={`${r.sensor}-${index}`} reading={r} />
               ))}
             </div>
           </div>
         );
       })}
+
+      <ConfirmDialog
+        open={driverPrompt}
+        title="Install the CPU sensor driver?"
+        message={DRIVER_CONSENT_MESSAGE}
+        safetyTier="Yellow"
+        onConfirm={() => {
+          setDriverPrompt(false);
+          void installDriver();
+        }}
+        onCancel={() => setDriverPrompt(false)}
+      />
     </div>
   );
 }

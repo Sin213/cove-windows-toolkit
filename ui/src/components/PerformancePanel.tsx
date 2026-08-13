@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/tauri";
 import ConfirmDialog from "./ConfirmDialog";
+import TweakSwitch from "./TweakSwitch";
 import "./PerformancePanel.css";
 
 interface PerformanceTweak {
@@ -26,6 +27,7 @@ export default function PerformancePanel() {
   const [applied, setApplied] = useState<Record<string, boolean>>({});
   const [undoable, setUndoable] = useState<Record<string, boolean>>({});
   const [batchApplying, setBatchApplying] = useState(false);
+  const [batchReverting, setBatchReverting] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<PerformanceTweak | null>(null);
   const inFlightRef = useRef(new Set<string>());
   const batchRef = useRef(false);
@@ -60,8 +62,8 @@ export default function PerformancePanel() {
     }
   };
 
-  const handleUndo = async (tweak: PerformanceTweak) => {
-    if (inFlightRef.current.has(tweak.id) || batchRef.current) return;
+  const handleUndo = async (tweak: PerformanceTweak, fromBatch = false) => {
+    if (inFlightRef.current.has(tweak.id) || (batchRef.current && !fromBatch)) return;
     inFlightRef.current.add(tweak.id);
     setActionError(null);
     setApplying((s) => ({ ...s, [tweak.id]: true }));
@@ -96,11 +98,28 @@ export default function PerformancePanel() {
     }
   };
 
+  // Puts every tweak Cove changed back to the value it had before, in one go.
+  const handleRevertAll = async () => {
+    if (batchRef.current || inFlightRef.current.size > 0) return;
+    batchRef.current = true;
+    setBatchReverting(true);
+    const revertable = tweaks.filter((t) => applied[t.id] && undoable[t.id]);
+    try {
+      for (const t of revertable) {
+        await handleUndo(t, true);
+      }
+    } finally {
+      batchRef.current = false;
+      setBatchReverting(false);
+    }
+  };
+
   if (loading)
     return <div className="panel-loading">Loading performance tweaks...</div>;
   if (loadError) return <div className="panel-error">Error: {loadError}</div>;
 
   const categories = [...new Set(tweaks.map((t) => t.category))];
+  const revertableCount = tweaks.filter((t) => applied[t.id] && undoable[t.id]).length;
 
   return (
     <div className="performance-panel">
@@ -140,31 +159,21 @@ export default function PerformancePanel() {
                         {tweak.optimized_value}
                       </span>
                     </div>
-                    {applied[tweak.id] && undoable[tweak.id] ? (
-                      <button
-                        className="undo-btn"
-                        onClick={() => handleUndo(tweak)}
-                        disabled={batchApplying || applying[tweak.id]}
-                      >
-                        {applying[tweak.id] ? "..." : "Undo"}
-                      </button>
-                    ) : applied[tweak.id] ? (
-                      <span className="applied-label">Already applied</span>
-                    ) : (
-                      <button
-                        className="apply-btn"
-                        onClick={() => {
-                          if (tweak.safety_tier !== "Green") {
-                            setPendingConfirm(tweak);
-                          } else {
-                            handleApply(tweak);
-                          }
-                        }}
-                        disabled={batchApplying || applying[tweak.id]}
-                      >
-                        {applying[tweak.id] ? "..." : "Apply"}
-                      </button>
-                    )}
+                    <TweakSwitch
+                      label={tweak.name}
+                      applied={!!applied[tweak.id]}
+                      canRevert={!!undoable[tweak.id]}
+                      busy={!!applying[tweak.id]}
+                      disabled={batchApplying || batchReverting}
+                      onApply={() => {
+                        if (tweak.safety_tier !== "Green") {
+                          setPendingConfirm(tweak);
+                        } else {
+                          handleApply(tweak);
+                        }
+                      }}
+                      onRevert={() => handleUndo(tweak)}
+                    />
                   </div>
                 </div>
               ))}
@@ -174,9 +183,22 @@ export default function PerformancePanel() {
       })}
       <div className="batch-actions">
         <button
+          className="tweak-revert-all-btn"
+          onClick={handleRevertAll}
+          disabled={
+            batchApplying ||
+            batchReverting ||
+            Object.values(applying).some(Boolean) ||
+            revertableCount === 0
+          }
+          title="Restore the original value of every tweak Cove changed"
+        >
+          {batchReverting ? "Reverting..." : `Revert All (${revertableCount})`}
+        </button>
+        <button
           className="batch-btn"
           onClick={handleApplyAllSafe}
-          disabled={batchApplying || Object.values(applying).some(Boolean)}
+          disabled={batchApplying || batchReverting || Object.values(applying).some(Boolean)}
         >
           {batchApplying ? "Applying..." : "Apply All Green Tweaks"}
         </button>

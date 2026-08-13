@@ -80,6 +80,8 @@ pub struct SpeedTestResult {
     pub bytes_downloaded: u64,
     pub duration_ms: u64,
     pub status: String,
+    /// Why the test failed, when it did. Empty on success.
+    pub message: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -88,6 +90,11 @@ pub fn run_speed_test() -> SpeedTestResult {
 $ErrorActionPreference = 'Stop'
 $url = 'https://speed.cloudflare.com/__down?bytes=10000000'
 $limit = 10000000
+# Windows PowerShell 5.1 does not load System.Net.Http by default, so the type
+# literal below fails to resolve ("Unable to find type") unless the assembly is
+# requested explicitly. Without this the test failed on every machine.
+Add-Type -AssemblyName System.Net.Http
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $client = [System.Net.Http.HttpClient]::new()
 $cancel = [System.Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds(20))
 try {
@@ -110,42 +117,61 @@ try {
     $mbps = [math]::Round(($size * 8) / ($ms * 1000), 2)
     @{ status='ok'; download_mbps=$mbps; bytes_downloaded=$size; duration_ms=$ms; test_url=$url } | ConvertTo-Json -Compress
 } catch {
-    @{ status='fail'; download_mbps=0; bytes_downloaded=0; duration_ms=0; test_url=$url } | ConvertTo-Json -Compress
+    @{ status='fail'; download_mbps=0; bytes_downloaded=0; duration_ms=0; test_url=$url; message=[string]$_.Exception.Message } | ConvertTo-Json -Compress
 } finally {
     $client.Dispose(); $cancel.Dispose()
 }
 "#;
-    if let Ok(o) = optimizer_core::powershell(ps).output()
-        && let Ok(result) = serde_json::from_slice::<serde_json::Value>(&o.stdout)
-        && result.get("status").and_then(|v| v.as_str()) == Some("ok")
-    {
-        return SpeedTestResult {
-            download_mbps: result
-                .get("download_mbps")
-                .and_then(|v| v.as_f64())
-                .unwrap_or(0.0),
-            bytes_downloaded: result
-                .get("bytes_downloaded")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            duration_ms: result
-                .get("duration_ms")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0),
-            test_url: result
-                .get("test_url")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-                .to_string(),
-            status: "ok".into(),
-        };
-    }
-    SpeedTestResult {
+    let failed = |message: String| SpeedTestResult {
         download_mbps: 0.0,
         bytes_downloaded: 0,
         duration_ms: 0,
         test_url: String::new(),
         status: "fail".into(),
+        message,
+    };
+
+    let output = match optimizer_core::powershell(ps).output() {
+        Ok(output) => output,
+        Err(error) => return failed(format!("Could not start the speed test: {error}")),
+    };
+    let Ok(result) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+        // The script only ever prints JSON, so unparsable output means it never
+        // ran (execution policy, missing host). Keep stderr for the support log.
+        return failed(format!(
+            "The speed test produced no usable result: {}",
+            optimizer_core::decode_console_output(&output.stderr).trim()
+        ));
+    };
+    if result.get("status").and_then(|v| v.as_str()) != Some("ok") {
+        return failed(
+            result
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("The download did not complete.")
+                .to_string(),
+        );
+    }
+    SpeedTestResult {
+        download_mbps: result
+            .get("download_mbps")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0),
+        bytes_downloaded: result
+            .get("bytes_downloaded")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        duration_ms: result
+            .get("duration_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        test_url: result
+            .get("test_url")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        status: "ok".into(),
+        message: String::new(),
     }
 }
 
@@ -157,6 +183,7 @@ pub fn run_speed_test() -> SpeedTestResult {
         duration_ms: 0,
         test_url: String::new(),
         status: "stub".into(),
+        message: String::new(),
     }
 }
 

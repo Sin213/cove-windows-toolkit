@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "../lib/tauri";
 import ConfirmDialog from "./ConfirmDialog";
+import TweakSwitch from "./TweakSwitch";
 import "./VisualPanel.css";
 
 interface VisualTweak {
@@ -24,6 +25,7 @@ export default function VisualPanel() {
   const [applied, setApplied] = useState<Record<string, boolean>>({});
   const [undoable, setUndoable] = useState<Record<string, boolean>>({});
   const [batchApplying, setBatchApplying] = useState(false);
+  const [batchReverting, setBatchReverting] = useState(false);
   const [pendingConfirm, setPendingConfirm] = useState<VisualTweak | null>(null);
   const inFlightRef = useRef(new Set<string>());
   const batchRef = useRef(false);
@@ -60,8 +62,8 @@ export default function VisualPanel() {
     }
   };
 
-  const handleUndo = async (tweak: VisualTweak) => {
-    if (inFlightRef.current.has(tweak.id) || batchRef.current) return;
+  const handleUndo = async (tweak: VisualTweak, fromBatch = false) => {
+    if (inFlightRef.current.has(tweak.id) || (batchRef.current && !fromBatch)) return;
     inFlightRef.current.add(tweak.id);
     setActionError(null);
     setApplying((s) => ({ ...s, [tweak.id]: true }));
@@ -98,11 +100,28 @@ export default function VisualPanel() {
     }
   };
 
+  // Puts every tweak Cove changed back to the value it had before, in one go.
+  const handleRevertAll = async () => {
+    if (batchRef.current || inFlightRef.current.size > 0) return;
+    batchRef.current = true;
+    setBatchReverting(true);
+    const revertable = tweaks.filter((t) => applied[t.id] && undoable[t.id]);
+    try {
+      for (const t of revertable) {
+        await handleUndo(t, true);
+      }
+    } finally {
+      batchRef.current = false;
+      setBatchReverting(false);
+    }
+  };
+
   if (loading) return <div className="panel-loading">Loading visual tweaks...</div>;
   if (loadError) return <div className="panel-error">Error: {loadError}</div>;
 
   const isApplied = (id: string) => applied[id];
   const isWorking = (id: string) => applying[id];
+  const revertableCount = tweaks.filter((t) => applied[t.id] && undoable[t.id]).length;
 
   return (
     <div className="visual-panel">
@@ -130,40 +149,43 @@ export default function VisualPanel() {
                 <span className="val-arrow">&rarr;</span>
                 <span className="val-optimized">{tweak.optimized_value}</span>
               </div>
-              {isApplied(tweak.id) && undoable[tweak.id] ? (
-                <button
-                  className="undo-btn"
-                  onClick={() => handleUndo(tweak)}
-                  disabled={batchApplying || isWorking(tweak.id)}
-                >
-                  {isWorking(tweak.id) ? "..." : "Undo"}
-                </button>
-              ) : isApplied(tweak.id) ? (
-                <span className="applied-label">Already applied</span>
-              ) : (
-                <button
-                  className="apply-btn"
-                  onClick={() => {
-                    if (tweak.safety_tier !== "Green") {
-                      setPendingConfirm(tweak);
-                    } else {
-                      handleApply(tweak);
-                    }
-                  }}
-                    disabled={batchApplying || isWorking(tweak.id)}
-                >
-                  {isWorking(tweak.id) ? "..." : "Apply"}
-                </button>
-              )}
+              <TweakSwitch
+                label={tweak.name}
+                applied={!!isApplied(tweak.id)}
+                canRevert={!!undoable[tweak.id]}
+                busy={!!isWorking(tweak.id)}
+                disabled={batchApplying || batchReverting}
+                onApply={() => {
+                  if (tweak.safety_tier !== "Green") {
+                    setPendingConfirm(tweak);
+                  } else {
+                    handleApply(tweak);
+                  }
+                }}
+                onRevert={() => handleUndo(tweak)}
+              />
             </div>
           </div>
         ))}
       </div>
       <div className="batch-actions">
         <button
+          className="tweak-revert-all-btn"
+          onClick={handleRevertAll}
+          disabled={
+            batchApplying ||
+            batchReverting ||
+            Object.values(applying).some(Boolean) ||
+            revertableCount === 0
+          }
+          title="Restore the original value of every tweak Cove changed"
+        >
+          {batchReverting ? "Reverting..." : `Revert All (${revertableCount})`}
+        </button>
+        <button
           className="batch-btn"
           onClick={handleApplyAll}
-          disabled={batchApplying || Object.values(applying).some(Boolean)}
+          disabled={batchApplying || batchReverting || Object.values(applying).some(Boolean)}
         >
           {batchApplying ? "Applying..." : "Apply All Safe Tweaks"}
         </button>

@@ -1,0 +1,114 @@
+/* Cove — shared on/off switch for a single tweak */
+
+.tweak-switch-wrap {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.tweak-switch {
+  --switch-w: 40px;
+  --switch-h: 22px;
+  --thumb: 16px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.tweak-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.tweak-switch-track {
+  position: relative;
+  display: block;
+  width: var(--switch-w);
+  height: var(--switch-h);
+  border-radius: 999px;
+  background: var(--bg-card-2);
+  border: 1px solid var(--line-3);
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.tweak-switch-thumb {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: var(--thumb);
+  height: var(--thumb);
+  border-radius: 50%;
+  background: var(--ink-2);
+  transform: translateY(-50%);
+  transition: left 0.16s ease, background 0.16s ease;
+}
+
+.tweak-switch.is-on .tweak-switch-track {
+  background: var(--green-soft);
+  border-color: var(--green);
+}
+
+.tweak-switch.is-on .tweak-switch-thumb {
+  left: calc(var(--switch-w) - var(--thumb) - 5px);
+  background: var(--green);
+}
+
+.tweak-switch:not(:disabled):hover .tweak-switch-track {
+  border-color: var(--accent-line);
+}
+
+.tweak-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.tweak-switch.is-busy {
+  cursor: progress;
+}
+
+.tweak-switch-state {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-2);
+  min-width: 62px;
+  line-height: 1.25;
+}
+
+.tweak-switch-note {
+  font-size: 10.5px;
+  color: var(--ink-3);
+}
+
+/* Secondary batch action that sits beside a panel's primary "Apply All" button.
+   Deliberately quieter than the primary: reverting is the recovery path, not the
+   headline action. */
+.tweak-revert-all-btn {
+  font-family: var(--font-ui);
+  margin-right: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-card);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.tweak-revert-all-btn:hover:not(:disabled) {
+  border-color: var(--yellow);
+  background: var(--yellow-soft);
+  color: var(--yellow);
+}
+
+.tweak-revert-all-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

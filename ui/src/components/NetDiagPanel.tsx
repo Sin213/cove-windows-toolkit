@@ -63,6 +63,7 @@ interface SpeedTestResult {
   bytes_downloaded: number;
   duration_ms: number;
   status: string;
+  message?: string;
 }
 
 const DNS_PRESETS = [
@@ -228,7 +229,9 @@ export default function NetDiagPanel() {
           </div>
         )}
         {speedResult && speedResult.status !== "ok" && (
-          <div className="speed-fail">Speed test failed. Check your internet connection.</div>
+          <div className="speed-fail">
+            Speed test failed. {speedResult.message || "Check your internet connection."}
+          </div>
         )}
       </div>
 

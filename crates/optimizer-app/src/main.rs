@@ -153,6 +153,7 @@ fn main() {
             commands::get_full_sysinfo,
             // Temperatures
             commands::get_temperatures,
+            commands::install_cpu_sensor_driver,
             // DISM / SFC
             commands::check_admin_status,
             // Live, tab-persistent scans

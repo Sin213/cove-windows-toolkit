@@ -1,3 +1,4 @@
+pub mod storage;
 pub mod support_logs;
 pub mod types;
 

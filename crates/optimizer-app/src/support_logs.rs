@@ -18,13 +18,7 @@ pub struct SupportLogReport {
 }
 
 fn configured_log_directory() -> PathBuf {
-    if crate::portable::is_portable() {
-        crate::portable::portable_data_dir("cove-windows-optimizer").join("logs")
-    } else {
-        directories::ProjectDirs::from("com", "cove", "optimizer")
-            .map(|dirs| dirs.data_local_dir().join("logs"))
-            .unwrap_or_else(|| PathBuf::from("logs"))
-    }
+    crate::portable::data_dir("cove-windows-optimizer").join("logs")
 }
 
 fn active_log_directory() -> PathBuf {
@@ -53,7 +47,9 @@ pub fn init_logging() {
     let _ = LOG_GUARD.set(guard);
 
     let subscriber = tracing_subscriber::registry()
-        .with(EnvFilter::new("optimizer_app=info,cove::ui=info"))
+        .with(EnvFilter::new(
+            "optimizer_app=info,cove::ui=info,cove::scan=info",
+        ))
         .with(fmt::layer().with_writer(non_blocking).with_ansi(false));
     if subscriber.try_init().is_ok() {
         tracing::info!(

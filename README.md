@@ -9,7 +9,7 @@ A desktop toolkit built for tech support teams to diagnose and optimize Windows 
 Grab the latest build from the [Releases page](https://github.com/Sin213/cove-windows-toolkit/releases/latest):
 
 - **`Cove-Windows-Toolkit-{version}-Setup.exe`** - guided installer with a Start-menu shortcut and uninstaller.
-- **`Cove-Windows-Toolkit-{version}-Portable.exe`** - single-file standalone build; no install required. Settings and logs still use your per-user AppData folder.
+- **`Cove-Windows-Toolkit-{version}-Portable.exe`** - single-file standalone build; no install required. Settings, rollback data, and logs are kept beside the executable in `cove-app-data\cove-windows-optimizer\`, so the whole thing travels on a USB stick. If that folder cannot be created safely, the app falls back to per-user AppData and records why in the support log. Any other copy of the executable can opt into the same behaviour by placing an empty `portable.marker` file next to it.
 
 Requires 64-bit Windows 10/11. The app runs elevated (administrator) - accept the UAC prompt so diagnostics and repairs can reach system data. Optionally verify your download against the `.sha256` sidecar attached to the same GitHub Release. Those CI-generated sidecars are authoritative; files under a local `release/` working directory are tester outputs and must not be used to verify published downloads.
 
@@ -45,6 +45,7 @@ Requires 64-bit Windows 10/11. The app runs elevated (administrator) - accept th
 - System restore management
 - What Changed diff (compare machine state between visits)
 - Change history with undo
+- On/off switch on every visual, performance, and privacy tweak - switching one off restores the exact value it had before Cove changed it, with a per-panel "Revert All"
 - Export report (full HTML diagnostic summary)
 - Built-in support logs with privacy redaction, copy/save, and one-click access to the log folder
 
@@ -143,7 +144,7 @@ Or run manually from the Actions tab with a version number.
 
 Each release includes:
 - `Cove-Windows-Toolkit-{version}-Setup.exe` - NSIS installer
-- `Cove-Windows-Toolkit-{version}-Portable.exe` - Single-file no-install build (per-user AppData state)
+- `Cove-Windows-Toolkit-{version}-Portable.exe` - Single-file no-install build (state kept beside the executable)
 - A matching `.sha256` sidecar for each executable
 
 Release checksums are calculated in CI after the final executables are built and

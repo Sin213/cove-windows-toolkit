@@ -110,10 +110,37 @@ pub async fn get_health_report() -> serde_json::Value {
 #[tauri::command]
 pub async fn get_privacy_tweaks() -> serde_json::Value {
     tokio::task::spawn_blocking(|| {
-        serde_json::to_value(mod_privacy::get_tweaks()).unwrap_or_default()
+        let tweaks = mod_privacy::get_tweaks();
+        serde_json::json!({
+            "basic": privacy_tier_with_undo_state(&tweaks.basic),
+            "standard": privacy_tier_with_undo_state(&tweaks.standard),
+            "advanced": privacy_tier_with_undo_state(&tweaks.advanced),
+        })
     })
     .await
     .unwrap_or_default()
+}
+
+/// Annotate each privacy tweak with the same `applied` / `can_undo` pair the
+/// visual and performance panels get, so all three can offer the same
+/// apply-and-revert switch. Service-based tweaks have no pre-change snapshot and
+/// are never reported as revertable.
+fn privacy_tier_with_undo_state(tweaks: &[mod_privacy::PrivacyTweak]) -> Vec<serde_json::Value> {
+    tweaks
+        .iter()
+        .map(|tweak| {
+            let mut value = serde_json::to_value(tweak).unwrap_or_default();
+            let revertable = !tweak.path.starts_with("Service:") && has_snapshot(&tweak.id);
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "applied".into(),
+                    serde_json::Value::Bool(tweak.current == tweak.optimized),
+                );
+                object.insert("can_undo".into(), serde_json::Value::Bool(revertable));
+            }
+            value
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -1090,13 +1117,7 @@ fn with_tweak_mutation<T>(operation: impl FnOnce() -> T) -> T {
 }
 
 fn history_path() -> std::path::PathBuf {
-    if crate::portable::is_portable() {
-        crate::portable::portable_data_dir("cove-windows-optimizer").join("change_history.json")
-    } else {
-        directories::ProjectDirs::from("com", "cove", "optimizer")
-            .map(|dirs| dirs.data_local_dir().join("change_history.json"))
-            .unwrap_or_else(|| std::path::PathBuf::from("change_history.json"))
-    }
+    crate::portable::data_dir("cove-windows-optimizer").join("change_history.json")
 }
 
 #[tauri::command]
@@ -1326,13 +1347,7 @@ fn change_with_history(
 // ---------------------------------------------------------------------------
 
 fn tweak_snapshot_path() -> std::path::PathBuf {
-    if crate::portable::is_portable() {
-        crate::portable::portable_data_dir("cove-windows-optimizer").join("tweak_snapshots.json")
-    } else {
-        directories::ProjectDirs::from("com", "cove", "optimizer")
-            .map(|dirs| dirs.data_local_dir().join("tweak_snapshots.json"))
-            .unwrap_or_else(|| std::path::PathBuf::from("tweak_snapshots.json"))
-    }
+    crate::portable::data_dir("cove-windows-optimizer").join("tweak_snapshots.json")
 }
 
 /// Record the value a tweak had BEFORE it was applied. `None` means the registry
@@ -1878,6 +1893,31 @@ pub async fn get_temperatures() -> serde_json::Value {
     .unwrap_or_default()
 }
 
+/// Installs the bundled PawnIO kernel driver so CPU sensors can be read.
+///
+/// This is the only command in Cove that installs a driver, and it exists only
+/// because the panel asks the operator first: nothing on the diagnostics path
+/// may call it. The install is logged so a support report shows that a driver
+/// was added, and when.
+#[tauri::command]
+pub async fn install_cpu_sensor_driver() -> serde_json::Value {
+    tokio::task::spawn_blocking(|| {
+        tracing::info!(target: "cove::driver", "user requested CPU sensor driver install");
+        match mod_temps::install_cpu_sensor_driver() {
+            Ok(message) => {
+                tracing::info!(target: "cove::driver", detail = %message, "CPU sensor driver install finished");
+                serde_json::json!({ "success": true, "message": message })
+            }
+            Err(message) => {
+                tracing::warn!(target: "cove::driver", detail = %message, "CPU sensor driver install failed");
+                serde_json::json!({ "success": false, "message": message })
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| join_fallback())
+}
+
 // ---------------------------------------------------------------------------
 // DISM / SFC scans
 // ---------------------------------------------------------------------------
@@ -2003,13 +2043,7 @@ pub async fn run_preset(id: String) -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 fn snapshot_path() -> std::path::PathBuf {
-    if crate::portable::is_portable() {
-        crate::portable::portable_data_dir("cove-windows-optimizer").join("snapshot.json")
-    } else {
-        directories::ProjectDirs::from("com", "cove", "optimizer")
-            .map(|dirs| dirs.data_local_dir().join("snapshot.json"))
-            .unwrap_or_else(|| std::path::PathBuf::from("snapshot.json"))
-    }
+    crate::portable::data_dir("cove-windows-optimizer").join("snapshot.json")
 }
 
 fn system_drive_free_bytes() -> Option<u64> {

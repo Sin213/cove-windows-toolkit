@@ -8,6 +8,12 @@ const INTERNAL_LOG_COMMANDS = new Set([
   "open_log_folder",
 ]);
 
+// Commands whose payload happens to carry a `success` field that is NOT a
+// command-status envelope. `get_scan_progress` reports the *scan's* outcome, so
+// it is `false` for the whole time a scan runs; polled four times a second it
+// buried the real entries in the support log.
+const DOMAIN_STATUS_COMMANDS = new Set(["get_scan_progress"]);
+
 function errorText(value: unknown): string {
   if (value instanceof Error) return `${value.name}: ${value.message}`;
   if (typeof value === "string") return value;
@@ -882,7 +888,11 @@ const MOCKS: Record<string, unknown> = {
       { sensor: "WD Blue SN570", category: "Disk", temperature_c: 35, max_c: 70, critical_c: 75 },
     ],
     warnings: [],
-    lhm_status: "Optional CPU temperature provider is not installed.",
+    lhm_status: "active",
+  },
+  install_cpu_sensor_driver: {
+    success: true,
+    message: "CPU sensor driver installed. Restart Cove to read CPU temperatures.",
   },
 
   // ── DISM / SFC ───────────────────────────────────────────────────────
@@ -941,7 +951,7 @@ const MOCKS: Record<string, unknown> = {
   },
   open_url: { success: true },
   export_report: { success: true, path: "C:\\Users\\CS\\AppData\\Local\\cove\\optimizer\\reports\\report-20260610-120000.html", filename: "report-20260610-120000.html" },
-  run_speed_test: { download_mbps: 94.5, test_url: "http://speedtest.tele2.net/10MB.zip", bytes_downloaded: 10_485_760, duration_ms: 887, status: "ok" },
+  run_speed_test: { download_mbps: 94.5, test_url: "http://speedtest.tele2.net/10MB.zip", bytes_downloaded: 10_485_760, duration_ms: 887, status: "ok", message: "" },
 
   // ── Security ────────────────────────────────────────────────────────
   get_security_status: {
@@ -1151,7 +1161,12 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
   if (IS_TAURI) {
     try {
       const result = await tauriInvoke<T>(cmd, args);
-      if (!INTERNAL_LOG_COMMANDS.has(cmd) && result && typeof result === "object") {
+      if (
+        !INTERNAL_LOG_COMMANDS.has(cmd) &&
+        !DOMAIN_STATUS_COMMANDS.has(cmd) &&
+        result &&
+        typeof result === "object"
+      ) {
         const status = result as {
           success?: unknown;
           partial?: unknown;
@@ -1197,6 +1212,23 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
         skipped_items: 0,
       })),
     } as T;
+  }
+  if (cmd === "get_privacy_tweaks") {
+    // Mirror the backend, which annotates each tier with the switch state.
+    const tiers = JSON.parse(JSON.stringify(MOCKS[cmd])) as Record<
+      string,
+      Array<{ current?: string; optimized?: string; path?: string }>
+    >;
+    return Object.fromEntries(
+      Object.entries(tiers).map(([tier, items]) => [
+        tier,
+        items.map((item) => ({
+          ...item,
+          applied: item.current === item.optimized,
+          can_undo: item.current === item.optimized && !item.path?.startsWith("Service:"),
+        })),
+      ]),
+    ) as T;
   }
   if (cmd === "get_visual_tweaks" || cmd === "get_performance_tweaks") {
     const tweaks = JSON.parse(JSON.stringify(MOCKS[cmd])) as Array<{
