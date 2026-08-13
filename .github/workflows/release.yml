@@ -142,16 +142,27 @@ jobs:
 
       - name: Collect release assets
         run: |
-          mkdir -p release
+          # Stage into a directory that does not exist in the repository. The
+          # checkout above brings down tracked files under release/, and any of
+          # them would otherwise be uploaded as assets of this release.
+          rm -rf dist-release
+          mkdir -p dist-release
           setup="artifacts/windows-setup/Cove-Windows-Toolkit-${VERSION}-Setup.exe"
           portable="artifacts/windows-portable/Cove-Windows-Toolkit-${VERSION}-Portable.exe"
           test -f "$setup"
           test -f "$portable"
-          cp "$setup" "$portable" release/
-          cd release
+          cp "$setup" "$portable" dist-release/
+          cd dist-release
           for file in "Cove-Windows-Toolkit-${VERSION}-Setup.exe" "Cove-Windows-Toolkit-${VERSION}-Portable.exe"; do
             sha256sum "$file" > "$file.sha256"
           done
+          # Exactly the two executables and their two sidecars must ship.
+          count=$(ls -1 | wc -l)
+          if [ "$count" -ne 4 ]; then
+            echo "Expected 4 release assets, found $count:" >&2
+            ls -l >&2
+            exit 1
+          fi
           ls -l
 
       - name: Resolve release notes
@@ -166,7 +177,7 @@ jobs:
       - name: Attach to GitHub Release (draft)
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          files: release/*
+          files: dist-release/*
           fail_on_unmatched_files: true
           draft: true
           name: Cove Windows Toolkit v${{ env.VERSION }}
