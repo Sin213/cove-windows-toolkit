@@ -133,6 +133,8 @@ jobs:
     env:
       VERSION: ${{ needs.resolve-version.outputs.version }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -150,20 +152,22 @@ jobs:
           for file in "Cove-Windows-Toolkit-${VERSION}-Setup.exe" "Cove-Windows-Toolkit-${VERSION}-Portable.exe"; do
             sha256sum "$file" > "$file.sha256"
           done
+          ls -l
 
-      - name: Attach to GitHub Release
+      - name: Resolve release notes
+        run: |
+          notes="docs/release-notes/${VERSION}.md"
+          if [ ! -f "$notes" ]; then
+            echo "Missing release notes: $notes" >&2
+            exit 1
+          fi
+          echo "NOTES_PATH=$notes" >> "$GITHUB_ENV"
+
+      - name: Attach to GitHub Release (draft)
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           files: release/*
           fail_on_unmatched_files: true
-          body: |
-            ## Cove Windows Toolkit v${{ env.VERSION }}
-
-            ### Downloads
-
-            | File | Type |
-            |------|------|
-            | `Cove-Windows-Toolkit-${{ env.VERSION }}-Setup.exe` | Windows Installer |
-            | `Cove-Windows-Toolkit-${{ env.VERSION }}-Portable.exe` | Standalone (no install; per-user AppData state) |
-
-          make_latest: true
+          draft: true
+          name: Cove Windows Toolkit v${{ env.VERSION }}
+          body_path: ${{ env.NOTES_PATH }}
