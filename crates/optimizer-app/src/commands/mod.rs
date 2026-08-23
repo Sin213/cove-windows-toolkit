@@ -469,6 +469,19 @@ pub async fn generate_report() -> serde_json::Value {
 }
 
 // ---------------------------------------------------------------------------
+// Driver identity inventory
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub async fn get_driver_identity_inventory() -> serde_json::Value {
+    tokio::task::spawn_blocking(|| {
+        serde_json::to_value(mod_drivers::scan_device_identity()).unwrap_or_else(|_| join_fallback())
+    })
+    .await
+    .unwrap_or_else(|_| join_fallback())
+}
+
+// ---------------------------------------------------------------------------
 // Export full report
 // ---------------------------------------------------------------------------
 

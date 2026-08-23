@@ -48,7 +48,7 @@ pub fn init_logging() {
 
     let subscriber = tracing_subscriber::registry()
         .with(EnvFilter::new(
-            "optimizer_app=info,cove::ui=info,cove::scan=info",
+            "optimizer_app=info,cove::ui=info,cove::scan=info,cove::drivers=info",
         ))
         .with(fmt::layer().with_writer(non_blocking).with_ansi(false));
     if subscriber.try_init().is_ok() {

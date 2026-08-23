@@ -1,0 +1,19 @@
+Microsoft PnP Utility
+
+Instance ID:                USB\VID_3233&PID_1011&MI_00\7&1a873e76&0&0000
+Device Description:         USB Composite Device
+Class Name:                 USB
+Class GUID:                 {36fc9e60-c465-11cf-8056-444553540000}
+Manufacturer Name:          (Standard USB Host Controller)
+Status:                     Started
+Hardware IDs:               USB\VID_3233&PID_1011&REV_0100
+                            USB\VID_3233&PID_1011
+
+Instance ID:                USB\VID_3233&PID_1011&MI_00\7&1a873e76&0&0001
+Device Description:         USB Input Device
+Class Name:                 HIDClass
+Class GUID:                 {745a17a0-74d3-11d0-b6fe-00a0c90f57da}
+Manufacturer Name:          (Standard system devices)
+Status:                     Started
+Hardware IDs:               USB\VID_3233&PID_1011&REV_0100
+                            USB\VID_3233&PID_1011

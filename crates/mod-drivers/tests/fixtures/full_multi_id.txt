@@ -1,0 +1,61 @@
+Microsoft PnP Utility
+
+Instance ID:                HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_104387FB&REV_1005\5&305ca84b&0&0001
+Device Description:         Realtek(R) Audio
+Class Name:                 MEDIA
+Class GUID:                 {4d36e96c-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          Realtek
+Status:                     Started
+Driver Name:                oem21.inf
+Hardware IDs:               HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_104387FB&REV_1005
+                            HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_104387FB
+                            HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&REV_1005
+                            HDAUDIO\FUNC_01&VEN_10EC&DEV_0897
+Compatible IDs:             HDAUDIO\FUNC_01&CTLR_VEN_1022&VEN_10EC&DEV_0897
+                            HDAUDIO\FUNC_01&VEN_10EC&DEV_0897
+                            HDAUDIO\FUNC_01
+Matching Drivers:
+    Driver Name:            oem21.inf
+    Original Name:          hdxasus.inf
+    Provider Name:          Realtek Semiconductor Corp.
+    Class Name:             MEDIA
+    Class GUID:             {4d36e96c-e325-11ce-bfc1-08002be10318}
+    Driver Version:         09/16/2025 6.0.9888.1
+    Signer Name:            Microsoft Windows Hardware Compatibility Publisher
+    Matching Device ID:     HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_104387FB
+    Driver Rank:            00FF0001
+    Driver Status:          Best Ranked / Installed
+
+    Driver Name:            hdaudio.inf
+    Provider Name:          Microsoft
+    Class Name:             MEDIA
+    Class GUID:             {4d36e96c-e325-11ce-bfc1-08002be10318}
+    Driver Version:         07/22/2026 10.0.26100.8972
+    Signer Name:            Microsoft Windows
+    Matching Device ID:     HDAUDIO\FUNC_01
+    Driver Rank:            00FF300C
+    Driver Status:          Outranked
+Properties:
+    DEVPKEY_Device_DeviceDesc [String]:
+        Realtek High Definition Audio
+    DEVPKEY_Device_HardwareIds [String List]:
+        HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_104387FB&REV_1005
+        HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_104387FB
+        HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&REV_1005
+        HDAUDIO\FUNC_01&VEN_10EC&DEV_0897
+    DEVPKEY_Device_CompatibleIds [String List]:
+        HDAUDIO\FUNC_01&CTLR_VEN_1022&VEN_10EC&DEV_0897
+        HDAUDIO\FUNC_01&VEN_10EC&DEV_0897
+        HDAUDIO\FUNC_01
+    DEVPKEY_Device_Class [String]:
+        MEDIA
+    DEVPKEY_Device_ClassGuid [GUID]:
+        {4d36e96c-e325-11ce-bfc1-08002be10318}
+    DEVPKEY_Device_Manufacturer [String]:
+        Realtek
+    DEVPKEY_Device_InstanceId [String]:
+        HDAUDIO\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_104387FB&REV_1005\5&305ca84b&0&0001
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x00000000 (0)
+    DEVPKEY_Device_DriverVersion [String]:
+        6.0.9888.1

@@ -1,0 +1,26 @@
+Microsoft PnP Utility
+
+Instance ID:                ACPI\PNP0B00\4&11544ea4&0
+Device Description:         System CMOS/real time clock
+Class Name:                 System
+Class GUID:                 {4d36e97d-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          (Standard system devices)
+Status:                     Started
+Driver Name:                machine.inf
+Hardware IDs:               ACPI\VEN_PNP&DEV_0B00
+                            ACPI\PNP0B00
+                            *PNP0B00
+
+Instance ID:                ACPI\AMDIF031\0
+Device Description:         Unknown
+Class Name:                 Unknown
+Class GUID:                 Unknown
+Manufacturer Name:          Unknown
+Status:                     Problem
+Problem Code:               28 (0x1C) [CM_PROB_FAILED_INSTALL]
+Problem Status:             0xC0000490
+Hardware IDs:               ACPI\VEN_AMDI&DEV_F031
+                            ACPI\AMDIF031
+                            *AMDIF031
+Compatible IDs:             ACPI\AMDIF031
+                            AMDIF031

@@ -121,6 +121,8 @@ fn main() {
             commands::trigger_update_check,
             // Report
             commands::generate_report,
+            // Driver identity inventory
+            commands::get_driver_identity_inventory,
             // Generic apply/undo
             commands::apply_tweak,
             commands::undo_tweak,

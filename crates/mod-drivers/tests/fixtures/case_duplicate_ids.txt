@@ -1,0 +1,14 @@
+Microsoft PnP Utility
+
+Instance ID:                PCI\VEN_1022&DEV_1649&SUBSYS_88771043&REV_00\4&1ebe6a9c&0&0241
+Device Description:         PCI Encryption/Decryption Controller
+Class Name:                 Unknown
+Class GUID:                 Unknown
+Manufacturer Name:          Unknown
+Status:                     Problem
+Hardware IDs:               PCI\VEN_1022&DEV_1649&SUBSYS_88771043
+                            pci\ven_1022&dev_1649&subsys_88771043
+                            PCI\VEN_1022&DEV_1649
+                            PCI\VEN_1022&DEV_1649&REV_00
+Compatible IDs:             PCI\VEN_1022&DEV_1649&REV_00
+                            PCI\VEN_1022&DEV_1649

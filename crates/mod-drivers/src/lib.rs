@@ -1,3 +1,6 @@
+pub mod identity;
+pub mod pnputil;
+
 use serde::Serialize;
 
 #[derive(Serialize, Clone)]
@@ -135,5 +138,167 @@ pub fn audit_drivers() -> DriverReport {
         outdated: None,
         problematic: Vec::new(),
         healthy: Vec::new(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Additive driver identity inventory (read-only)
+// ---------------------------------------------------------------------------
+
+/// Enumerate device identity through the read-only PnPUtil `/enum-devices`
+/// family and return a fidelity-aware report. The legacy [`audit_drivers`]
+/// export shape is intentionally unchanged.
+pub fn scan_device_identity() -> identity::DriverIdentityReport {
+    let machine = machine_context();
+    match run_enum_devices() {
+        Ok(parsed) => {
+            let degraded = parsed.degraded;
+            let devices = parsed.devices;
+            tracing::info!(
+                target: "cove::drivers",
+                devices = devices.len(),
+                degraded,
+                "driver identity scan completed"
+            );
+            identity::DriverIdentityReport {
+                complete: parsed.complete,
+                degraded,
+                error: None,
+                machine,
+                devices,
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "cove::drivers",
+                category = %error,
+                "driver identity scan failed"
+            );
+            identity::DriverIdentityReport {
+                complete: false,
+                degraded: false,
+                error: Some(error.to_string()),
+                machine,
+                devices: Vec::new(),
+            }
+        }
+    }
+}
+
+/// Resolve and run the read-only PnPUtil enumeration, then hand its decoded
+/// output to the pure parser. No writes, no device mutation, no networking.
+#[cfg(target_os = "windows")]
+fn run_enum_devices() -> Result<pnputil::ParsedEnumeration, pnputil::PnputilParseError> {
+    tracing::info!(target: "cove::drivers", "driver identity scan started");
+
+    // Full modern-host enumeration.
+    let output = optimizer_core::silent_cmd("pnputil")
+        .args([
+            "/enum-devices",
+            "/connected",
+            "/deviceids",
+            "/drivers",
+            "/properties",
+        ])
+        .output()
+        .map_err(|error| {
+            pnputil::PnputilParseError::Malformed(format!("could not start pnputil: {error}"))
+        })?;
+
+    if !output.status.success() {
+        // Some hosts reject `/drivers` and/or `/properties`. First try the
+        // `/deviceids` form, which preserves ordered hardware/compatible IDs.
+        let identity_fallback = optimizer_core::silent_cmd("pnputil")
+            .args(["/enum-devices", "/connected", "/deviceids"])
+            .output()
+            .map_err(|error| {
+                pnputil::PnputilParseError::Malformed(format!(
+                    "could not start pnputil identity fallback: {error}"
+                ))
+            })?;
+        if identity_fallback.status.success() {
+            let text = optimizer_core::decode_console_output(&identity_fallback.stdout);
+            return pnputil::parse_enum_devices(&text, pnputil::EnumMode::IdentityOnly);
+        }
+
+        // Finally, the bare `/enum-devices /connected` form predates those
+        // switches and still returns a reduced (degraded) identity inventory on
+        // very old Windows hosts.
+        let degraded_fallback = optimizer_core::silent_cmd("pnputil")
+            .args(["/enum-devices", "/connected"])
+            .output()
+            .map_err(|error| {
+                pnputil::PnputilParseError::Malformed(format!(
+                    "could not start pnputil degraded fallback: {error}"
+                ))
+            })?;
+        if !degraded_fallback.status.success() {
+            return Err(pnputil::PnputilParseError::Malformed(
+                "pnputil enumeration failed".into(),
+            ));
+        }
+        let text = optimizer_core::decode_console_output(&degraded_fallback.stdout);
+        return pnputil::parse_enum_devices(&text, pnputil::EnumMode::Degraded);
+    }
+
+    let text = optimizer_core::decode_console_output(&output.stdout);
+    pnputil::parse_enum_devices(&text, pnputil::EnumMode::Full)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn run_enum_devices() -> Result<pnputil::ParsedEnumeration, pnputil::PnputilParseError> {
+    Err(pnputil::PnputilParseError::Malformed(
+        "driver identity inventory is unavailable on this platform".into(),
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn machine_context() -> identity::MachineContext {
+    use windows_sys::Win32::System::SystemInformation::{
+        GetNativeSystemInfo, PROCESSOR_ARCHITECTURE_AMD64, PROCESSOR_ARCHITECTURE_ARM64,
+        PROCESSOR_ARCHITECTURE_INTEL, SYSTEM_INFO,
+    };
+    use windows_sys::Wdk::System::SystemServices::RtlGetVersion;
+
+    let arch = {
+        let mut info: SYSTEM_INFO = unsafe { std::mem::zeroed() };
+        unsafe { GetNativeSystemInfo(&mut info) };
+        match unsafe { info.Anonymous.Anonymous.wProcessorArchitecture } {
+            PROCESSOR_ARCHITECTURE_AMD64 => "x64".to_string(),
+            PROCESSOR_ARCHITECTURE_ARM64 => "arm64".to_string(),
+            PROCESSOR_ARCHITECTURE_INTEL => "x86".to_string(),
+            other => format!("unknown({other})"),
+        }
+    };
+
+    let mut version = unsafe { std::mem::zeroed::<windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW>() };
+    version.dwOSVersionInfoSize =
+        std::mem::size_of::<windows_sys::Win32::System::SystemInformation::OSVERSIONINFOW>() as u32;
+    let status = unsafe { RtlGetVersion(&mut version) };
+    let (os_version, os_build) = if status == 0 {
+        (
+            format!("{}.{}", version.dwMajorVersion, version.dwMinorVersion),
+            version.dwBuildNumber.to_string(),
+        )
+    } else {
+        (
+            std::env::consts::OS.to_string(),
+            "unknown".to_string(),
+        )
+    };
+
+    identity::MachineContext {
+        arch,
+        os_build,
+        os_version,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn machine_context() -> identity::MachineContext {
+    identity::MachineContext {
+        arch: std::env::consts::ARCH.to_string(),
+        os_build: "unknown".to_string(),
+        os_version: std::env::consts::OS.to_string(),
     }
 }

@@ -1,0 +1,47 @@
+Microsoft PnP Utility
+
+Instance ID:                SWD\DRIVERENUM\AMDFDANS&7&2bfc8e6b&0
+Device Description:         AMD-Dynamic Audio Noise Supression
+Class Name:                 SoftwareComponent
+Class GUID:                 {5c4c3332-344d-483c-8739-259e934c9cc8}
+Manufacturer Name:          Advanced Micro Devices, Inc.
+Status:                     Started
+Driver Name:                oem12.inf
+Hardware IDs:               SWC\AMDFDANS-1.0.0
+Compatible IDs:             SWC\Generic
+                            SWD\GenericRaw
+                            SWD\Generic
+Matching Drivers:
+    Driver Name:            oem12.inf
+    Original Name:          amdfdans.inf
+    Provider Name:          Advanced Micro Devices, Inc.
+    Class Name:             SoftwareComponent
+    Class GUID:             {5c4c3332-344d-483c-8739-259e934c9cc8}
+    Driver Version:         03/04/2026 1.4.40.0
+    Signer Name:            Microsoft Windows Hardware Compatibility Publisher
+    Matching Device ID:     SWC\AMDFDANS-1.0.0
+    Driver Rank:            00FF0000
+    Driver Status:          Best Ranked / Installed
+
+    Driver Name:            c_swcomponent.inf
+    Provider Name:          Microsoft
+    Class Name:             SoftwareComponent
+    Class GUID:             {5c4c3332-344d-483c-8739-259e934c9cc8}
+    Driver Version:         06/21/2006 10.0.26100.1
+    Signer Name:            Microsoft Windows
+    Matching Device ID:     SWC\Generic
+    Driver Rank:            00FF3000
+    Driver Status:          Outranked
+
+    Driver Name:            c_swdevice.inf
+    Provider Name:          Microsoft
+    Class Name:             SoftwareDevice
+    Class GUID:             {62f9c741-b25a-46ce-b54c-9bccce08b6f2}
+    Driver Version:         06/21/2006 10.0.26100.1
+    Signer Name:            Microsoft Windows
+    Matching Device ID:     SWD\GenericRaw
+    Driver Rank:            00FF3001
+    Driver Status:          Outranked
+Properties:
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x00000000 (0)

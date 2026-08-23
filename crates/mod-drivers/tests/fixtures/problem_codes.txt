@@ -1,0 +1,50 @@
+Microsoft PnP Utility
+
+Instance ID:                ACPI\PNP0B00\4&11544ea4&0
+Device Description:         System CMOS/real time clock
+Class Name:                 System
+Class GUID:                 {4d36e97d-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          (Standard system devices)
+Status:                     Started
+Hardware IDs:               ACPI\VEN_PNP&DEV_0B00
+                            ACPI\PNP0B00
+Properties:
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x00000000 (0)
+
+Instance ID:                ACPI\AMDIF031\0
+Device Description:         Unknown
+Class Name:                 Unknown
+Class GUID:                 Unknown
+Manufacturer Name:          Unknown
+Status:                     Problem
+Problem Code:               28 (0x1C) [CM_PROB_FAILED_INSTALL]
+Problem Status:             0xC0000490
+Hardware IDs:               ACPI\VEN_AMDI&DEV_F031
+                            ACPI\AMDIF031
+Properties:
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x0000001C (28)
+
+Instance ID:                PCI\VEN_1022&DEV_1649&SUBSYS_88771043&REV_00\4&1ebe6a9c&0&0241
+Device Description:         PCI Encryption/Decryption Controller
+Class Name:                 Unknown
+Class GUID:                 Unknown
+Manufacturer Name:          Unknown
+Status:                     Problem
+Problem Code:               10 (0xA) [CM_PROB_FAILED_START]
+Hardware IDs:               PCI\VEN_1022&DEV_1649&SUBSYS_88771043
+Properties:
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x0000000A (10)
+
+Instance ID:                ROOT\LEGACY_BEEP\0000
+Device Description:         Beep
+Class Name:                 System
+Class GUID:                 {4d36e97d-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          Microsoft
+Status:                     Started
+Hardware IDs:               ROOT\LEGACY_BEEP
+Properties:
+    DEVPKEY_Device_DeviceDesc [String]:
+        Beep
