@@ -38,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "diskhealth", label: "Disk Health", icon: "💾", section: "diagnose" },
   { id: "uninstall", label: "Uninstaller", icon: "✖", section: "system" },
   { id: "sysinfo", label: "System Info", icon: "ℹ", section: "system" },
+  { id: "drivers", label: "Drivers", icon: "🧩", section: "system" },
   { id: "sfc", label: "DISM / SFC", icon: "⛏", section: "system" },
   { id: "restore", label: "System Restore", icon: "🛡", section: "system" },
   { id: "diff", label: "What Changed", icon: "⇄", section: "system" },

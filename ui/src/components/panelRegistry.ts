@@ -33,5 +33,6 @@ export const PANEL_LOADERS = {
   security: () => import("./SecurityPanel"),
   runtimes: () => import("./RuntimesPanel"),
   diskhealth: () => import("./DiskHealthPanel"),
+  drivers: () => import("./DriversPanel"),
   tools: () => import("./ToolsPanel"),
 } satisfies Record<PanelView, PanelLoader>;

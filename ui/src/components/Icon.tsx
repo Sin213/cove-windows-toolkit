@@ -146,6 +146,14 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M12 8V5.5M12 16v2.5" />
     </>
   ),
+  drivers: (
+    <>
+      <rect x="4" y="4" width="7" height="7" rx="1.5" />
+      <rect x="13" y="4" width="7" height="7" rx="1.5" />
+      <rect x="4" y="13" width="7" height="7" rx="1.5" />
+      <path d="M16.5 13v7M13 16.5h7" />
+    </>
+  ),
   // misc
   bolt: <path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z" fill="currentColor" stroke="none" />,
   shield: (

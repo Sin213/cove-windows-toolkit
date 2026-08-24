@@ -82,6 +82,11 @@ const VIEW_META: Record<string, { title: string; description: string }> = {
     description:
       "Detailed hardware and software specs -CPU, RAM, motherboard, GPU, storage, audio, and network.",
   },
+  drivers: {
+    title: "Driver Inventory",
+    description:
+      "Read-only device identity and driver matching -hardware IDs, ranks, and problem codes. Nothing is installed or changed.",
+  },
   temps: {
     title: "Temperatures",
     description:

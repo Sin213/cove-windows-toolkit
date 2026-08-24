@@ -8,6 +8,7 @@ import CategoryPanel from "./components/CategoryPanel";
 export type View =
   | "dashboard"
   | "tools"
+  | "drivers"
   | "visual"
   | "privacy"
   | "services"
