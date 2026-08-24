@@ -31,9 +31,9 @@ Evidence: full Codex review transcripts for both commits (saved to scratchpad `r
 ## Pending Work and Blockers
 
 - Address or consciously defer the 1 backend P2 and 3 UI P2s from the Codex review.
-- Commit the DriversPanel P1 fix (currently uncommitted in `ui/src/components/DriversPanel.tsx`).
+- DriversPanel P1 fix committed as `1d51352`.
 - Commit or deliberately place `.gitignore` change and `host_scan.rs` example.
 
 ## Next Entry Point
 
-Triage the remaining P2 findings; when committing, include the DriversPanel lint fix.
+Triage the remaining P2 findings.
