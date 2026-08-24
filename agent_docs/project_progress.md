@@ -1,6 +1,6 @@
 # Project Progress
 
-No active deployment plan.
+No active deployment plan. Tab 2a-1 (driver identity inventory, backend + UI) is committed and independently reviewed; see `latest_session_work.md` for the review findings awaiting fixes.
 
 ## Goal
 

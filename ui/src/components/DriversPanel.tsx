@@ -69,16 +69,22 @@ export default function DriversPanel() {
   const [filter, setFilter] = useState<ProblemFilter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const load = () => {
-    setLoading(true);
-    setError(null);
+  const fetchReport = () => {
     invoke<DriverIdentityReport>("get_driver_identity_inventory")
       .then(setReport)
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(() => {
+    fetchReport();
+  }, []);
+
+  const rescan = () => {
+    setLoading(true);
+    setError(null);
+    fetchReport();
+  };
 
   const problemDevices = useMemo(
     () => (report?.devices ?? []).filter((d) => (d.problem_code ?? 0) !== 0),
@@ -109,7 +115,7 @@ export default function DriversPanel() {
       <div className="drivers-error" role="alert">
         <p>The driver identity scan could not run.</p>
         <p className="drivers-error-detail">{error}</p>
-        <button type="button" className="drivers-retry-btn" onClick={load}>
+        <button type="button" className="drivers-retry-btn" onClick={rescan}>
           Retry scan
         </button>
       </div>
@@ -139,7 +145,7 @@ export default function DriversPanel() {
             {report.machine.arch} · build {report.machine.os_build}
           </span>
         </div>
-        <button type="button" className="drivers-rescan-btn" onClick={load}>
+        <button type="button" className="drivers-rescan-btn" onClick={rescan}>
           Rescan
         </button>
       </div>
