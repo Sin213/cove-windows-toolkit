@@ -1130,58 +1130,101 @@ const MOCKS: Record<string, unknown> = {
   },
 
   // ── Driver identity inventory ─────────────────────────────────────────
-  get_driver_identity_inventory: {
-    complete: true,
-    degraded: false,
-    error: null,
-    machine: { arch: "x64", os_build: "26200", os_version: "10.0" },
-    devices: [
-      {
-        instance_id: "ACPI\\PNP0B00\\4&11544ea4&0",
-        hardware_ids: ["ACPI\\VEN_PNP&DEV_0B00", "ACPI\\PNP0B00", "*PNP0B00"],
-        compatible_ids: [],
-        class_guid: "{4d36e97d-e325-11ce-bfc1-08002be10318}",
-        class_name: "System",
-        description: "System CMOS/real time clock",
-        manufacturer: "(Standard system devices)",
-        problem_code: 0,
-        installed: {
-          inf_name: "machine.inf",
-          original_inf_name: null,
-          provider: "Microsoft",
-          class: "System",
-          driver_date: "06/21/2006",
-          driver_version: "10.0.26200.1",
-          signer: "Microsoft Windows",
-          rank: 16711682,
-        },
-        matching: [
+  // Dev-only deterministic scenarios for manual verification of the
+  // degraded/error/fallback state matrix (?driver_mock=<name>).
+  get_driver_identity_inventory: (() => {
+    const scenario =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("driver_mock")
+        : null;
+    if (scenario === "degraded_unknown") {
+      return {
+        complete: false,
+        degraded: true,
+        error: null,
+        machine: { arch: "x64", os_build: "26100", os_version: "10.0" },
+        devices: [
           {
-            inf_name: "machine.inf",
-            provider: "Microsoft",
-            driver_date: "06/21/2006",
-            driver_version: "10.0.26200.1",
-            rank: 16711682,
+            instance_id: "ACPI\\AMDIF031\\2&daba3ff&0",
+            hardware_ids: ["ACPI\\AMDIF031", "AMDIF031"],
+            compatible_ids: [],
+            class_guid: null,
+            class_name: null,
+            description: "AMDIF031 device",
+            manufacturer: null,
+            problem_code: null,
+            installed: null,
+            matching: [],
           },
         ],
-      },
-      {
-        instance_id: "PCI\\VEN_1022&DEV_1649&SUBSYS_88771043&REV_00\\4&1ebe6a9c&0&0241",
-        hardware_ids: [
-          "PCI\\VEN_1022&DEV_1649&SUBSYS_88771043&REV_00",
-          "PCI\\VEN_1022&DEV_1649&SUBSYS_88771043",
-          "PCI\\VEN_1022&DEV_1649&CC_108000",
-        ],
-        compatible_ids: ["PCI\\VEN_1022&DEV_1649", "PCI\\VEN_1022"],
-        class_name: null,
-        description: "PCI Encryption/Decryption Controller",
-        manufacturer: null,
-        problem_code: 28,
-        installed: null,
-        matching: [],
-      },
-    ],
-  },
+      };
+    }
+    if (scenario === "report_error") {
+      return {
+        complete: false,
+        degraded: false,
+        error: "fixture scan failed",
+        machine: { arch: "x64", os_build: "26100", os_version: "10.0" },
+        devices: [],
+      };
+    }
+    if (scenario === "malformed_fallback") {
+      return { success: false, message: "fixture internal error" };
+    }
+    return {
+      complete: true,
+      degraded: false,
+      error: null,
+      machine: { arch: "x64", os_build: "26200", os_version: "10.0" },
+      devices: [
+        {
+          instance_id: "ACPI\\PNP0B00\\4&11544ea4&0",
+          hardware_ids: ["ACPI\\VEN_PNP&DEV_0B00", "ACPI\\PNP0B00", "*PNP0B00"],
+          compatible_ids: [],
+          class_guid: "{4d36e97d-e325-11ce-bfc1-08002be10318}",
+          class_name: "System",
+          description: "System CMOS/real time clock",
+          manufacturer: "(Standard system devices)",
+          problem_code: 0,
+          installed: {
+            inf_name: "machine.inf",
+            original_inf_name: null,
+            provider: "Microsoft",
+            class: "System",
+            driver_date: "06/21/2006",
+            driver_version: "10.0.26200.1",
+            signer: "Microsoft Windows",
+            rank: 16711682,
+          },
+          matching: [
+            {
+              inf_name: "machine.inf",
+              provider: "Microsoft",
+              driver_date: "06/21/2006",
+              driver_version: "10.0.26200.1",
+              rank: 16711682,
+            },
+          ],
+        },
+        {
+          instance_id:
+            "PCI\\VEN_1022&DEV_1649&SUBSYS_88771043&REV_00\\4&1ebe6a9c&0&0241",
+          hardware_ids: [
+            "PCI\\VEN_1022&DEV_1649&SUBSYS_88771043&REV_00",
+            "PCI\\VEN_1022&DEV_1649&SUBSYS_88771043",
+            "PCI\\VEN_1022&DEV_1649&CC_108000",
+          ],
+          compatible_ids: ["PCI\\VEN_1022&DEV_1649", "PCI\\VEN_1022"],
+          class_name: null,
+          description: "PCI Encryption/Decryption Controller",
+          manufacturer: null,
+          problem_code: 28,
+          installed: null,
+          matching: [],
+        },
+      ],
+    };
+  })(),
 
   // ── Apply / Undo commands (return success) ───────────────────────────
   apply_tweak: { success: true, message: "Applied" },

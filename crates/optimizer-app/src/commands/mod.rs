@@ -473,12 +473,13 @@ pub async fn generate_report() -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn get_driver_identity_inventory() -> serde_json::Value {
+pub async fn get_driver_identity_inventory() -> Result<serde_json::Value, String> {
     tokio::task::spawn_blocking(|| {
-        serde_json::to_value(mod_drivers::scan_device_identity()).unwrap_or_else(|_| join_fallback())
+        serde_json::to_value(mod_drivers::scan_device_identity())
+            .map_err(|e| format!("driver identity report serialization failed: {e}"))
     })
     .await
-    .unwrap_or_else(|_| join_fallback())
+    .map_err(|e| format!("driver identity task failed: {e}"))?
 }
 
 // ---------------------------------------------------------------------------

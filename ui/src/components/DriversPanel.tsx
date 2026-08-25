@@ -60,7 +60,86 @@ function problemLabel(code: number): string {
   return PROBLEM_LABELS[code] ?? `Problem code ${code}`;
 }
 
+/**
+ * Explicit device status tri-state. A missing/unknown problem code is NOT
+ * healthy: Windows never reported a code we can interpret (common in
+ * degraded scans), so it must stay visually distinct from both states.
+ */
+type DeviceStatus = "healthy" | "problem" | "unknown";
+
+function deviceStatus(problemCode: number | null | undefined): DeviceStatus {
+  if (problemCode == null) return "unknown";
+  return problemCode === 0 ? "healthy" : "problem";
+}
+
+const STATUS_DOT_CLASS: Record<DeviceStatus, string> = {
+  healthy: "ok",
+  problem: "bad",
+  unknown: "warn",
+};
+
+const STATUS_TITLE: Record<DeviceStatus, (d: DeviceIdentity) => string> = {
+  healthy: () => "No PnP problem reported",
+  problem: (d) => problemLabel(d.problem_code as number),
+  unknown: () => "Status could not be determined",
+};
+
 type ProblemFilter = "all" | "problems" | "code28";
+
+/**
+ * Runtime shape check at the IPC boundary. A generic invoke wrapper can
+ * resolve structured internal-error envelopes instead of a real report;
+ * those must become panel errors, never render input.
+ */
+function isDriverIdentityReport(value: unknown): value is DriverIdentityReport {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  const machine = v.machine as Record<string, unknown> | undefined;
+  if (
+    !(
+      typeof v.complete === "boolean" &&
+      typeof v.degraded === "boolean" &&
+      machine !== null &&
+      typeof machine === "object" &&
+      typeof machine.arch === "string" &&
+      typeof machine.os_build === "string" &&
+      typeof machine.os_version === "string" &&
+      Array.isArray(v.devices) &&
+      (v.error === undefined ||
+        v.error === null ||
+        typeof v.error === "string")
+    )
+  ) {
+    return false;
+  }
+  // Shallow per-device shape check: the renderer dereferences these fields
+  // unconditionally, so a malformed entry must route to the error state.
+  return (v.devices as unknown[]).every((d) => {
+    if (d === null || typeof d !== "object") return false;
+    const dev = d as Record<string, unknown>;
+    const idListsValid = (["hardware_ids", "compatible_ids"] as const).every(
+      (key) =>
+        Array.isArray(dev[key]) &&
+        (dev[key] as unknown[]).every(
+          (id) => typeof id === "string" && id.length > 0,
+        ),
+    );
+    const matchingValid =
+      Array.isArray(dev.matching) &&
+      (dev.matching as unknown[]).every(
+        (m) =>
+          m !== null &&
+          typeof m === "object" &&
+          typeof (m as Record<string, unknown>).inf_name === "string" &&
+          ((m as Record<string, unknown>).rank === undefined ||
+            (m as Record<string, unknown>).rank === null ||
+            typeof (m as Record<string, unknown>).rank === "number"),
+      );
+    return (
+      typeof dev.instance_id === "string" && idListsValid && matchingValid
+    );
+  });
+}
 
 export default function DriversPanel() {
   const [report, setReport] = useState<DriverIdentityReport | null>(null);
@@ -70,8 +149,28 @@ export default function DriversPanel() {
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const fetchReport = () => {
-    invoke<DriverIdentityReport>("get_driver_identity_inventory")
-      .then(setReport)
+    invoke("get_driver_identity_inventory")
+      .then((value) => {
+        if (isDriverIdentityReport(value)) {
+          if (value.error) {
+            // Successful IPC carrying a domain-level scan failure.
+            setError(value.error);
+            setReport(null);
+          } else {
+            setReport(value);
+            setError(null);
+          }
+        } else {
+          const safeMessage =
+            value !== null &&
+            typeof value === "object" &&
+            typeof (value as { message?: unknown }).message === "string"
+              ? ((value as { message: string }).message)
+              : "The driver inventory command returned an unexpected response.";
+          setError(safeMessage);
+          setReport(null);
+        }
+      })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
   };
@@ -87,7 +186,10 @@ export default function DriversPanel() {
   };
 
   const problemDevices = useMemo(
-    () => (report?.devices ?? []).filter((d) => (d.problem_code ?? 0) !== 0),
+    () =>
+      (report?.devices ?? []).filter(
+        (d) => deviceStatus(d.problem_code) === "problem",
+      ),
     [report],
   );
   const code28 = useMemo(
@@ -187,7 +289,7 @@ export default function DriversPanel() {
         <ul className="drivers-list">
           {visibleDevices.map((device) => {
             const isOpen = expanded === device.instance_id;
-            const problem = (device.problem_code ?? 0) !== 0;
+            const status = deviceStatus(device.problem_code);
             return (
               <li key={device.instance_id} className="drivers-item">
                 <button
@@ -199,14 +301,8 @@ export default function DriversPanel() {
                   }
                 >
                   <span
-                    className={`drivers-status ${
-                      problem ? "bad" : "ok"
-                    }`}
-                    title={
-                      problem
-                        ? problemLabel(device.problem_code as number)
-                        : "Working"
-                    }
+                    className={`drivers-status ${STATUS_DOT_CLASS[status]}`}
+                    title={STATUS_TITLE[status](device)}
                     aria-hidden
                   />
                   <span className="drivers-name">
@@ -309,11 +405,20 @@ export default function DriversPanel() {
                       </>
                     )}
 
-                    {problem && (
+                    {status === "problem" && (
                       <>
                         <dt>Status</dt>
                         <dd className="drivers-problem-note">
                           {problemLabel(device.problem_code as number)}
+                        </dd>
+                      </>
+                    )}
+
+                    {status === "unknown" && (
+                      <>
+                        <dt>Status</dt>
+                        <dd className="drivers-unknown-note">
+                          Unknown (Windows did not report a problem code)
                         </dd>
                       </>
                     )}

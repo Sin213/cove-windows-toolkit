@@ -73,6 +73,39 @@ fn r1_ordered_multi_id_parsing() {
 }
 
 // ---------------------------------------------------------------------------
+// R1-ISO — ISO-style Driver Version dates (Tab 2a-1R / P2-BACKEND-1)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn r1iso_driver_version_iso_date_parsed() {
+    let devices = parse_full_fixture("iso_driver_date.txt");
+    assert_eq!(devices.len(), 1, "exactly one device expected");
+
+    // The installed driver's Driver Version carries an ISO-style date.
+    let installed = devices[0].installed.as_ref().expect("installed driver expected");
+    assert_eq!(installed.driver_date.as_deref(), Some("2025-09-16"));
+    assert_eq!(installed.driver_version.as_deref(), Some("6.0.9888.1"));
+
+    // The matching-driver list must agree with the installed entry.
+    assert_eq!(devices[0].matching.len(), 1);
+    assert_eq!(devices[0].matching[0].driver_date.as_deref(), Some("2025-09-16"));
+    assert_eq!(
+        devices[0].matching[0].driver_version.as_deref(),
+        Some("6.0.9888.1")
+    );
+}
+
+/// Pin existing slash-date and version-only behavior so the ISO repair
+/// cannot regress it (exercised through the realistic parse path).
+#[test]
+fn driver_version_slash_and_version_only_regression() {
+    let devices = parse_full_fixture("rank_formats.txt");
+    let installed = devices[0].installed.as_ref().expect("installed driver expected");
+    assert_eq!(installed.driver_date.as_deref(), Some("03/04/2026"));
+    assert_eq!(installed.driver_version.as_deref(), Some("1.4.40.0"));
+}
+
+// ---------------------------------------------------------------------------
 // R2 — Case-insensitive identity comparison / casing preservation
 // ---------------------------------------------------------------------------
 

@@ -661,21 +661,108 @@ fn split_driver_version(value: &str) -> Result<(Option<String>, Option<String>),
     if let Some(index) = trimmed.find(char::is_whitespace) {
         let (first, rest) = trimmed.split_at(index);
         let rest = rest.trim();
-        if first.contains('/') {
-            Ok((
+        match classify_date_token(first) {
+            // Valid date prefix: split into (date, version).
+            DateCheck::Valid => Ok((
                 Some(first.to_string()),
                 if rest.is_empty() {
                     None
                 } else {
                     Some(rest.to_string())
                 },
-            ))
-        } else {
-            Ok((None, Some(trimmed.to_string())))
+            )),
+            // Date-shaped but impossible (e.g. 2025-99-99): fail closed
+            // rather than storing corrupted version data.
+            DateCheck::Malformed => Err(PnputilParseError::Malformed(format!(
+                "invalid Driver Version date: {first}"
+            ))),
+            // Not date-shaped at all: keep as a version-only value.
+            DateCheck::NotADate => Ok((None, Some(trimmed.to_string()))),
         }
     } else {
-        Ok((None, Some(trimmed.to_string())))
+        // No whitespace: a lone token. If it is date-shaped it must still be
+        // a real calendar date; otherwise keep the whole value as version.
+        match classify_date_token(trimmed) {
+            DateCheck::Valid | DateCheck::NotADate => Ok((None, Some(trimmed.to_string()))),
+            DateCheck::Malformed => Err(PnputilParseError::Malformed(format!(
+                "invalid Driver Version date: {trimmed}"
+            ))),
+        }
     }
+}
+
+enum DateCheck {
+    Valid,
+    Malformed,
+    NotADate,
+}
+
+/// Recognize the date forms PnPUtil emits in Driver Version values:
+/// slash form (`09/16/2025`) and ISO form (`2025-09-16`). Anything that is
+/// not date-shaped is `NotADate` (kept version-only); anything date-shaped
+/// but calendar-impossible is `Malformed` and fails parsing closed.
+fn classify_date_token(token: &str) -> DateCheck {
+    fn parse_u32(s: &str) -> Option<u32> {
+        if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        s.parse().ok()
+    }
+
+    fn is_leap_year(y: u32) -> bool {
+        (y.is_multiple_of(4) && !y.is_multiple_of(100)) || y.is_multiple_of(400)
+    }
+
+    fn days_in_month(y: u32, m: u32) -> u32 {
+        match m {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if is_leap_year(y) => 29,
+            2 => 28,
+            _ => 0,
+        }
+    }
+
+    let (year, month, day): (u32, u32, u32);
+    if token.contains('/') {
+        // Slash form: MM/DD/YYYY.
+        let parts: Vec<&str> = token.split('/').collect();
+        if parts.len() != 3 || parts[0].len() != 2 || parts[1].len() != 2 || parts[2].len() != 4 {
+            return DateCheck::NotADate;
+        }
+        let (Some(m), Some(d), Some(y)) = (
+            parse_u32(parts[0]),
+            parse_u32(parts[1]),
+            parse_u32(parts[2]),
+        ) else {
+            return DateCheck::NotADate;
+        };
+        year = y;
+        month = m;
+        day = d;
+    } else if token.contains('-') {
+        // ISO form: YYYY-MM-DD.
+        let parts: Vec<&str> = token.split('-').collect();
+        if parts.len() != 3 || parts[0].len() != 4 || parts[1].len() != 2 || parts[2].len() != 2 {
+            return DateCheck::NotADate;
+        }
+        let (Some(y), Some(m), Some(d)) = (
+            parse_u32(parts[0]),
+            parse_u32(parts[1]),
+            parse_u32(parts[2]),
+        ) else {
+            return DateCheck::NotADate;
+        };
+        year = y;
+        month = m;
+        day = d;
+    } else {
+        return DateCheck::NotADate;
+    }
+    if !(1..=12).contains(&month) || day == 0 || day > days_in_month(year, month) {
+        return DateCheck::Malformed;
+    }
+    DateCheck::Valid
 }
 
 /// Parse a rank token. Observed PnPUtil emits bare hexadecimal (e.g. `00FF0001`).
@@ -726,10 +813,48 @@ mod tests {
             (Some("09/16/2025".into()), Some("6.0.9888.1".into()))
         );
         assert_eq!(
+            split_driver_version("2025-09-16 6.0.9888.1").unwrap(),
+            (Some("2025-09-16".into()), Some("6.0.9888.1".into()))
+        );
+        assert_eq!(
             split_driver_version("6.0.9888.1").unwrap(),
             (None, Some("6.0.9888.1".into()))
         );
         assert_eq!(split_driver_version("").unwrap(), (None, None));
+
+        // Impossible calendar values are date-shaped but invalid: they must
+        // fail parsing closed, never silently become version-only strings.
+        assert!(matches!(
+            split_driver_version("2025-99-99 6.0.9888.1"),
+            Err(PnputilParseError::Malformed(_))
+        ));
+        assert!(matches!(
+            split_driver_version("99/99/2025 6.0.9888.1"),
+            Err(PnputilParseError::Malformed(_))
+        ));
+        // Day must exist in its month (leap years included).
+        assert!(matches!(
+            split_driver_version("02/30/2024 1.0.0.0"),
+            Err(PnputilParseError::Malformed(_))
+        ));
+        assert_eq!(
+            split_driver_version("02/29/2024 1.0.0.0").unwrap(),
+            (Some("02/29/2024".into()), Some("1.0.0.0".into()))
+        );
+        assert!(matches!(
+            split_driver_version("2025-02-29 1.0.0.0"),
+            Err(PnputilParseError::Malformed(_))
+        ));
+        // Pre-1980 dates remain valid; no artificial year floor.
+        assert_eq!(
+            split_driver_version("07/18/1968 1.0.0.0").unwrap(),
+            (Some("07/18/1968".into()), Some("1.0.0.0".into()))
+        );
+        // A lone date-shaped impossible token also fails closed.
+        assert!(matches!(
+            split_driver_version("2025-99-99"),
+            Err(PnputilParseError::Malformed(_))
+        ));
     }
 
     #[test]

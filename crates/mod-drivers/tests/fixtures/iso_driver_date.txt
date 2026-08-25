@@ -1,0 +1,30 @@
+Microsoft PnP Utility
+
+Instance ID:                PCI\VEN_10EC&DEV_8168&SUBSYS_012310EC&REV_15\4&2bfc8e6b&0&00E1
+Device Description:         Realtek Gaming 2.5GbE Family Controller
+Class Name:                 Net
+Class GUID:                 {4d36e972-e325-11ce-bfc1-08002be10318}
+Manufacturer Name:          Realtek
+Status:                     Started
+Driver Name:                oem7.inf
+Hardware IDs:               PCI\VEN_10EC&DEV_8168&SUBSYS_012310EC&REV_15
+                            PCI\VEN_10EC&DEV_8168&SUBSYS_012310EC
+                            PCI\VEN_10EC&DEV_8168&REV_15
+                            PCI\VEN_10EC&DEV_8168
+Compatible IDs:             PCI\VEN_10EC&DEV_8168
+                            PCI\VEN_10EC
+Matching Drivers:
+    Driver Name:            oem7.inf
+    Original Name:          rt640x64.inf
+    Provider Name:          Realtek
+    Class Name:            Net
+    Class GUID:             {4d36e972-e325-11ce-bfc1-08002be10318}
+    Driver Version:         2025-09-16 6.0.9888.1
+    Signer Name:            Microsoft Windows Hardware Compatibility Publisher
+    Matching Device ID:     PCI\VEN_10EC&DEV_8168&SUBSYS_012310EC&REV_15
+    Driver Rank:            00FF0000
+    Driver Status:          Best Ranked / Installed
+
+Properties:
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x00000000 (0)
