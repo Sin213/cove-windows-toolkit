@@ -1,5 +1,6 @@
 pub mod identity;
 pub mod pnputil;
+pub mod sdio;
 
 use serde::Serialize;
 

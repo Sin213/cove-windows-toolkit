@@ -8,7 +8,11 @@ license.workspace = true
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
+# Clean-room LZMA (alone) decoder used by the SDIO SDW index parser. Format is
+# public-domain; this crate is Apache-2.0/MIT and carries no GPL.
+lzma-rs = "0.3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
