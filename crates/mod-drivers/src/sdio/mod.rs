@@ -12,6 +12,7 @@
 
 mod catalog;
 pub mod error;
+pub mod matching;
 
 pub use catalog::{
     Candidate, CandidateVersion, DataDesc, DataHwid, DataInfFile, DataManuf, FIELD_CATALOG_FILE,
@@ -20,6 +21,13 @@ pub use catalog::{
     FIELD_DRIVER_VER, FIELD_PROVIDER, FORMAT_VERSION, MAX_COMPRESSED_BYTES, SdioCatalog,
 };
 pub use error::SdioError;
+
+pub use matching::{
+    CatalogCandidateMatch, DeviceCatalogMatches, DeviceIdKind, MAX_CANDIDATES_PER_DEVICE,
+    MAX_CATALOGS_PER_MATCH, MAX_DEVICES_PER_MATCH, MAX_EVIDENCE_PER_CANDIDATE, MAX_IDS_PER_DEVICE,
+    MAX_TOTAL_CANDIDATES, MatchError, MatchEvidence, match_device_to_catalogs,
+    match_devices_to_catalogs,
+};
 
 /// Convenience alias used by callers.
 pub type Result<T> = std::result::Result<T, SdioError>;

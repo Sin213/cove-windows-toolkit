@@ -350,6 +350,37 @@ impl SdioCatalog {
         out
     }
 
+    /// Bounded variant of [`SdioCatalog::find_by_hwid`] used by the matcher.
+    ///
+    /// The indexed bucket size for the exact match is inspected **first**; if it
+    /// exceeds `max`, the lookup fails closed with
+    /// [`SdioError::LookupBucketTooLarge`] *before* any result `Vec` is
+    /// allocated. This lets an untrusted catalog never turn one device ID into an
+    /// unexpectedly huge allocation during matching. When within budget the
+    /// result is identical to [`SdioCatalog::find_by_hwid`].
+    pub fn find_by_hwid_bounded(&self, id: &str, max: usize) -> Result<Vec<Candidate>> {
+        let key = id.to_uppercase();
+        let Some(indices) = self.hash_map.get(&key) else {
+            return Ok(Vec::new());
+        };
+        if indices.len() > max {
+            return Err(SdioError::LookupBucketTooLarge {
+                id: id.to_string(),
+                bucket: indices.len(),
+                max,
+            });
+        }
+        let mut out = Vec::with_capacity(indices.len());
+        for &idx in indices {
+            if let Some(hwid) = self.hwid_records.get(idx)
+                && let Some(c) = self.resolve_candidate(hwid)
+            {
+                out.push(c);
+            }
+        }
+        Ok(out)
+    }
+
     fn resolve_candidate(&self, hwid: &DataHwid) -> Option<Candidate> {
         let desc = self.desc_records.get(hwid.desc_index as usize)?;
         let manuf = self.manuf_records.get(desc.manufacturer_index as usize)?;

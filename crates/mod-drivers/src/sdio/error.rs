@@ -64,4 +64,14 @@ pub enum SdioError {
 
     #[error("value {value} out of expected range in field {field}")]
     OutOfRange { field: &'static str, value: i64 },
+
+    /// A bounded catalog lookup was refused because the exact-ID bucket would
+    /// exceed the caller-supplied allocation/result cap. The bucket size is
+    /// always checked **before** any result `Vec` is allocated.
+    #[error("hwid lookup bucket for {id:?} has {bucket} records, cap is {max}")]
+    LookupBucketTooLarge {
+        id: String,
+        bucket: usize,
+        max: usize,
+    },
 }
