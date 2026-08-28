@@ -10,24 +10,33 @@
 //! Format reference: see `catalog.rs` doc comments and the Tab 2a-2
 //! specification in `crates/mod-drivers/fixtures/sdio/README.md`.
 
-mod catalog;
 pub mod applicability;
+mod catalog;
 pub mod error;
+pub mod local_pack;
 pub mod matching;
 
+pub use applicability::{
+    ApplicabilityError, ApplicabilityReason, AssessedCatalogCandidate, AssessedDeviceMatches,
+    CatalogApplicabilityEvidence, CatalogOsApplicability, ParsedMachineContext, TargetArch,
+    TargetOsDecoration, TargetParseError, assess_device_matches, assess_matches, evaluate_target,
+    normalize_host_arch, parse_machine_context, parse_target_os_version,
+};
 pub use catalog::{
     Candidate, CandidateVersion, DataDesc, DataHwid, DataInfFile, DataManuf, FIELD_CATALOG_FILE,
     FIELD_CATALOG_FILE_NT, FIELD_CATALOG_FILE_NTAMD64, FIELD_CATALOG_FILE_NTIA64,
     FIELD_CATALOG_FILE_NTX86, FIELD_CLASS, FIELD_CLASS_GUID, FIELD_DRIVER_PACKAGE_DISPLAY_NAME,
     FIELD_DRIVER_VER, FIELD_PROVIDER, FORMAT_VERSION, MAX_COMPRESSED_BYTES, SdioCatalog,
 };
-pub use applicability::{
-    ApplicabilityError, ApplicabilityReason, AssessedCatalogCandidate, AssessedDeviceMatches,
-    CatalogApplicabilityEvidence, CatalogOsApplicability, ParsedMachineContext, TargetArch,
-    TargetOsDecoration, TargetParseError, assess_device_matches, assess_matches,
-    evaluate_target, normalize_host_arch, parse_machine_context, parse_target_os_version,
-};
 pub use error::SdioError;
+
+pub use local_pack::{
+    ExpectedArchiveMember, LocalPackAvailability, LocalPackError, LocalPackRef,
+    MAX_ARCHIVE_COMPONENT_LEN, MAX_ARCHIVE_MEMBER_COMPONENTS, MAX_ARCHIVE_MEMBER_LEN,
+    MAX_LOCAL_PACK_BYTES, MAX_PACKS_PER_BATCH, PackageMaterializationRequest, expected_inf_member,
+    expected_pack_filename, resolve_assessed_pack, resolve_local_pack, resolve_local_packs,
+    validate_pack_size,
+};
 
 pub use matching::{
     CatalogCandidateMatch, DeviceCatalogMatches, DeviceIdKind, MAX_CANDIDATES_PER_DEVICE,
