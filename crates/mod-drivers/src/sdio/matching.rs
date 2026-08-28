@@ -233,6 +233,8 @@ fn match_one(
                             inf_filename: candidate.inf_filename.clone(),
                             install_section: candidate.install_section.clone(),
                             picked_section: candidate.picked_section.clone(),
+                            sect_pos: candidate.sect_pos,
+                            models_section: candidate.models_section.clone(),
                         };
                         let evidence = MatchEvidence {
                             kind,
@@ -284,6 +286,13 @@ fn match_one(
 /// Deterministic identity of one logical candidate within one pack. `inf_pos` is
 /// deliberately excluded: it is per-HWID SDIO metadata that belongs in evidence,
 /// not part of the installable model identity.
+///
+/// `sect_pos` + `models_section` are included (Gate A4): SDIO indexes can carry
+/// otherwise-identical rows — same INF, install section, picked section — that
+/// differ only by the Models-section target decoration (`sect_pos`), and an
+/// undecorated base name (`sect_pos == 0`) must never collapse with a
+/// decorated entry that happens to share identical text. Without them those
+/// rows would collapse and lose OS-applicability provenance.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct CandidateKey {
     pack_name: String,
@@ -291,4 +300,6 @@ struct CandidateKey {
     inf_filename: String,
     install_section: String,
     picked_section: String,
+    sect_pos: i32,
+    models_section: Option<String>,
 }

@@ -124,6 +124,15 @@ pub struct DataHwid {
 /// A candidate surfaced to later slices. `inf_pos` is 0 for hardware-ID matches
 /// and >0 for compatible-ID matches (per SDIO semantics); Cove relies on Windows
 /// ranking rather than this heuristic.
+///
+/// `sect_pos` is the `DataDesc::sect_pos` index (Gate A4). `models_section` is
+/// the deterministic Models-section provenance resolved from it:
+/// `DataManuf::sections[sect_pos]`. In SDIO indexes `sections[0]` is the
+/// undecorated Models-section base name and `sections[pos>0]` are TargetOSVersion
+/// decorations; the full INF Models-section name would be
+/// `sections[0] + "." + sections[pos]`. Retaining `sect_pos` lets later layers
+/// distinguish an undecorated base name (pos 0) from a decoration (pos > 0)
+/// without guessing from the text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Candidate {
     pub inf_path: String,
@@ -136,6 +145,11 @@ pub struct Candidate {
     pub date: Option<(u16, u8, u8)>,
     pub install_section: String,
     pub picked_section: String,
+    /// `DataDesc::sect_pos` — index into `DataManuf::sections` (0 = undecorated
+    /// Models-section base, >0 = TargetOSVersion decoration).
+    pub sect_pos: i32,
+    /// Resolved manufacturer-section entry at `sect_pos` (verbatim).
+    pub models_section: Option<String>,
     pub inf_pos: i32,
 }
 
@@ -267,6 +281,25 @@ impl SdioCatalog {
                     count: man_cnt as u64,
                 });
             }
+            // Gate A4: `sect_pos` indexes `DataManuf.sections`. A negative
+            // value or one past the end of the referenced manufacturer's
+            // section array is an invalid cross-reference and must fail closed
+            // (no unchecked index read later, no guessed provenance).
+            if d.sect_pos < 0 {
+                return Err(SdioError::CrossRefInvalid {
+                    kind: "sect_pos",
+                    index: d.sect_pos as u64,
+                    count: 0,
+                });
+            }
+            let nsec = manuf_records[d.manufacturer_index as usize].sections.len();
+            if d.sect_pos as usize >= nsec {
+                return Err(SdioError::CrossRefInvalid {
+                    kind: "sect_pos",
+                    index: d.sect_pos as u64,
+                    count: nsec as u64,
+                });
+            }
         }
         for h in &hwid_records {
             if h.desc_index as usize >= desc_cnt {
@@ -385,6 +418,10 @@ impl SdioCatalog {
         let desc = self.desc_records.get(hwid.desc_index as usize)?;
         let manuf = self.manuf_records.get(desc.manufacturer_index as usize)?;
         let inf = self.inf_records.get(manuf.inffile_index as usize)?;
+        // Gate A4: `sect_pos` is a validated index into `manuf.sections`
+        // (enforced in parse_inner). sections[pos] is the Models-section target
+        // entry; preserved verbatim as provenance.
+        let models_section = manuf.sections.get(desc.sect_pos as usize).cloned();
         Some(Candidate {
             inf_path: inf.inf_path.clone(),
             inf_filename: inf.inf_filename.clone(),
@@ -396,6 +433,8 @@ impl SdioCatalog {
             date: inf.date,
             install_section: desc.install.clone(),
             picked_section: desc.install_picked.clone(),
+            sect_pos: desc.sect_pos,
+            models_section,
             inf_pos: hwid.inf_pos,
         })
     }
