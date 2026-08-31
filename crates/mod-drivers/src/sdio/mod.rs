@@ -13,6 +13,7 @@
 pub mod applicability;
 mod catalog;
 pub mod error;
+pub mod extraction;
 pub mod local_pack;
 pub mod matching;
 
@@ -29,6 +30,13 @@ pub use catalog::{
     FIELD_DRIVER_VER, FIELD_PROVIDER, FORMAT_VERSION, MAX_COMPRESSED_BYTES, SdioCatalog,
 };
 pub use error::SdioError;
+
+pub use extraction::{
+    ExtractionError, ExtractionResult, MAX_ARCHIVE_BLOCKS, MAX_ARCHIVE_DECLARED_UNPACKED_BYTES,
+    MAX_ARCHIVE_ENTRIES, MAX_ARCHIVE_TOTAL_NAME_BYTES, MAX_CODERS_PER_BLOCK,
+    MAX_TARGET_BLOCK_EXPANSION_RATIO, MAX_TARGET_DECODE_BYTES, MAX_TARGET_INF_BYTES,
+    StagedInfArtifact, materialize_inf,
+};
 
 pub use local_pack::{
     ExpectedArchiveMember, LocalPackAvailability, LocalPackError, LocalPackRef,

@@ -13,10 +13,26 @@ tracing.workspace = true
 # Clean-room LZMA (alone) decoder used by the SDIO SDW index parser. Format is
 # public-domain; this crate is Apache-2.0/MIT and carries no GPL.
 lzma-rs = "0.3"
+# Pure-Rust 7z archive decoder for the bounded local-pack INF materialization
+# slice (Tab 2a-6). Gate A6 ratified sevenz-rust2 0.22.2 (MSRV 1.93, Apache-2.0,
+# actively maintained, hardened 0.21.x security line). Production enables NO
+# optional features: LZMA/LZMA2/COPY codecs are always available without any
+# feature, and the encoder (`compress`), AES, PPMd, bzip2, deflate, lz4, brotli,
+# zstd and util stay disabled in the shipped dependency graph.
+sevenz-rust2 = { version = "=0.22.2", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_System_SystemInformation",
     "Wdk_System_SystemServices",
+] }
+
+# Test-only: the same archive backend with the encoder enabled so integration
+# tests can build deterministic synthetic .7z fixtures (Tab 2a-6 RED/GREEN).
+# Production does NOT enable `compress`; `cargo check -p mod-drivers` never
+# reaches encoder APIs, verified via `cargo tree -p mod-drivers -e features`.
+[dev-dependencies]
+sevenz-rust2 = { version = "=0.22.2", default-features = false, features = [
+    "compress",
 ] }
