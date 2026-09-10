@@ -117,13 +117,13 @@ impl ExpectedArchiveMember {
 }
 
 /// A bounded materialization request: the exact local pack plus the expected
-/// INF member inside it.
+/// INF member inside it, and optionally the catalog member the INF's
+/// `[Version]` section references.
 ///
-/// Contains no verified/trusted/signed/installable claims and no
-/// catalog/trust metadata: the extracted INF becomes authoritative in the later
-/// package-validation slice, so `Candidate::catalog_file` is deliberately not
-/// carried here (Codex round-10 finding — an unbounded index-metadata clone
-/// would break this boundary's boundedness).
+/// Contains no verified/trusted/signed/installable claims. The catalog member
+/// (when the 2a-5 candidate named one) is carried as a single validated
+/// `ExpectedArchiveMember` — NOT a full `Candidate` clone — so the boundedness
+/// contract from Codex round-10 is preserved.
 ///
 /// Construction is restricted to the validated resolver; downstream code
 /// cannot fabricate a request with an unvalidated member path or pack
@@ -132,6 +132,7 @@ impl ExpectedArchiveMember {
 pub struct PackageMaterializationRequest {
     pack: LocalPackRef,
     inf: ExpectedArchiveMember,
+    catalog: Option<ExpectedArchiveMember>,
 }
 
 impl PackageMaterializationRequest {
@@ -140,6 +141,11 @@ impl PackageMaterializationRequest {
     }
     pub fn inf(&self) -> &ExpectedArchiveMember {
         &self.inf
+    }
+    /// The catalog member the INF references, when the 2a-5 candidate named
+    /// one (validated relative member; `None` when the candidate had none).
+    pub fn catalog(&self) -> Option<&ExpectedArchiveMember> {
+        self.catalog.as_ref()
     }
 }
 
@@ -352,6 +358,45 @@ pub fn expected_inf_member(
     inf_path: &str,
     inf_filename: &str,
 ) -> LocalPackResult<ExpectedArchiveMember> {
+    if inf_filename.len() > MAX_ARCHIVE_COMPONENT_LEN {
+        return Err(LocalPackError::ArchiveComponentTooLong);
+    }
+    if inf_filename.contains('\0') {
+        return Err(LocalPackError::InvalidInfFilename(inf_filename.to_string()));
+    }
+    if inf_filename.contains(':') {
+        return Err(LocalPackError::InvalidInfFilename(inf_filename.to_string()));
+    }
+    let components = validate_inf_dir_path(inf_path)?;
+    validate_inf_leaf(inf_filename)?;
+
+    let member = if components.is_empty() {
+        inf_filename.to_string()
+    } else {
+        let mut joined = components.join("/");
+        joined.push('/');
+        joined.push_str(inf_filename);
+        joined
+    };
+    if member.len() > MAX_ARCHIVE_MEMBER_LEN {
+        return Err(LocalPackError::ArchiveMemberTooLong);
+    }
+    Ok(ExpectedArchiveMember {
+        relative_path: member,
+    })
+}
+
+/// Validate the SDIO directory portion of an expected archive member path and
+/// return its normalized components (joined with `/` by the caller).
+///
+/// This is the shared directory-identity gate for BOTH `expected_inf_member`
+/// and `expected_catalog_member`: no caller may derive a catalog or INF member
+/// from an unvalidated `inf_path`. Rejects, before any payload-bearing clone:
+/// overlong paths, NUL, forward separators, colons, absolute/UNC prefixes,
+/// duplicate separators, dot/dot-dot components (including Windows-normalized
+/// trailing-dot/space forms), Windows-invalid components, and overlong or
+/// over-numerous components.
+fn validate_inf_dir_path(inf_path: &str) -> LocalPackResult<Vec<&str>> {
     // Absolute length guards FIRST, before any payload-bearing error clone: an
     // arbitrarily large malformed input must be rejected without cloning the
     // whole string into an error (Codex round-11 finding). The payload-free
@@ -359,14 +404,8 @@ pub fn expected_inf_member(
     if inf_path.len() > MAX_ARCHIVE_MEMBER_LEN {
         return Err(LocalPackError::ArchiveMemberTooLong);
     }
-    if inf_filename.len() > MAX_ARCHIVE_COMPONENT_LEN {
-        return Err(LocalPackError::ArchiveComponentTooLong);
-    }
     if inf_path.contains('\0') {
         return Err(LocalPackError::InvalidInfPath(inf_path.to_string()));
-    }
-    if inf_filename.contains('\0') {
-        return Err(LocalPackError::InvalidInfFilename(inf_filename.to_string()));
     }
     if inf_path.contains('/') {
         // Mixed/forward separators are rejected outright; only `\` is the
@@ -375,9 +414,6 @@ pub fn expected_inf_member(
     }
     if inf_path.contains(':') {
         return Err(LocalPackError::InvalidInfPath(inf_path.to_string()));
-    }
-    if inf_filename.contains(':') {
-        return Err(LocalPackError::InvalidInfFilename(inf_filename.to_string()));
     }
     // Absolute/UNC prefixes: leading separator or drive prefix.
     let bytes = inf_path.as_bytes();
@@ -429,22 +465,7 @@ pub fn expected_inf_member(
             components.push(comp);
         }
     }
-    validate_inf_leaf(inf_filename)?;
-
-    let member = if components.is_empty() {
-        inf_filename.to_string()
-    } else {
-        let mut joined = components.join("/");
-        joined.push('/');
-        joined.push_str(inf_filename);
-        joined
-    };
-    if member.len() > MAX_ARCHIVE_MEMBER_LEN {
-        return Err(LocalPackError::ArchiveMemberTooLong);
-    }
-    Ok(ExpectedArchiveMember {
-        relative_path: member,
-    })
+    Ok(components)
 }
 
 // ---------------------------------------------------------------------------
@@ -491,6 +512,14 @@ pub fn resolve_local_pack(
     // fails closed regardless of pack availability. An absent pack must never
     // turn malformed INF metadata into a plausible `Missing` result.
     let inf = expected_inf_member(&matched.candidate.inf_path, &matched.candidate.inf_filename)?;
+
+    // Validate the expected catalog member (when the candidate names one)
+    // with the same member rules. The catalog is a `.cat` file in the same
+    // directory as the INF; a malformed catalog name fails closed here.
+    let catalog = match matched.candidate.catalog_file.as_deref() {
+        Some(name) => Some(expected_catalog_member(&matched.candidate.inf_path, name)?),
+        None => None,
+    };
 
     // Missing pack is a normal domain state.
     let child_meta = match fs::symlink_metadata(&expected_path) {
@@ -556,8 +585,82 @@ pub fn resolve_local_pack(
     };
 
     Ok(LocalPackAvailability::Present(
-        PackageMaterializationRequest { pack, inf },
+        PackageMaterializationRequest { pack, inf, catalog },
     ))
+}
+
+/// Validate the catalog filename as exactly one bare `.cat` leaf component.
+/// Mirrors the INF-leaf rules except the extension is `.cat` (catalogs are
+/// not INFs; an INF name is never accepted as a catalog name).
+fn validate_catalog_leaf(catalog_file: &str) -> LocalPackResult<()> {
+    if catalog_file.is_empty() {
+        return Err(LocalPackError::InvalidInfFilename(catalog_file.to_string()));
+    }
+    if catalog_file.len() > MAX_ARCHIVE_COMPONENT_LEN {
+        return Err(LocalPackError::ArchiveComponentTooLong);
+    }
+    if catalog_file.contains(['/', '\\', ':', '\0']) {
+        return Err(LocalPackError::InvalidInfFilename(catalog_file.to_string()));
+    }
+    if is_windows_invalid_component(catalog_file) {
+        return Err(LocalPackError::InvalidInfFilename(catalog_file.to_string()));
+    }
+    if catalog_file == "." || catalog_file == ".." {
+        return Err(LocalPackError::InvalidInfFilename(catalog_file.to_string()));
+    }
+    if !catalog_file.to_ascii_lowercase().ends_with(".cat") {
+        return Err(LocalPackError::InvalidInfFilename(catalog_file.to_string()));
+    }
+    Ok(())
+}
+
+/// Build the expected catalog member for a candidate: the `.cat` file named
+/// by the INF's `[Version] CatalogFile=` directive, located in the same
+/// archive directory as the INF.
+///
+/// The catalog name is a bare `.cat` leaf. It is validated with the same
+/// single-leaf rules as an INF leaf (length, forbidden characters, reserved
+/// names, no separators, no traversal). A catalog name that is not a bare
+/// leaf fails closed — no directory component is ever accepted here.
+pub fn expected_catalog_member(
+    inf_path: &str,
+    catalog_file: &str,
+) -> LocalPackResult<ExpectedArchiveMember> {
+    if catalog_file.len() > MAX_ARCHIVE_COMPONENT_LEN {
+        return Err(LocalPackError::ArchiveComponentTooLong);
+    }
+    if catalog_file.contains('\0') {
+        return Err(LocalPackError::InvalidInfFilename(catalog_file.to_string()));
+    }
+    if catalog_file.contains(['/', '\\']) {
+        // CatalogFile must be a bare leaf in the INF's directory; a path
+        // component would be an index-metadata anomaly and is rejected.
+        return Err(LocalPackError::InvalidInfFilename(catalog_file.to_string()));
+    }
+    if catalog_file.contains(':') {
+        return Err(LocalPackError::InvalidInfFilename(catalog_file.to_string()));
+    }
+    validate_catalog_leaf(catalog_file)?;
+
+    // The INF directory must pass the exact same identity gate as
+    // `expected_inf_member`: no traversal, no absolute/UNC, no duplicate
+    // separators, no Windows-invalid components. A catalog member may only be
+    // derived from an already-approved staged INF path — never from an
+    // arbitrary path that merely yields a plausible catalog name.
+    let components = validate_inf_dir_path(inf_path)?;
+
+    // Same archive directory as the INF; empty components mean the root.
+    let member = if components.is_empty() {
+        catalog_file.to_string()
+    } else {
+        format!("{}/{}", components.join("/"), catalog_file)
+    };
+    if member.len() > MAX_ARCHIVE_MEMBER_LEN {
+        return Err(LocalPackError::ArchiveMemberTooLong);
+    }
+    Ok(ExpectedArchiveMember {
+        relative_path: member,
+    })
 }
 
 /// Filesystem-aware file-name equality for the canonical-name containment

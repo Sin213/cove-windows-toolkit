@@ -34,6 +34,17 @@ jobs:
       # harness cannot start in a normal non-interactive runner (error 740).
       # Clippy still compiles every target; executable unit logic belongs in libs.
       - run: cargo test --workspace --lib --locked
+      # The driver-package trust/ownership suite is gated behind the
+      # non-default `test-inject` feature (it must never be on in a shipped
+      # build), so `--workspace` alone never compiles or runs it. Run it
+      # explicitly HERE, on Windows, because that is the only place its
+      # subjects are real: SetupVerifyInfFileW, NtCreateFile share modes,
+      # volume-GUID paths and handle-relative opens.
+      - run: cargo test -p mod-drivers --features test-inject --locked
+      # The compile-fail and ownership doctests are security evidence in their
+      # own right (they prove the token and artifact cannot be cloned or
+      # escaped), and `cargo test` above does not run doctests for the crate.
+      - run: cargo test --doc -p mod-drivers --features test-inject --locked
       - run: pnpm --dir ui audit --audit-level low
       - run: pnpm --dir ui run lint
       - run: pnpm --dir ui run build
@@ -43,3 +54,24 @@ jobs:
       # This step additionally blocks any maintenance warning that is not on the
       # reviewed list in scripts/audit-approved-warnings.txt.
       - run: pwsh -NoProfile -File scripts/check-cargo-audit-warnings.ps1
+
+  # The driver-package verifier must FAIL CLOSED off Windows: there is no
+  # SetupAPI there, so no package can ever be reported trusted and no install
+  # plan can ever become ready. That path is only exercised by actually
+  # building and running it on a non-Windows target — the Windows job above
+  # cannot prove it, and neither can inspection.
+  non-windows-fail-closed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
+        with:
+          toolchain: 1.96.0
+      # Compile every target, including the trust suite, so a Windows-only
+      # construct that never got a cfg gate is caught here rather than by a
+      # downstream consumer.
+      - run: cargo check -p mod-drivers --features test-inject --all-targets --locked
+      # Then run them: the portable path gates, the ownership/lifetime proofs
+      # and the `TrustError::Unavailable` fail-closed behaviour.
+      - run: cargo test -p mod-drivers --features test-inject --locked
+      - run: cargo test --doc -p mod-drivers --features test-inject --locked

@@ -4,6 +4,19 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+# Test-only seam: enables `DriverPackageVerifier::with_check_fn` so the
+# integration suite can model the Windows trust result enum without live
+# certificates. NEVER enabled in production builds; downstream crates cannot
+# substitute an always-trusted check.
+test-inject = []
+
+# The sdio_signature integration suite models the Windows trust result via the
+# test-only injection seam; it can only be built when the feature is on.
+[[test]]
+name = "sdio_signature"
+required-features = ["test-inject"]
+
 [dependencies]
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true
@@ -26,7 +39,35 @@ windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_System_SystemInformation",
     "Wdk_System_SystemServices",
+    # Tab 2a-7: SetupVerifyInfFileW (SetupAPI) for Windows-native driver-package
+    # trust verification. No new crate; these features are the narrow binding
+    # surface for the offline INF->catalog->trust contract the install-plan
+    # gate requires.
+    "Win32_Security_Cryptography",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    # Tab 2a-7 repair: CreateFileW with a non-delete share-mode lock held
+    # across the native trust call (TOCTOU hardening).
+    "Win32_Storage_FileSystem",
+    # Tab 2a-7 operator-repair 3: handle-relative object-bound trust path.
+    # NtCreateFile with OBJECT_ATTRIBUTES.RootDirectory pins creation/opening
+    # to an already-held directory object; Wdk_Storage_FileSystem binds
+    # NtCreateFile and Wdk_Foundation binds OBJECT_ATTRIBUTES. No new crate.
+    "Wdk_Foundation",
+    "Wdk_Storage_FileSystem",
+    "Win32_System_IO",
+    # Tab 2a-7 Codex-review repair 1: the integration suite must be able to
+    # mount the exact attack the byte-fingerprint defends against — a writable
+    # file mapping whose view outlives the handle that created it. Production
+    # code never maps a file; this binds CreateFileMapping/MapViewOfFile so the
+    # test can prove the defence, not so the library can use it.
+    "Win32_System_Memory",
 ] }
+# Tab 2a-7: the `windows_targets::link!` macro is the established pattern for
+# declaring setupapi.dll symbols that `windows-sys 0.59` does not yet bind
+# (here: `SetupVerifyInfFileW`). It is a transitive dep of `windows-sys`
+# already; the direct reference here makes that use explicit and the
+# Cargo.lock entry will be unchanged in version.
+windows-targets = "0.52"
 
 # Test-only: the same archive backend with the encoder enabled so integration
 # tests can build deterministic synthetic .7z fixtures (Tab 2a-6 RED/GREEN).

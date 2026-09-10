@@ -14,8 +14,10 @@ pub mod applicability;
 mod catalog;
 pub mod error;
 pub mod extraction;
+pub mod install_plan;
 pub mod local_pack;
 pub mod matching;
+pub mod signature;
 
 pub use applicability::{
     ApplicabilityError, ApplicabilityReason, AssessedCatalogCandidate, AssessedDeviceMatches,
@@ -38,12 +40,20 @@ pub use extraction::{
     StagedInfArtifact, materialize_inf,
 };
 
+#[cfg(feature = "test-inject")]
+pub use extraction::{test_canonical_leaf_matches, test_pin_child_dir, test_validate_staging_root};
+
+pub use install_plan::{
+    CatalogApplicabilityEvidenceRef, InstallPlan, InstallPlanBuilder, InstallPlanEntry,
+    PlanBlockReason, TargetDeviceRef,
+};
+
 pub use local_pack::{
     ExpectedArchiveMember, LocalPackAvailability, LocalPackError, LocalPackRef,
     MAX_ARCHIVE_COMPONENT_LEN, MAX_ARCHIVE_MEMBER_COMPONENTS, MAX_ARCHIVE_MEMBER_LEN,
-    MAX_LOCAL_PACK_BYTES, MAX_PACKS_PER_BATCH, PackageMaterializationRequest, expected_inf_member,
-    expected_pack_filename, resolve_assessed_pack, resolve_local_pack, resolve_local_packs,
-    validate_pack_size,
+    MAX_LOCAL_PACK_BYTES, MAX_PACKS_PER_BATCH, PackageMaterializationRequest,
+    expected_catalog_member, expected_inf_member, expected_pack_filename, resolve_assessed_pack,
+    resolve_local_pack, resolve_local_packs, validate_pack_size,
 };
 
 pub use matching::{
@@ -52,6 +62,19 @@ pub use matching::{
     MAX_TOTAL_CANDIDATES, MatchError, MatchEvidence, match_device_to_catalogs,
     match_devices_to_catalogs,
 };
+
+pub use signature::{
+    DriverPackageVerifier, MAX_STAGED_INF_BYTES, TrustError, TrustResult, VerifiedDriverPackage,
+    VerifyRejected,
+};
+
+#[cfg(feature = "test-inject")]
+pub use signature::{
+    test_is_reparse_point, test_lock_file, test_pin_dir, test_write_open_succeeds,
+};
+
+#[cfg(all(windows, feature = "test-inject"))]
+pub use signature::{test_identity_of, test_probe_native_raw, test_translate_raw_error};
 
 /// Convenience alias used by callers.
 pub type Result<T> = std::result::Result<T, SdioError>;
