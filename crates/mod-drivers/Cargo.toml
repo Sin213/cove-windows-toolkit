@@ -17,6 +17,12 @@ test-inject = []
 name = "sdio_signature"
 required-features = ["test-inject"]
 
+# Tab 2a-9: the source-manifest suite builds live verified tokens through the
+# same test-only trust seam and drives its own test-only timing/bounds seams.
+[[test]]
+name = "sdio_source_manifest"
+required-features = ["test-inject"]
+
 [dependencies]
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true

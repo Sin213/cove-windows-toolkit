@@ -18,6 +18,7 @@ pub mod install_plan;
 pub mod local_pack;
 pub mod matching;
 pub mod signature;
+pub mod source_manifest;
 
 pub use applicability::{
     ApplicabilityError, ApplicabilityReason, AssessedCatalogCandidate, AssessedDeviceMatches,
