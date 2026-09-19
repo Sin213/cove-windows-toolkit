@@ -23,6 +23,12 @@ required-features = ["test-inject"]
 name = "sdio_source_manifest"
 required-features = ["test-inject"]
 
+# Tab 2a-10: the payload-inventory suite builds live verified tokens through the
+# same test-only trust seam and drives the block-decode counter seam.
+[[test]]
+name = "sdio_payload_inventory"
+required-features = ["test-inject"]
+
 [dependencies]
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true

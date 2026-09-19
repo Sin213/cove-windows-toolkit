@@ -76,6 +76,10 @@ const STAGE_PREFIX: &str = "cove-sdio-stage-";
 /// Decoder thread count: deterministic single-threaded decode.
 const DECODER_THREADS: u32 = 1;
 
+/// NTSTATUS success, shared by every CNG call in this module.
+#[cfg(windows)]
+const STATUS_SUCCESS: i32 = 0;
+
 /// FILE_ATTRIBUTE_REPARSE_POINT: reject target entries carrying it.
 const ATTR_REPARSE_POINT: u32 = 0x400;
 
@@ -169,6 +173,22 @@ pub enum ExtractionError {
     /// fails closed and the staging child is rolled back.
     #[error("staged {leaf} changed between extraction and lease acquisition")]
     StagedBytesChanged { leaf: String },
+    /// Tab 2a-10 payload inventory. `index` is the position of the REQUESTED
+    /// payload in the caller's expected-member list, so the caller can name
+    /// the source reference that failed without the archive layer knowing
+    /// anything about INFs or source manifests.
+    #[error("requested payload {index} is missing from the archive")]
+    PayloadMemberMissing { index: usize },
+    #[error("requested payload {index} is ambiguous ({matches} members match)")]
+    PayloadMemberAmbiguous { index: usize, matches: usize },
+    #[error("requested payload {index} is not a regular streamed file")]
+    PayloadNotRegularFile { index: usize },
+    #[error("requested payload {index} exceeds the per-payload size cap")]
+    PayloadTooLarge { index: usize },
+    #[error("total requested payload bytes exceed the inventory cap")]
+    PayloadTotalBytesExceeded,
+    #[error("payload decode budget exceeded")]
+    PayloadDecodeBudgetExceeded,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -2101,31 +2121,66 @@ pub(crate) fn digest_of_raw_handle(
 #[cfg(windows)]
 fn digest_of_open_file(file: &mut File) -> ExtractionResult<StagedContentDigest> {
     use std::io::Read as _;
-    use windows_sys::Win32::Security::Cryptography::{
-        BCRYPT_SHA256_ALGORITHM, BCryptCloseAlgorithmProvider, BCryptCreateHash, BCryptDestroyHash,
-        BCryptFinishHash, BCryptHashData, BCryptOpenAlgorithmProvider,
-    };
-
-    const STATUS_SUCCESS: i32 = 0;
-    fn crypto_unavailable() -> ExtractionError {
-        ExtractionError::InvalidPackAtExtraction("staged content digest unavailable".into())
-    }
 
     file.seek(SeekFrom::Start(0)).map_err(ExtractionError::Io)?;
 
-    let mut alg: windows_sys::Win32::Security::Cryptography::BCRYPT_ALG_HANDLE =
-        std::ptr::null_mut();
-    // SAFETY: `alg` is a valid out-param; the algorithm id is a static
-    // null-terminated wide string from the SDK bindings.
-    let status = unsafe {
-        BCryptOpenAlgorithmProvider(&mut alg, BCRYPT_SHA256_ALGORITHM, std::ptr::null(), 0)
-    };
-    if status != STATUS_SUCCESS {
-        return Err(crypto_unavailable());
+    let mut hasher = Sha256Stream::new()?;
+    let mut scratch = [0u8; STREAM_BUF_BYTES];
+    let mut len: u64 = 0;
+    loop {
+        let n = file.read(&mut scratch).map_err(ExtractionError::Io)?;
+        if n == 0 {
+            break;
+        }
+        len = checked_add_u64(len, n as u64).ok_or_else(crypto_unavailable)?;
+        hasher.update(&scratch[..n])?;
     }
+    Ok(StagedContentDigest {
+        len,
+        sha256: hasher.finish()?,
+    })
+}
 
-    // From here on every early return must close the provider.
-    let result = (|| -> ExtractionResult<StagedContentDigest> {
+/// The one shape a crypto failure takes in this layer.
+fn crypto_unavailable() -> ExtractionError {
+    ExtractionError::InvalidPackAtExtraction("staged content digest unavailable".into())
+}
+
+/// Incremental platform SHA-256 (CNG).
+///
+/// This is the single cryptographic implementation in the crate: the staged
+/// INF/catalog continuity digests and the Tab 2a-10 payload fingerprints both
+/// stream through it, so there is never a second hash to keep in agreement.
+/// Nothing here is ever fed a whole file: callers push fixed scratch-buffer
+/// chunks, so an attacker-influenced size can never drive an allocation.
+///
+/// SHA-256 is content identity only. It is not a signature, not authenticity,
+/// not trust and not publisher proof. The archive's own CRC32 would not do:
+/// the adversary chooses the replacement bytes, so the digest has to be
+/// collision-resistant.
+#[cfg(windows)]
+pub(crate) struct Sha256Stream {
+    alg: windows_sys::Win32::Security::Cryptography::BCRYPT_ALG_HANDLE,
+    hash: windows_sys::Win32::Security::Cryptography::BCRYPT_HASH_HANDLE,
+}
+
+#[cfg(windows)]
+impl Sha256Stream {
+    pub(crate) fn new() -> ExtractionResult<Self> {
+        use windows_sys::Win32::Security::Cryptography::{
+            BCRYPT_SHA256_ALGORITHM, BCryptCloseAlgorithmProvider, BCryptCreateHash,
+            BCryptOpenAlgorithmProvider,
+        };
+        let mut alg: windows_sys::Win32::Security::Cryptography::BCRYPT_ALG_HANDLE =
+            std::ptr::null_mut();
+        // SAFETY: `alg` is a valid out-param; the algorithm id is a static
+        // null-terminated wide string from the SDK bindings.
+        let status = unsafe {
+            BCryptOpenAlgorithmProvider(&mut alg, BCRYPT_SHA256_ALGORITHM, std::ptr::null(), 0)
+        };
+        if status != STATUS_SUCCESS {
+            return Err(crypto_unavailable());
+        }
         let mut hash: windows_sys::Win32::Security::Cryptography::BCRYPT_HASH_HANDLE =
             std::ptr::null_mut();
         // SAFETY: `alg` is a live provider handle; passing a null hash-object
@@ -2142,54 +2197,73 @@ fn digest_of_open_file(file: &mut File) -> ExtractionResult<StagedContentDigest>
             )
         };
         if status != STATUS_SUCCESS {
+            // SAFETY: `alg` is a live provider handle owned here, not used again.
+            unsafe {
+                let _ = BCryptCloseAlgorithmProvider(alg, 0);
+            }
             return Err(crypto_unavailable());
         }
-
-        let finish = |hash| -> ExtractionResult<[u8; 32]> {
-            let mut out = [0u8; 32];
-            // SAFETY: `hash` is a live hash handle; `out` is a 32-byte buffer
-            // matching SHA-256's digest length.
-            let status = unsafe { BCryptFinishHash(hash, out.as_mut_ptr(), out.len() as u32, 0) };
-            if status != STATUS_SUCCESS {
-                return Err(crypto_unavailable());
-            }
-            Ok(out)
-        };
-
-        let mut scratch = [0u8; STREAM_BUF_BYTES];
-        let mut len: u64 = 0;
-        let digest = loop {
-            let n = match file.read(&mut scratch) {
-                Ok(0) => break finish(hash),
-                Ok(n) => n,
-                Err(e) => break Err(ExtractionError::Io(e)),
-            };
-            len = match checked_add_u64(len, n as u64) {
-                Some(v) => v,
-                None => break Err(crypto_unavailable()),
-            };
-            // SAFETY: `hash` is a live hash handle; `scratch[..n]` is a valid
-            // initialized slice of exactly `n` bytes.
-            let status = unsafe { BCryptHashData(hash, scratch.as_ptr(), n as u32, 0) };
-            if status != STATUS_SUCCESS {
-                break Err(crypto_unavailable());
-            }
-        };
-        // SAFETY: `hash` is a live hash handle owned here and not used again.
-        unsafe {
-            let _ = BCryptDestroyHash(hash);
-        }
-        Ok(StagedContentDigest {
-            len,
-            sha256: digest?,
-        })
-    })();
-
-    // SAFETY: `alg` is a live provider handle owned here and not used again.
-    unsafe {
-        let _ = BCryptCloseAlgorithmProvider(alg, 0);
+        Ok(Self { alg, hash })
     }
-    result
+
+    pub(crate) fn update(&mut self, data: &[u8]) -> ExtractionResult<()> {
+        use windows_sys::Win32::Security::Cryptography::BCryptHashData;
+        if data.is_empty() {
+            return Ok(());
+        }
+        let len = u32::try_from(data.len()).map_err(|_| crypto_unavailable())?;
+        // SAFETY: `self.hash` is a live hash handle; `data` is a valid
+        // initialized slice of exactly `len` bytes.
+        let status = unsafe { BCryptHashData(self.hash, data.as_ptr(), len, 0) };
+        if status != STATUS_SUCCESS {
+            return Err(crypto_unavailable());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn finish(self) -> ExtractionResult<[u8; 32]> {
+        use windows_sys::Win32::Security::Cryptography::BCryptFinishHash;
+        let mut out = [0u8; 32];
+        // SAFETY: `self.hash` is a live hash handle; `out` is a 32-byte buffer
+        // matching SHA-256's digest length. `Drop` still releases both handles.
+        let status = unsafe { BCryptFinishHash(self.hash, out.as_mut_ptr(), out.len() as u32, 0) };
+        if status != STATUS_SUCCESS {
+            return Err(crypto_unavailable());
+        }
+        Ok(out)
+    }
+}
+
+#[cfg(windows)]
+impl Drop for Sha256Stream {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Security::Cryptography::{
+            BCryptCloseAlgorithmProvider, BCryptDestroyHash,
+        };
+        // SAFETY: both handles are live, owned here, and not used again.
+        unsafe {
+            let _ = BCryptDestroyHash(self.hash);
+            let _ = BCryptCloseAlgorithmProvider(self.alg, 0);
+        }
+    }
+}
+
+/// No platform cryptographic provider off Windows: fingerprinting fails closed
+/// rather than falling back to a second, weaker implementation.
+#[cfg(not(windows))]
+pub(crate) struct Sha256Stream;
+
+#[cfg(not(windows))]
+impl Sha256Stream {
+    pub(crate) fn new() -> ExtractionResult<Self> {
+        Err(crypto_unavailable())
+    }
+    pub(crate) fn update(&mut self, _data: &[u8]) -> ExtractionResult<()> {
+        Err(crypto_unavailable())
+    }
+    pub(crate) fn finish(self) -> ExtractionResult<[u8; 32]> {
+        Err(crypto_unavailable())
+    }
 }
 
 /// Test-only seam: a callback invoked at the EXACT point between closing a
@@ -3660,6 +3734,38 @@ pub fn materialize_inf(
     // Revalidate the 2a-5 pack snapshot (TOCTOU boundary) before archive access.
     let mut file = revalidate_pack(request.pack())?;
 
+    // Parse bounded metadata, then validate paths/bounds/duplicates and the
+    // unique target (ASCII case-insensitive Windows semantics; exact match is
+    // a subset). No staging writes happen before this passes.
+    let archive = open_bounded_archive(&mut file)?;
+    let inspected = inspect_archive(&archive)?;
+    let target_index = resolve_target(request.inf(), &inspected)?;
+    let target = &inspected[target_index];
+    validate_target_contract(target)?;
+
+    let block_index = target
+        .block_index
+        .ok_or(ExtractionError::TargetNotRegularFile)?;
+
+    materialize_inf_staged(
+        request,
+        canonical_root,
+        file,
+        archive,
+        inspected,
+        target_index,
+        block_index,
+    )
+}
+
+/// Open one 7z archive's metadata under Cove's fixed memory bounds.
+///
+/// This is the single hostile-input preflight sequence every archive consumer
+/// uses: the fixed 32-byte start header is checked before the backend parser
+/// can allocate an attacker-declared next-header buffer, an ENCODED next
+/// header is bounded for decoded size and aggregate coder workspace before the
+/// backend decodes it, and only then is the metadata parsed.
+fn open_bounded_archive(file: &mut File) -> ExtractionResult<Archive> {
     // Preflight the fixed 32-byte 7z start header BEFORE the backend parser:
     // an attacker-controlled next-header size must never cause the backend to
     // allocate beyond Cove's fixed header budget.
@@ -3698,19 +3804,23 @@ pub fn materialize_inf(
         }
     }
 
-    // Parse bounded metadata, then validate paths/bounds/duplicates and the
-    // unique target (ASCII case-insensitive Windows semantics; exact match is
-    // a subset). No staging writes happen before this passes.
-    let archive = Archive::read(&mut file, &Password::empty())
-        .map_err(|e| classify_backend_parse_error(&e))?;
-    let inspected = inspect_archive(&archive)?;
-    let target_index = resolve_target(request.inf(), &inspected)?;
-    let target = &inspected[target_index];
-    validate_target_contract(target)?;
+    Archive::read(file, &Password::empty()).map_err(|e| classify_backend_parse_error(&e))
+}
 
-    let block_index = target
-        .block_index
-        .ok_or(ExtractionError::TargetNotRegularFile)?;
+/// Staging half of [`materialize_inf`]: everything from the validated target
+/// onward. Split out so the bounded metadata open above is shared verbatim
+/// with the read-only payload-inventory path, which stages nothing.
+#[allow(clippy::too_many_arguments)]
+fn materialize_inf_staged(
+    request: &PackageMaterializationRequest,
+    canonical_root: PathBuf,
+    mut file: File,
+    archive: Archive,
+    inspected: Vec<InspectedEntry>,
+    target_index: usize,
+    block_index: usize,
+) -> ExtractionResult<StagedInfArtifact> {
+    let target = &inspected[target_index];
     let block = archive
         .blocks
         .get(block_index)
@@ -4198,38 +4308,6 @@ fn extract_target_stream(
     // returned; after the call the stashed error wins.
     let domain_err: std::cell::Cell<Option<ExtractionError>> = std::cell::Cell::new(None);
 
-    // Shared streaming loop: reads `reader` through the fixed scratch buffer,
-    // counting into `counter` (checked, capped at `cap`). Returns the number
-    // of bytes read. Domain overruns abort via `domain_err` + marker.
-    fn drain(
-        reader: &mut dyn Read,
-        scratch: &mut [u8],
-        counter: &mut u64,
-        cap: u64,
-        domain_err: &std::cell::Cell<Option<ExtractionError>>,
-    ) -> Result<u64, sevenz_rust2::Error> {
-        let mut total = 0u64;
-        loop {
-            let n = reader.read(scratch).map_err(sevenz_rust2::Error::from)?;
-            if n == 0 {
-                break;
-            }
-            match counter.checked_add(n as u64) {
-                Some(v) => *counter = v,
-                None => {
-                    domain_err.set(Some(ExtractionError::TargetDecodeBudgetExceeded));
-                    return Err(marker_err());
-                }
-            }
-            if *counter > cap {
-                domain_err.set(Some(ExtractionError::TargetDecodeBudgetExceeded));
-                return Err(marker_err());
-            }
-            total += n as u64;
-        }
-        Ok(total)
-    }
-
     let mut each = |entry: &sevenz_rust2::ArchiveEntry, reader: &mut dyn Read| {
         // Only the target entry is ever written; every other entry in this
         // block is a solid prerequisite and is drained+discarded.
@@ -4266,6 +4344,7 @@ fn extract_target_stream(
             &mut scratch,
             &mut runtime_bytes,
             decode_budget,
+            ExtractionError::TargetDecodeBudgetExceeded,
             &domain_err,
         )?;
         Ok(true)
@@ -4293,6 +4372,397 @@ fn extract_target_stream(
         return Err(ExtractionError::TargetDecodeBudgetExceeded);
     }
     Ok(target_written)
+}
+
+/// Shared streaming loop: reads `reader` through the fixed scratch buffer,
+/// counting into `counter` (checked, capped at `cap`). Returns the number of
+/// bytes read. A domain overrun aborts the traversal via `domain_err` + the
+/// marker error, carrying `overrun` as the real reason.
+fn drain(
+    reader: &mut dyn Read,
+    scratch: &mut [u8],
+    counter: &mut u64,
+    cap: u64,
+    overrun: ExtractionError,
+    domain_err: &std::cell::Cell<Option<ExtractionError>>,
+) -> Result<u64, sevenz_rust2::Error> {
+    let mut total = 0u64;
+    loop {
+        let n = reader.read(scratch).map_err(sevenz_rust2::Error::from)?;
+        if n == 0 {
+            break;
+        }
+        match counter.checked_add(n as u64) {
+            Some(v) if v <= cap => *counter = v,
+            _ => {
+                domain_err.set(Some(overrun));
+                return Err(marker_err());
+            }
+        }
+        total += n as u64;
+    }
+    Ok(total)
+}
+
+// ---------------------------------------------------------------------------
+// Tab 2a-10 - bounded read-only multi-member content fingerprinting
+// ---------------------------------------------------------------------------
+
+/// Caller-owned payload bounds. The archive layer enforces them but does not
+/// define them: the payload domain owns the numbers.
+pub(crate) struct PayloadLimits {
+    pub(crate) max_file_bytes: u64,
+    pub(crate) max_total_bytes: u64,
+    pub(crate) max_total_decode_bytes: u64,
+}
+
+/// One requested member's decoded identity: the archive's own spelling, the
+/// exact decoded length and the SHA-256 of the bytes decoded NOW. This is
+/// content identity, never authenticity, trust or a signature.
+pub(crate) struct MemberFingerprint {
+    pub(crate) actual_member: String,
+    pub(crate) size_bytes: u64,
+    pub(crate) sha256: [u8; 32],
+}
+
+/// Per-payload size cap. Named so the exact production boundary is testable
+/// without a multi-hundred-megabyte fixture.
+pub(crate) fn payload_size_within_cap(index: usize, size: u64, cap: u64) -> ExtractionResult<()> {
+    if size > cap {
+        return Err(ExtractionError::PayloadTooLarge { index });
+    }
+    Ok(())
+}
+
+/// Checked aggregate of the requested payloads' own declared sizes.
+pub(crate) fn accumulate_payload_bytes(running: u64, add: u64, cap: u64) -> ExtractionResult<u64> {
+    match running.checked_add(add) {
+        Some(v) if v <= cap => Ok(v),
+        _ => Err(ExtractionError::PayloadTotalBytesExceeded),
+    }
+}
+
+/// Checked aggregate DECODE cost, including solid prerequisites.
+pub(crate) fn accumulate_payload_decode_bytes(
+    running: u64,
+    add: u64,
+    cap: u64,
+) -> ExtractionResult<u64> {
+    match running.checked_add(add) {
+        Some(v) if v <= cap => Ok(v),
+        _ => Err(ExtractionError::PayloadDecodeBudgetExceeded),
+    }
+}
+
+/// The runtime decode counter: charged per streamed chunk and independent of
+/// any declared metadata, so a lying archive cannot spend past `cap`.
+pub(crate) fn charge_runtime_payload_bytes(
+    running: u64,
+    add: u64,
+    cap: u64,
+) -> ExtractionResult<u64> {
+    match running.checked_add(add) {
+        Some(v) if v <= cap => Ok(v),
+        _ => Err(ExtractionError::PayloadDecodeBudgetExceeded),
+    }
+}
+
+/// Test-only seam: how many block decoders the fingerprint path constructed.
+/// Proves that targets sharing a solid block are grouped into ONE traversal
+/// and that unrelated blocks are never decoded.
+#[cfg(feature = "test-inject")]
+static BLOCK_DECODES: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(feature = "test-inject")]
+pub fn test_block_decode_count() -> usize {
+    BLOCK_DECODES.load(Ordering::SeqCst) as usize
+}
+
+#[cfg(feature = "test-inject")]
+pub fn test_reset_block_decode_count() {
+    BLOCK_DECODES.store(0, Ordering::SeqCst);
+}
+
+fn note_block_decode() {
+    #[cfg(feature = "test-inject")]
+    BLOCK_DECODES.fetch_add(1, Ordering::SeqCst);
+}
+
+/// Fingerprint every `expected` member of one already-revalidated pack handle,
+/// streaming under Cove's inherited archive bounds plus the caller's payload
+/// bounds. Nothing is written anywhere: the handle is read-only input and the
+/// decoded bytes exist only inside a fixed scratch buffer.
+///
+/// All-or-nothing: a missing, ambiguous, oversized, non-regular, duplicated or
+/// undecodable member fails the WHOLE call, so a caller can never mistake a
+/// partial answer for a complete one. Returns the fingerprints in `expected`
+/// order, the DECLARED decode cost the bounds were checked against, and the
+/// number of bytes ACTUALLY decoded - both of which include the solid
+/// prerequisites that had to be decoded to reach a requested payload.
+pub(crate) fn fingerprint_archive_members(
+    file: &mut File,
+    expected: &[String],
+    limits: &PayloadLimits,
+) -> ExtractionResult<(Vec<MemberFingerprint>, u64, u64)> {
+    let archive = open_bounded_archive(file)?;
+    let inspected = inspect_archive(&archive)?;
+
+    // Resolve every requested member uniquely, then check its payload
+    // contract and charge its declared size. No decoding has happened yet.
+    // Grown, never pre-sized: this layer reserves capacity only from fixed
+    // constants, so no caller- or metadata-supplied count drives an
+    // allocation here (existing structural guard `r37_r38`).
+    let mut resolved: Vec<usize> = Vec::new();
+    let mut total_bytes: u64 = 0;
+    for (i, want) in expected.iter().enumerate() {
+        if !want.is_ascii() {
+            return Err(ExtractionError::UnsupportedNonAsciiTarget);
+        }
+        let mut matches = 0usize;
+        let mut matched = usize::MAX;
+        for (j, e) in inspected.iter().enumerate() {
+            if ascii_case_eq(&e.normalized, want) {
+                matches += 1;
+                matched = j;
+            }
+        }
+        match matches {
+            0 => return Err(ExtractionError::PayloadMemberMissing { index: i }),
+            1 => {}
+            n => {
+                return Err(ExtractionError::PayloadMemberAmbiguous {
+                    index: i,
+                    matches: n,
+                });
+            }
+        }
+        // Two semantically distinct requests must never be coalesced onto one
+        // archive entry: that would silently drop a referenced payload.
+        if resolved.contains(&matched) {
+            return Err(ExtractionError::DuplicateArchiveMember);
+        }
+        let t = &inspected[matched];
+        validate_payload_contract(i, t, limits.max_file_bytes)?;
+        total_bytes = accumulate_payload_bytes(total_bytes, t.size, limits.max_total_bytes)?;
+        resolved.push(matched);
+    }
+
+    // Group the targets by compression block: a solid block holding several
+    // requested payloads is decoded ONCE, never once per payload.
+    let mut by_block: Vec<(usize, Vec<usize>)> = Vec::new();
+    for (i, entry_index) in resolved.iter().copied().enumerate() {
+        let b = inspected[entry_index]
+            .block_index
+            .ok_or(ExtractionError::PayloadNotRegularFile { index: i })?;
+        match by_block.iter_mut().find(|(bb, _)| *bb == b) {
+            Some((_, v)) => v.push(i),
+            None => by_block.push((b, vec![i])),
+        }
+    }
+    by_block.sort_by_key(|(b, _)| *b);
+
+    // Declared decode cost, per block and in aggregate. The cost runs from the
+    // block's FIRST entry through the LAST requested target in it, so solid
+    // prerequisite bytes are charged, not just the payloads themselves.
+    let mut declared_decode: u64 = 0;
+    for (b, targets) in &by_block {
+        let block = archive
+            .blocks
+            .get(*b)
+            .ok_or(ExtractionError::InvalidPackAtExtraction(
+                "payload block index out of range".into(),
+            ))?;
+        validate_target_block_coder_memory(block)?;
+        let block_first = archive
+            .stream_map
+            .block_first_file_index
+            .get(*b)
+            .copied()
+            .ok_or(ExtractionError::InvalidPackAtExtraction(
+                "payload block first-file index out of range".into(),
+            ))?;
+        let last = targets
+            .iter()
+            .map(|i| resolved[*i])
+            .max()
+            .ok_or(ExtractionError::PayloadDecodeBudgetExceeded)?;
+        let cost = decode_bytes_to_target(&inspected, block_first, last)
+            .map_err(|_| ExtractionError::PayloadDecodeBudgetExceeded)?;
+        declared_decode =
+            accumulate_payload_decode_bytes(declared_decode, cost, limits.max_total_decode_bytes)?;
+        if let Some(packed) = target_block_packed_bytes(&archive, *b) {
+            let ratio = target_block_expansion_ratio(block.get_unpack_size(), packed)?;
+            if ratio > MAX_TARGET_BLOCK_EXPANSION_RATIO {
+                return Err(ExtractionError::TargetExpansionRatioExceeded);
+            }
+        }
+    }
+
+    let mut out: Vec<Option<MemberFingerprint>> = (0..expected.len()).map(|_| None).collect();
+    let mut runtime_bytes: u64 = 0;
+    for (b, targets) in &by_block {
+        fingerprint_block_targets(
+            file,
+            &archive,
+            *b,
+            &inspected,
+            &resolved,
+            targets,
+            limits.max_total_decode_bytes,
+            &mut runtime_bytes,
+            &mut out,
+        )?;
+    }
+
+    // All or nothing: every requested payload must have been reached.
+    let mut fingerprints = Vec::new();
+    for (i, slot) in out.into_iter().enumerate() {
+        fingerprints.push(slot.ok_or(ExtractionError::PayloadMemberMissing { index: i })?);
+    }
+    Ok((fingerprints, declared_decode, runtime_bytes))
+}
+
+/// Payload contract: a regular streamed file with a non-zero length inside the
+/// per-payload cap and no reparse-point attribute. Deliberately separate from
+/// [`validate_target_contract`], whose size cap is the INF's, not a payload's.
+fn validate_payload_contract(
+    index: usize,
+    target: &InspectedEntry,
+    max_file_bytes: u64,
+) -> ExtractionResult<()> {
+    if target.is_directory || target.is_anti_item || !target.has_stream || target.size == 0 {
+        return Err(ExtractionError::PayloadNotRegularFile { index });
+    }
+    if target.has_windows_attributes && (target.windows_attributes & ATTR_REPARSE_POINT) != 0 {
+        return Err(ExtractionError::PayloadNotRegularFile { index });
+    }
+    payload_size_within_cap(index, target.size, max_file_bytes)
+}
+
+/// Decode ONE block once, hashing every requested target in it and discarding
+/// everything else, then stop at the last requested target in that block.
+#[allow(clippy::too_many_arguments)]
+fn fingerprint_block_targets(
+    file: &mut File,
+    archive: &Archive,
+    block_index: usize,
+    inspected: &[InspectedEntry],
+    resolved: &[usize],
+    targets: &[usize],
+    cap: u64,
+    runtime_bytes: &mut u64,
+    out: &mut [Option<MemberFingerprint>],
+) -> ExtractionResult<()> {
+    // The decoder seeks from a known origin, exactly as the INF path does.
+    file.seek(SeekFrom::Start(0)).map_err(ExtractionError::Io)?;
+
+    // Name -> requested index, covering both the archive's own spelling and
+    // the normalized form the backend may hand back.
+    let mut lookup: HashMap<&str, usize> = HashMap::new();
+    for i in targets {
+        let e = &inspected[resolved[*i]];
+        lookup.insert(e.raw.as_str(), *i);
+        lookup.insert(e.normalized.as_str(), *i);
+    }
+
+    let empty_password = Password::empty();
+    note_block_decode();
+    let decoder = BlockDecoder::new(DECODER_THREADS, block_index, archive, &empty_password, file);
+
+    let mut scratch = vec![0u8; STREAM_BUF_BYTES];
+    let mut remaining = targets.len();
+    let domain_err: std::cell::Cell<Option<ExtractionError>> = std::cell::Cell::new(None);
+
+    let mut each = |entry: &sevenz_rust2::ArchiveEntry, reader: &mut dyn Read| {
+        let Some(i) = lookup.get(entry.name()).copied() else {
+            // Solid prerequisite or an unrelated member: drain and discard.
+            drain(
+                reader,
+                &mut scratch,
+                runtime_bytes,
+                cap,
+                ExtractionError::PayloadDecodeBudgetExceeded,
+                &domain_err,
+            )?;
+            return Ok(true);
+        };
+        let declared = inspected[resolved[i]].size;
+        let mut hasher = match Sha256Stream::new() {
+            Ok(h) => h,
+            Err(e) => {
+                domain_err.set(Some(e));
+                return Err(marker_err());
+            }
+        };
+        // The body is NEVER materialized: it streams through the fixed
+        // scratch buffer into the hash and is then discarded.
+        let mut written: u64 = 0;
+        loop {
+            let n = reader
+                .read(&mut scratch)
+                .map_err(sevenz_rust2::Error::from)?;
+            if n == 0 {
+                break;
+            }
+            match charge_runtime_payload_bytes(*runtime_bytes, n as u64, cap) {
+                Ok(v) => *runtime_bytes = v,
+                Err(e) => {
+                    domain_err.set(Some(e));
+                    return Err(marker_err());
+                }
+            }
+            if let Err(e) = hasher.update(&scratch[..n]) {
+                domain_err.set(Some(e));
+                return Err(marker_err());
+            }
+            written += n as u64;
+            if written > declared {
+                domain_err.set(Some(ExtractionError::PayloadTooLarge { index: i }));
+                return Err(marker_err());
+            }
+        }
+        if written != declared {
+            domain_err.set(Some(ExtractionError::DecodedSizeMismatch {
+                expected: declared,
+                written,
+            }));
+            return Err(marker_err());
+        }
+        match hasher.finish() {
+            Ok(sha256) => {
+                out[i] = Some(MemberFingerprint {
+                    // The archive's OWN spelling, which is what the public
+                    // contract promises: it may differ from the normalized
+                    // form in separators as well as case, and it has already
+                    // passed the member-path validation above. The normalized
+                    // form stays the matching and safety key.
+                    actual_member: inspected[resolved[i]].raw.clone(),
+                    size_bytes: written,
+                    sha256,
+                });
+            }
+            Err(e) => {
+                domain_err.set(Some(e));
+                return Err(marker_err());
+            }
+        }
+        remaining -= 1;
+        // Stop the moment the LAST requested target in this block is done;
+        // nothing after it is decoded.
+        Ok(remaining > 0)
+    };
+
+    let result = decoder.for_each_entries(&mut each);
+    if let Some(domain) = domain_err.into_inner() {
+        return Err(domain);
+    }
+    if let Err(e) = result {
+        return Err(classify_backend_decode_error(&e));
+    }
+    if remaining != 0 {
+        return Err(ExtractionError::PayloadMemberMissing { index: targets[0] });
+    }
+    Ok(())
 }
 
 /// Marker backend error used to abort `for_each_entries` when a Cove domain

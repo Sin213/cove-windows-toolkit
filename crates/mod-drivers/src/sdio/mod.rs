@@ -17,6 +17,7 @@ pub mod extraction;
 pub mod install_plan;
 pub mod local_pack;
 pub mod matching;
+pub mod payload_inventory;
 pub mod signature;
 pub mod source_manifest;
 
@@ -62,6 +63,13 @@ pub use matching::{
     MAX_CATALOGS_PER_MATCH, MAX_DEVICES_PER_MATCH, MAX_EVIDENCE_PER_CANDIDATE, MAX_IDS_PER_DEVICE,
     MAX_TOTAL_CANDIDATES, MatchError, MatchEvidence, match_device_to_catalogs,
     match_devices_to_catalogs,
+};
+
+pub use payload_inventory::{
+    MAX_PAYLOAD_FILE_BYTES, MAX_PAYLOAD_FILES, MAX_PAYLOAD_RETAINED_PATH_BYTES,
+    MAX_PAYLOAD_TOTAL_BYTES, MAX_PAYLOAD_TOTAL_DECODE_BYTES, PayloadFingerprint,
+    PayloadInventoryEntry, PayloadInventoryError, ResolvedPayloadInventory,
+    inspect_payload_inventory,
 };
 
 pub use signature::{
