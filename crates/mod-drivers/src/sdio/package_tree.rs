@@ -10,21 +10,15 @@
 //!
 //! It knows nothing about INFs, catalogs, payloads, archives, verified trust
 //! tokens or installation, and it exposes nothing to a caller of the crate: the
-//! substrate is crate-private and only a test-only seam is reachable. The
-//! population of a tree with driver bytes is a later slice's job.
+//! substrate is crate-private and only a test-only seam is reachable. Files are
+//! populated through a streaming primitive (create, write chunks, seal); the
+//! only consumer is the package-materialization module.
 //!
 //! # Windows only
 //!
 //! Ownership needs Windows object handles. Off Windows the builder is
 //! [`PackageTreeError::PlatformUnsupported`]; there is no weaker path-only
 //! fallback. The pure plan is portable.
-//!
-//! # Transitional allowance
-//!
-//! The substrate has no in-crate consumer until the population slice lands, so
-//! without the test seam it would be dead code. That single lint is allowed for
-//! this module in non-test builds and must be removed when the consumer arrives.
-#![cfg_attr(not(feature = "test-inject"), allow(dead_code))]
 
 use std::path::Path;
 
@@ -34,6 +28,10 @@ use crate::sdio::payload_inventory::MAX_PAYLOAD_FILES;
 mod plan;
 #[cfg(windows)]
 mod tree;
+
+pub(crate) use plan::{PlannedFile, plan_package};
+#[cfg(windows)]
+pub(crate) use tree::OwnedTree;
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -99,36 +97,39 @@ pub enum PackageTreeError {
 /// file to exist and the whole tree to re-attest.
 ///
 /// All or nothing: any failure rolls back exactly the objects already recorded
-/// as owned, and a rollback that cannot finish is reported as
-/// [`PackageTreeError::Rollback`], never swallowed. The caller's staging root
-/// and everything else in it are never touched.
+/// as owned. The failure is returned as the CALLER's own error type `E` (so a
+/// consumer's domain reason is never flattened into a generic tree error),
+/// together with the residue text when the rollback could not finish, which is
+/// never swallowed. The caller's staging root and everything else in it are
+/// never touched.
 #[cfg(windows)]
-fn build_owned_tree(
+pub(crate) fn build_owned_tree<E: From<PackageTreeError>>(
     plan: &plan::PackagePlan,
     staging_root: &Path,
-    populate: &mut dyn FnMut(&mut tree::OwnedTree) -> Result<(), PackageTreeError>,
-) -> Result<tree::OwnedTree, PackageTreeError> {
-    let mut tree = tree::OwnedTree::open(staging_root, plan.files.len())?;
+    populate: &mut dyn FnMut(&mut tree::OwnedTree) -> Result<(), E>,
+) -> Result<tree::OwnedTree, (E, Option<String>)> {
+    let mut tree =
+        tree::OwnedTree::open(staging_root, plan.files.len()).map_err(|e| (E::from(e), None))?;
     let built = tree
         .create_root()
         .and_then(|()| tree.create_dirs(&plan.dirs))
+        .map_err(E::from)
         .and_then(|()| populate(&mut tree))
-        .and_then(|()| tree.require_all_files(&plan.files))
-        .and_then(|()| tree.reattest());
+        .and_then(|()| {
+            tree.require_all_files(&plan.files)
+                .and_then(|()| tree.reattest())
+                .map_err(E::from)
+        });
     match built {
         Ok(()) => Ok(tree),
-        Err(cause) => match tree.destroy() {
-            Ok(()) => Err(cause),
-            Err(residue) => Err(PackageTreeError::Rollback {
-                cause: Box::new(cause),
-                residue,
-            }),
-        },
+        Err(cause) => Err((cause, tree.destroy().err())),
     }
 }
 
 /// Off Windows there is no owned tree: a refusal, never a path-only success.
+/// (The materialization consumer refuses before it could call this.)
 #[cfg(not(windows))]
+#[allow(dead_code)]
 fn build_owned_tree(
     _plan: &plan::PackagePlan,
     _staging_root: &Path,
@@ -244,6 +245,71 @@ pub mod seam {
         }
     }
 
+    /// How many times a live handle's final path was queried (process-wide).
+    #[cfg(windows)]
+    pub fn test_handle_path_queries() -> u64 {
+        super::tree::path_queries()
+    }
+
+    /// Fold the builder's `(cause, residue)` failure back into the tree error.
+    #[cfg(windows)]
+    fn folded(
+        built: Result<super::tree::OwnedTree, (PackageTreeError, Option<String>)>,
+    ) -> Result<OwnedPackageTree, PackageTreeError> {
+        built
+            .map(OwnedPackageTree)
+            .map_err(|(cause, residue)| match residue {
+                None => cause,
+                Some(residue) => PackageTreeError::Rollback {
+                    cause: Box::new(cause),
+                    residue,
+                },
+            })
+    }
+
+    /// Like [`test_build_tree`], but every planned file is written as the
+    /// producer's `pieces(slot)` chunks and then sealed against
+    /// `claim(slot, written_len, written_sha256)`, which may lie. Proves the
+    /// seal holds the destination to the claim rather than trusting it.
+    #[cfg(windows)]
+    pub fn test_build_tree_streamed(
+        root_leaves: &[&str],
+        paths: &[&str],
+        staging_root: &Path,
+        pieces: &dyn Fn(usize) -> Vec<Vec<u8>>,
+        claim: &dyn Fn(usize, u64, [u8; 32]) -> (u64, [u8; 32]),
+    ) -> Result<OwnedPackageTree, PackageTreeError> {
+        use crate::sdio::extraction::Sha256Stream;
+        let plan = plan::plan_package(root_leaves, paths)?;
+        folded(super::build_owned_tree(&plan, staging_root, &mut |tree| {
+            for (slot, pf) in plan.files.iter().enumerate() {
+                tree.create_file(slot, pf)?;
+                let mut hasher = Sha256Stream::new().map_err(PackageTreeError::Filesystem)?;
+                let mut len = 0u64;
+                for piece in pieces(slot) {
+                    tree.write_file_chunk(slot, &piece)?;
+                    hasher
+                        .update(&piece)
+                        .map_err(PackageTreeError::Filesystem)?;
+                    len += piece.len() as u64;
+                }
+                let sha = hasher.finish().map_err(PackageTreeError::Filesystem)?;
+                let claimed = claim(slot, len, sha);
+                let sealed = tree.seal_file(slot, claimed.0, claimed.1);
+                // The seal itself must refuse a claim its own destination
+                // contradicts; the builder's later re-attestation is a second
+                // line, not a substitute.
+                if claimed != (len, sha) && sealed.is_ok() {
+                    return Err(PackageTreeError::Io(std::io::Error::other(
+                        "seal accepted a contradicted claim",
+                    )));
+                }
+                sealed?;
+            }
+            Ok(())
+        }))
+    }
+
     /// Plan, then build a tree whose planned files (root leaves, then paths, by
     /// index) are filled with `contents(index)`. `fail_after_files = Some(n)`
     /// injects a failure once `n` files exist, to exercise rollback.
@@ -257,7 +323,7 @@ pub mod seam {
     ) -> Result<OwnedPackageTree, PackageTreeError> {
         let plan = plan::plan_package(root_leaves, paths)?;
         let mut made = 0usize;
-        super::build_owned_tree(&plan, staging_root, &mut |tree| {
+        folded(super::build_owned_tree(&plan, staging_root, &mut |tree| {
             for (slot, pf) in plan.files.iter().enumerate() {
                 if fail_after_files == Some(made) {
                     return Err(PackageTreeError::Io(std::io::Error::other(
@@ -269,7 +335,6 @@ pub mod seam {
                 made += 1;
             }
             Ok(())
-        })
-        .map(OwnedPackageTree)
+        }))
     }
 }

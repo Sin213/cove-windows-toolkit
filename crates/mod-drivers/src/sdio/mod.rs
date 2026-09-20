@@ -17,6 +17,7 @@ pub mod extraction;
 pub mod install_plan;
 pub mod local_pack;
 pub mod matching;
+pub mod package_materialization;
 mod package_tree;
 pub mod payload_inventory;
 pub mod signature;
@@ -70,6 +71,11 @@ pub use matching::{
 /// test-only seam is reachable from the integration suite.
 #[cfg(feature = "test-inject")]
 pub use package_tree::seam as package_tree_seam;
+
+pub use package_materialization::{
+    MaterializedDriverSource, MaterializedPackageFile, MaterializedPackageFileKind,
+    PackageMaterializationError, materialize_driver_source,
+};
 
 pub use payload_inventory::{
     MAX_PAYLOAD_FILE_BYTES, MAX_PAYLOAD_FILES, MAX_PAYLOAD_RETAINED_PATH_BYTES,

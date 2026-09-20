@@ -360,7 +360,11 @@ fn inspect_with<'v>(
 /// The destination filename, the staged INF's filesystem path, the
 /// `SourceDisks` disk id and the pack filename are all irrelevant here and
 /// must never contribute to the archive location.
-fn expected_member(index: usize, inf_member: &str, source_path: &str) -> PayloadResult<String> {
+pub(crate) fn expected_member(
+    index: usize,
+    inf_member: &str,
+    source_path: &str,
+) -> PayloadResult<String> {
     validate_source_path(index, source_path)?;
     let prefix = match inf_member.rfind('/') {
         Some(i) => &inf_member[..=i],
@@ -447,7 +451,7 @@ fn is_reserved_component(comp: &str) -> bool {
 /// TOCTOU race against the open that follows. The binding checks are the ones
 /// made THROUGH the retained handle in [`open_pack_read_locked`], which is what
 /// actually decides which object gets decoded.
-fn reopen_pack(expected: &Path) -> PayloadResult<File> {
+pub(crate) fn reopen_pack(expected: &Path) -> PayloadResult<File> {
     let changed = || PayloadInventoryError::PackChangedSinceVerification;
     let meta = fs::symlink_metadata(expected).map_err(|_| changed())?;
     if meta.file_type().is_symlink() || !meta.is_file() {

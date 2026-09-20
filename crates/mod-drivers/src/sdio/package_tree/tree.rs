@@ -28,8 +28,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::PackageTreeError as Error;
 use super::plan::{PlannedDir, PlannedFile};
+#[cfg(feature = "test-inject")]
+use crate::sdio::extraction::Sha256Stream;
 use crate::sdio::extraction::{
-    ChildDirGuard, ExtractionError, FileObjectId, Sha256Stream, create_owned_dir_relative,
+    ChildDirGuard, ExtractionError, FileObjectId, create_owned_dir_relative,
     delete_owned_leaf_checked, delete_staging_child_checked, digest_of_raw_handle,
     object_id_of_raw_handle, open_output_create_new, validate_staging_root,
 };
@@ -38,6 +40,7 @@ const PACKAGE_ROOT_PREFIX: &str = "cove-driver-package-";
 const MAX_ROOT_ATTEMPTS: u32 = 128;
 /// Bounds the final-path buffer so a hostile path cannot drive an unbounded loop.
 const MAX_FINAL_PATH_UNITS: u32 = 32 * 1024;
+#[cfg(feature = "test-inject")]
 const FILL_CHUNK_BYTES: usize = 64 * 1024;
 
 static ROOT_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -65,13 +68,17 @@ struct OwnedFile {
     leaf: String,
     parent: Option<usize>,
     id: FileObjectId,
+    /// Bytes written through the creation handle so far (checked).
+    written: u64,
+    /// The baseline, meaningful only once `sealed`.
     len: u64,
     sha256: [u8; 32],
+    sealed: bool,
     handle: Option<File>,
 }
 
 /// The ownership graph: what Cove created, and the leases that keep it.
-pub(super) struct OwnedTree {
+pub(crate) struct OwnedTree {
     anchor: ChildDirGuard,
     root_name: String,
     root: Option<(ChildDirGuard, FileObjectId)>,
@@ -152,7 +159,7 @@ impl OwnedTree {
     }
 
     /// Create-new the file for plan slot `slot` and retain its creation handle.
-    pub(super) fn create_file(&mut self, slot: usize, pf: &PlannedFile) -> Result<(), Error> {
+    pub(crate) fn create_file(&mut self, slot: usize, pf: &PlannedFile) -> Result<(), Error> {
         let file = open_output_create_new(self.dir_guard(pf.parent)?, &pf.leaf, Path::new(""))
             .map_err(ext)?;
         let id = object_id_of_raw_handle(file.as_raw_handle()).ok_or(Error::PackageChanged {
@@ -162,37 +169,93 @@ impl OwnedTree {
             leaf: pf.leaf.clone(),
             parent: pf.parent,
             id,
+            written: 0,
             len: 0,
             sha256: [0; 32],
+            sealed: false,
             handle: Some(file),
         });
         Ok(())
     }
 
-    /// Write `bytes` through the retained creation handle and record the
-    /// length and SHA-256 the file is held to from now on.
-    pub(super) fn fill_file(&mut self, slot: usize, bytes: &[u8]) -> Result<(), Error> {
-        let changed = || Error::PackageChanged {
-            relative_path: format!("<file {slot}>"),
-        };
-        let file = self.files[slot].as_mut().ok_or_else(changed)?;
-        let handle = file.handle.as_mut().ok_or_else(changed)?;
-        let mut hasher = Sha256Stream::new().map_err(ext)?;
-        for chunk in bytes.chunks(FILL_CHUNK_BYTES) {
-            handle.write_all(chunk).map_err(Error::Io)?;
-            hasher.update(chunk).map_err(ext)?;
+    /// The open, not-yet-sealed file for `slot`.
+    fn unsealed(&mut self, slot: usize) -> Result<&mut OwnedFile, Error> {
+        match self.files.get_mut(slot).and_then(Option::as_mut) {
+            Some(f) if !f.sealed && f.handle.is_some() => Ok(f),
+            _ => Err(Error::PackageChanged {
+                relative_path: format!("<file {slot}>"),
+            }),
         }
-        file.len = bytes.len() as u64;
-        file.sha256 = hasher.finish().map_err(ext)?;
+    }
+
+    /// Append `chunk` through the retained creation handle. The file is not
+    /// populated, and has no baseline, until [`OwnedTree::seal_file`].
+    pub(crate) fn write_file_chunk(&mut self, slot: usize, chunk: &[u8]) -> Result<(), Error> {
+        let file = self.unsealed(slot)?;
+        let leaf = file.leaf.clone();
+        let handle = file.handle.as_mut().ok_or(Error::PackageChanged {
+            relative_path: leaf.clone(),
+        })?;
+        handle.write_all(chunk).map_err(Error::Io)?;
+        file.written =
+            file.written
+                .checked_add(chunk.len() as u64)
+                .ok_or(Error::PackageChanged {
+                    relative_path: leaf,
+                })?;
         Ok(())
     }
 
-    /// Every planned file must have been created; a missing one is not a tree.
+    /// Complete `slot`: re-read what the retained handle ACTUALLY holds and
+    /// require it to be exactly `expected_len` bytes hashing to
+    /// `expected_sha256`. The producer's claim is never trusted; only after
+    /// this agrees does the destination get a baseline.
+    pub(crate) fn seal_file(
+        &mut self,
+        slot: usize,
+        expected_len: u64,
+        expected_sha256: [u8; 32],
+    ) -> Result<(), Error> {
+        let file = self.unsealed(slot)?;
+        let changed = Error::PackageChanged {
+            relative_path: file.leaf.clone(),
+        };
+        let handle = file.handle.as_ref().ok_or(Error::PackageChanged {
+            relative_path: file.leaf.clone(),
+        })?;
+        if file.written != expected_len {
+            return Err(changed);
+        }
+        match digest_of_raw_handle(handle.as_raw_handle()) {
+            Ok(d) if d.len == expected_len && d.sha256 == expected_sha256 => {}
+            Ok(_) => return Err(changed),
+            Err(e) => return Err(ext(e)),
+        }
+        file.len = expected_len;
+        file.sha256 = expected_sha256;
+        file.sealed = true;
+        Ok(())
+    }
+
+    /// Write `bytes` and seal the file against their own SHA-256 (test seam).
+    #[cfg(feature = "test-inject")]
+    pub(super) fn fill_file(&mut self, slot: usize, bytes: &[u8]) -> Result<(), Error> {
+        let mut hasher = Sha256Stream::new().map_err(ext)?;
+        for chunk in bytes.chunks(FILL_CHUNK_BYTES) {
+            self.write_file_chunk(slot, chunk)?;
+            hasher.update(chunk).map_err(ext)?;
+        }
+        let sha256 = hasher.finish().map_err(ext)?;
+        self.seal_file(slot, bytes.len() as u64, sha256)
+    }
+
+    /// Every planned file must have been created AND sealed; anything less is
+    /// not a tree.
     pub(super) fn require_all_files(&self, plan: &[PlannedFile]) -> Result<(), Error> {
         match plan
             .iter()
             .enumerate()
-            .find(|(slot, _)| self.files[*slot].is_none())
+            .find(|(slot, _)| !matches!(self.files[*slot].as_ref(), Some(f) if f.sealed))
         {
             Some((_, pf)) => Err(Error::PackageChanged {
                 relative_path: pf.rel.clone(),
@@ -201,13 +264,28 @@ impl OwnedTree {
         }
     }
 
-    /// The content baseline recorded for plan slot `slot`, once created.
-    pub(super) fn baseline(&self, slot: usize) -> Option<(u64, [u8; 32])> {
-        self.files.get(slot)?.as_ref().map(|f| (f.len, f.sha256))
+    /// The content baseline of plan slot `slot`, once sealed.
+    pub(crate) fn baseline(&self, slot: usize) -> Option<(u64, [u8; 32])> {
+        let f = self.files.get(slot)?.as_ref()?;
+        f.sealed.then_some((f.len, f.sha256))
+    }
+
+    /// Current path of file `slot`, derived from its retained HANDLE.
+    pub(crate) fn file_path(&self, slot: usize) -> Result<PathBuf, Error> {
+        let changed = || Error::PackageChanged {
+            relative_path: format!("<file {slot}>"),
+        };
+        let handle = self
+            .files
+            .get(slot)
+            .and_then(Option::as_ref)
+            .and_then(|f| f.handle.as_ref())
+            .ok_or_else(changed)?;
+        final_path_of_handle(handle.as_raw_handle()).ok_or_else(changed)
     }
 
     /// Current path of the package root, derived from the live root HANDLE.
-    pub(super) fn root_path(&self) -> Result<PathBuf, Error> {
+    pub(crate) fn root_path(&self) -> Result<PathBuf, Error> {
         let (guard, _) = self.root.as_ref().ok_or(Error::PackageChanged {
             relative_path: ".".into(),
         })?;
@@ -218,7 +296,7 @@ impl OwnedTree {
 
     /// Re-prove, through the retained handles only, that every object is the
     /// one that was created and still holds the bytes that were recorded.
-    pub(super) fn reattest(&self) -> Result<(), Error> {
+    pub(crate) fn reattest(&self) -> Result<(), Error> {
         let changed = |p: &str| Error::PackageChanged {
             relative_path: p.to_string(),
         };
@@ -237,7 +315,7 @@ impl OwnedTree {
         }
         for f in self.files.iter().flatten() {
             let h = f.handle.as_ref().ok_or_else(|| changed(&f.leaf))?;
-            if !same(h.as_raw_handle(), f.id) {
+            if !f.sealed || !same(h.as_raw_handle(), f.id) {
                 return Err(changed(&f.leaf));
             }
             match digest_of_raw_handle(h.as_raw_handle()) {
@@ -251,7 +329,7 @@ impl OwnedTree {
     /// Exact-object teardown, used for both explicit cleanup and rollback.
     /// Stops at the first object that cannot be proven deleted and reports it;
     /// everything not yet reached stays on disk.
-    pub(super) fn destroy(mut self) -> Result<(), String> {
+    pub(crate) fn destroy(mut self) -> Result<(), String> {
         let fail = |e: ExtractionError| e.to_string();
         #[cfg(feature = "test-inject")]
         let root_path = self.root_path().ok();
@@ -301,7 +379,7 @@ impl OwnedTree {
 
     /// Test seam: mutate one retained file through its own creation handle.
     #[cfg(feature = "test-inject")]
-    pub(super) fn write_through(&self, slot: usize, offset: u64, byte: u8) -> bool {
+    pub(crate) fn write_through(&self, slot: usize, offset: u64, byte: u8) -> bool {
         use std::os::windows::fs::FileExt;
         self.files
             .get(slot)
@@ -331,11 +409,23 @@ impl OwnedTree {
     }
 }
 
+/// Test seam: how many live-handle final-path queries were made, so a suite can
+/// prove an accessor asks a retained handle every call rather than caching.
+#[cfg(feature = "test-inject")]
+static PATH_QUERIES: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(feature = "test-inject")]
+pub(super) fn path_queries() -> u64 {
+    PATH_QUERIES.load(Ordering::SeqCst)
+}
+
 /// Final path of an open handle (`\\?\C:\...`), bounded.
 fn final_path_of_handle(handle: *mut core::ffi::c_void) -> Option<PathBuf> {
     use windows_sys::Win32::Storage::FileSystem::{
         FILE_NAME_NORMALIZED, GetFinalPathNameByHandleW, VOLUME_NAME_DOS,
     };
+    #[cfg(feature = "test-inject")]
+    PATH_QUERIES.fetch_add(1, Ordering::SeqCst);
     let mut buf = vec![0u16; 512];
     loop {
         // SAFETY: `handle` is a live handle owned by a retained guard; `buf`

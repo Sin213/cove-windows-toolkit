@@ -28,15 +28,15 @@ pub(super) struct PlannedDir {
 
 /// One file to create, in the order root leaves then paths. `rel` keeps the
 /// caller's spelling; the on-disk directory spelling is the first one planned.
-pub(super) struct PlannedFile {
-    pub(super) rel: String,
+pub(crate) struct PlannedFile {
+    pub(crate) rel: String,
     pub(super) parent: Option<usize>,
-    pub(super) leaf: String,
+    pub(crate) leaf: String,
 }
 
-pub(super) struct PackagePlan {
+pub(crate) struct PackagePlan {
     pub(super) dirs: Vec<PlannedDir>,
-    pub(super) files: Vec<PlannedFile>,
+    pub(crate) files: Vec<PlannedFile>,
 }
 
 enum Slot {
@@ -60,14 +60,16 @@ fn charge_within(running: usize, add: usize, budget: usize) -> Result<usize, Err
     }
 }
 
-/// [`charge_within`] against the finite package budget.
+/// [`charge_within`] against the finite package budget (reached by the test
+/// seam only; the planner itself charges through `charge_within`).
+#[cfg(feature = "test-inject")]
 pub(super) fn charge_retained_path_bytes(running: usize, add: usize) -> Result<usize, Error> {
     charge_within(running, add, MAX_PACKAGE_RETAINED_PATH_BYTES)
 }
 
 /// Plan the tree for the given root leaves and relative paths (revalidated
 /// here at this filesystem boundary even when a caller already validated them).
-pub(super) fn plan_package(root_leaves: &[&str], paths: &[&str]) -> Result<PackagePlan, Error> {
+pub(crate) fn plan_package(root_leaves: &[&str], paths: &[&str]) -> Result<PackagePlan, Error> {
     plan_package_with_budget(root_leaves, paths, MAX_PACKAGE_RETAINED_PATH_BYTES)
 }
 

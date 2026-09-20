@@ -189,6 +189,10 @@ pub enum ExtractionError {
     PayloadTotalBytesExceeded,
     #[error("payload decode budget exceeded")]
     PayloadDecodeBudgetExceeded,
+    /// Tab 2a-11b: a caller-supplied member sink refused the stream. The sink
+    /// keeps its own reason; the archive layer only aborts the traversal.
+    #[error("the member sink aborted the stream")]
+    SinkAborted,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -4749,6 +4753,71 @@ pub(crate) fn fingerprint_archive_members(
     expected: &[String],
     limits: &PayloadLimits,
 ) -> ExtractionResult<(Vec<MemberFingerprint>, u64, u64)> {
+    let mut sink = FingerprintSink {
+        out: (0..expected.len()).map(|_| None).collect(),
+    };
+    let (declared_decode, runtime_bytes) =
+        stream_archive_members(file, expected, limits, &mut sink)?;
+    // All or nothing: every requested payload must have been reached.
+    let mut fingerprints = Vec::new();
+    for (i, slot) in sink.out.into_iter().enumerate() {
+        fingerprints.push(slot.ok_or(ExtractionError::PayloadMemberMissing { index: i })?);
+    }
+    Ok((fingerprints, declared_decode, runtime_bytes))
+}
+
+/// Tab 2a-11b: where a requested member's decoded bytes go. The archive layer
+/// owns resolution, bounds, block grouping, hashing and accounting; the sink
+/// owns only what happens to the bytes. Any `Err` aborts the whole traversal;
+/// a sink that has a richer reason keeps it itself and returns
+/// [`ExtractionError::SinkAborted`].
+pub(crate) trait MemberSink {
+    /// The member request `index` resolved uniquely to an archive entry whose
+    /// own spelling is `raw_member` and whose declared size is `declared`.
+    /// Runs for EVERY request before any block is decoded.
+    fn resolved(
+        &mut self,
+        _index: usize,
+        _raw_member: &str,
+        _declared: u64,
+    ) -> ExtractionResult<()> {
+        Ok(())
+    }
+    /// The member's first byte is about to be decoded.
+    fn begin(&mut self, _index: usize) -> ExtractionResult<()> {
+        Ok(())
+    }
+    /// One decoded chunk, never past the declared size.
+    fn write(&mut self, _index: usize, _chunk: &[u8]) -> ExtractionResult<()> {
+        Ok(())
+    }
+    /// The member ended with exactly its declared size; `fingerprint` is what
+    /// the traversal itself measured.
+    fn finish(&mut self, index: usize, fingerprint: MemberFingerprint) -> ExtractionResult<()>;
+}
+
+/// The Tab 2a-10 sink: retain the fingerprint, write nothing.
+struct FingerprintSink {
+    out: Vec<Option<MemberFingerprint>>,
+}
+
+impl MemberSink for FingerprintSink {
+    fn finish(&mut self, index: usize, fingerprint: MemberFingerprint) -> ExtractionResult<()> {
+        self.out[index] = Some(fingerprint);
+        Ok(())
+    }
+}
+
+/// Resolve and stream every `expected` member of one already-revalidated pack
+/// handle into `sink`, under the bounds documented on
+/// [`fingerprint_archive_members`]. Returns the DECLARED decode cost and the
+/// bytes ACTUALLY decoded, both including solid prerequisites.
+pub(crate) fn stream_archive_members(
+    file: &mut File,
+    expected: &[String],
+    limits: &PayloadLimits,
+    sink: &mut dyn MemberSink,
+) -> ExtractionResult<(u64, u64)> {
     let archive = open_bounded_archive(file)?;
     let inspected = inspect_archive(&archive)?;
 
@@ -4789,6 +4858,7 @@ pub(crate) fn fingerprint_archive_members(
         let t = &inspected[matched];
         validate_payload_contract(i, t, limits.max_file_bytes)?;
         total_bytes = accumulate_payload_bytes(total_bytes, t.size, limits.max_total_bytes)?;
+        sink.resolved(i, &t.raw, t.size)?;
         resolved.push(matched);
     }
 
@@ -4843,7 +4913,6 @@ pub(crate) fn fingerprint_archive_members(
         }
     }
 
-    let mut out: Vec<Option<MemberFingerprint>> = (0..expected.len()).map(|_| None).collect();
     let mut runtime_bytes: u64 = 0;
     for (b, targets) in &by_block {
         fingerprint_block_targets(
@@ -4855,16 +4924,10 @@ pub(crate) fn fingerprint_archive_members(
             targets,
             limits.max_total_decode_bytes,
             &mut runtime_bytes,
-            &mut out,
+            &mut *sink,
         )?;
     }
-
-    // All or nothing: every requested payload must have been reached.
-    let mut fingerprints = Vec::new();
-    for (i, slot) in out.into_iter().enumerate() {
-        fingerprints.push(slot.ok_or(ExtractionError::PayloadMemberMissing { index: i })?);
-    }
-    Ok((fingerprints, declared_decode, runtime_bytes))
+    Ok((declared_decode, runtime_bytes))
 }
 
 /// Payload contract: a regular streamed file with a non-zero length inside the
@@ -4896,7 +4959,7 @@ fn fingerprint_block_targets(
     targets: &[usize],
     cap: u64,
     runtime_bytes: &mut u64,
-    out: &mut [Option<MemberFingerprint>],
+    sink: &mut dyn MemberSink,
 ) -> ExtractionResult<()> {
     // The decoder seeks from a known origin, exactly as the INF path does.
     file.seek(SeekFrom::Start(0)).map_err(ExtractionError::Io)?;
@@ -4932,6 +4995,10 @@ fn fingerprint_block_targets(
             return Ok(true);
         };
         let declared = inspected[resolved[i]].size;
+        if let Err(e) = sink.begin(i) {
+            domain_err.set(Some(e));
+            return Err(marker_err());
+        }
         let mut hasher = match Sha256Stream::new() {
             Ok(h) => h,
             Err(e) => {
@@ -4940,7 +5007,7 @@ fn fingerprint_block_targets(
             }
         };
         // The body is NEVER materialized: it streams through the fixed
-        // scratch buffer into the hash and is then discarded.
+        // scratch buffer into the hash (and the sink), then is discarded.
         let mut written: u64 = 0;
         loop {
             let n = reader
@@ -4965,6 +5032,10 @@ fn fingerprint_block_targets(
                 domain_err.set(Some(ExtractionError::PayloadTooLarge { index: i }));
                 return Err(marker_err());
             }
+            if let Err(e) = sink.write(i, &scratch[..n]) {
+                domain_err.set(Some(e));
+                return Err(marker_err());
+            }
         }
         if written != declared {
             domain_err.set(Some(ExtractionError::DecodedSizeMismatch {
@@ -4975,7 +5046,7 @@ fn fingerprint_block_targets(
         }
         match hasher.finish() {
             Ok(sha256) => {
-                out[i] = Some(MemberFingerprint {
+                let fingerprint = MemberFingerprint {
                     // The archive's OWN spelling, which is what the public
                     // contract promises: it may differ from the normalized
                     // form in separators as well as case, and it has already
@@ -4984,7 +5055,11 @@ fn fingerprint_block_targets(
                     actual_member: inspected[resolved[i]].raw.clone(),
                     size_bytes: written,
                     sha256,
-                });
+                };
+                if let Err(e) = sink.finish(i, fingerprint) {
+                    domain_err.set(Some(e));
+                    return Err(marker_err());
+                }
             }
             Err(e) => {
                 domain_err.set(Some(e));
