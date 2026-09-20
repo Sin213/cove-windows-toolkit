@@ -17,6 +17,7 @@ pub mod extraction;
 pub mod install_plan;
 pub mod local_pack;
 pub mod matching;
+mod package_tree;
 pub mod payload_inventory;
 pub mod signature;
 pub mod source_manifest;
@@ -64,6 +65,11 @@ pub use matching::{
     MAX_TOTAL_CANDIDATES, MatchError, MatchEvidence, match_device_to_catalogs,
     match_devices_to_catalogs,
 };
+
+/// Tab 2a-11a: the owned package tree substrate is crate-private; only its
+/// test-only seam is reachable from the integration suite.
+#[cfg(feature = "test-inject")]
+pub use package_tree::seam as package_tree_seam;
 
 pub use payload_inventory::{
     MAX_PAYLOAD_FILE_BYTES, MAX_PAYLOAD_FILES, MAX_PAYLOAD_RETAINED_PATH_BYTES,

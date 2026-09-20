@@ -29,6 +29,12 @@ required-features = ["test-inject"]
 name = "sdio_payload_inventory"
 required-features = ["test-inject"]
 
+# Tab 2a-11a: the owned-package-tree suite drives the crate-private substrate
+# through its test-only seam.
+[[test]]
+name = "sdio_package_tree"
+required-features = ["test-inject"]
+
 [dependencies]
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true

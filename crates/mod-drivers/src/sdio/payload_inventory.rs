@@ -378,7 +378,7 @@ fn expected_member(index: usize, inf_member: &str, source_path: &str) -> Payload
 /// Tab 2a-9 already validates it; this is defense in depth at the trust
 /// boundary between the INF interpretation and the archive. Hostile input is
 /// REJECTED, never normalized into safety, and the source casing is preserved.
-fn validate_source_path(index: usize, path: &str) -> PayloadResult<()> {
+pub(crate) fn validate_source_path(index: usize, path: &str) -> PayloadResult<()> {
     let bad = || PayloadInventoryError::UnsafeSourcePath { index };
     if path.is_empty() || path.len() > MAX_ARCHIVE_MEMBER_LEN {
         return Err(bad());

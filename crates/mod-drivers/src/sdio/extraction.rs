@@ -1609,7 +1609,7 @@ impl ChildDirGuard {
 
     /// The pinned child-directory handle (used as the RootDirectory for
     /// handle-relative output creation of staged leaves).
-    fn handle(&self) -> *mut core::ffi::c_void {
+    pub(crate) fn handle(&self) -> *mut core::ffi::c_void {
         self.handle.as_ptr()
     }
 
@@ -1637,7 +1637,7 @@ impl ChildDirGuard {
     /// a handle names an OBJECT, so even if the root is renamed underneath us
     /// the child is still created inside the directory we opened, which is the
     /// whole point.
-    fn open_anchor(path: &Path) -> ExtractionResult<Self> {
+    pub(crate) fn open_anchor(path: &Path) -> ExtractionResult<Self> {
         use std::ffi::OsStr;
         use std::iter::once;
         use std::os::windows::ffi::OsStrExt;
@@ -1727,7 +1727,7 @@ impl ChildDirGuard {
 /// On non-Windows the portable create-new path (the already-validated
 /// `fallback_path`) is used; the path gates cover the available substitution
 /// primitives there.
-fn open_output_create_new(
+pub(crate) fn open_output_create_new(
     child_guard: &ChildDirGuard,
     leaf: &str,
     #[cfg(not(windows))] fallback_path: &Path,
@@ -2084,8 +2084,8 @@ fn transition_to_lease(
 #[cfg(windows)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct StagedContentDigest {
-    len: u64,
-    sha256: [u8; 32],
+    pub(crate) len: u64,
+    pub(crate) sha256: [u8; 32],
 }
 
 /// Fingerprint a staged file through a raw handle the caller already owns,
@@ -2562,7 +2562,7 @@ fn is_prefixless_rooted(root: &Path) -> bool {
 /// current-directory snapshot BEFORE the first security-sensitive lookup, so
 /// a process-wide CWD change between validation steps cannot redirect which
 /// directory is being validated or materialized into.
-fn validate_staging_root(root: &Path) -> ExtractionResult<PathBuf> {
+pub(crate) fn validate_staging_root(root: &Path) -> ExtractionResult<PathBuf> {
     // Anchor first: a relative root is resolved against ONE current-dir
     // snapshot; a drive-relative root (`C:stage`) is rejected outright —
     // its meaning depends on the drive's mutable current directory and must
@@ -2891,6 +2891,192 @@ fn create_staging_child_relative(root: &Path) -> ExtractionResult<(PathBuf, Chil
     Err(ExtractionError::StageDirectoryCollision)
 }
 
+/// Tab 2a-11a: create ONE new directory `name` handle-relative to an owned
+/// `parent` directory object, returning the guard on the exact object made and
+/// its 128-bit identity.
+///
+/// `FILE_CREATE` never opens an existing object, so a name already present
+/// (including a raced reparse point) is `OutputAlreadyExists`, never followed.
+/// The guard grants what a package directory must serve as a RootDirectory for
+/// (list, traverse, add file, add subdirectory, delete) with `FILE_SHARE_READ`
+/// ONLY, so while it lives the directory cannot be renamed, deleted or replaced.
+/// If the created object cannot be proven a real non-reparse directory with a
+/// readable identity it is deleted BY HANDLE (the exact object just made)
+/// before the error is returned.
+#[cfg(windows)]
+pub(crate) fn create_owned_dir_relative(
+    parent: &ChildDirGuard,
+    name: &str,
+) -> ExtractionResult<(ChildDirGuard, FileObjectId)> {
+    use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
+    use windows_sys::Wdk::Storage::FileSystem::{
+        FILE_CREATE, FILE_DIRECTORY_FILE, FILE_SYNCHRONOUS_IO_NONALERT, NtCreateFile,
+    };
+    use windows_sys::Win32::Foundation::UNICODE_STRING;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+    };
+
+    const DELETE: u32 = 0x0001_0000;
+    const FILE_LIST_DIRECTORY: u32 = 0x0001;
+    const FILE_ADD_FILE: u32 = 0x0002;
+    const FILE_ADD_SUBDIRECTORY: u32 = 0x0004;
+    const FILE_TRAVERSE: u32 = 0x0020;
+    const FILE_READ_ATTRIBUTES: u32 = 0x0080;
+    const SYNCHRONIZE: u32 = 0x0010_0000;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const OBJ_CASE_INSENSITIVE: u32 = 0x0000_0040;
+    const STATUS_OBJECT_NAME_COLLISION: u32 = 0xC000_0035;
+    const ATTR_DIRECTORY: u32 = 0x10;
+
+    if name.is_empty()
+        || name.contains(['/', '\\', ':', '\0'])
+        || name == "."
+        || name == ".."
+        || name.len() > 255
+    {
+        return Err(ExtractionError::InvalidPackAtExtraction(
+            "invalid directory name".into(),
+        ));
+    }
+    let mut name_buf: Vec<u16> = name.encode_utf16().collect();
+    let us = UNICODE_STRING {
+        Length: (name_buf.len() * 2) as u16,
+        MaximumLength: (name_buf.len() * 2) as u16,
+        Buffer: name_buf.as_mut_ptr(),
+    };
+    let oa = OBJECT_ATTRIBUTES {
+        Length: std::mem::size_of::<OBJECT_ATTRIBUTES>() as u32,
+        RootDirectory: parent.handle(),
+        ObjectName: &us,
+        Attributes: OBJ_CASE_INSENSITIVE,
+        SecurityDescriptor: std::ptr::null(),
+        SecurityQualityOfService: std::ptr::null(),
+    };
+    let mut handle: windows_sys::Win32::Foundation::HANDLE = std::ptr::null_mut();
+    let mut io_status: windows_sys::Win32::System::IO::IO_STATUS_BLOCK =
+        unsafe { std::mem::zeroed() };
+    // SAFETY: `oa` points at a live UNICODE_STRING (`name_buf` outlives the
+    // call); RootDirectory is a valid open directory handle; out-params are
+    // valid; `name` is a validated single component.
+    let status = unsafe {
+        NtCreateFile(
+            &mut handle,
+            DELETE
+                | FILE_LIST_DIRECTORY
+                | FILE_ADD_FILE
+                | FILE_ADD_SUBDIRECTORY
+                | FILE_TRAVERSE
+                | FILE_READ_ATTRIBUTES
+                | SYNCHRONIZE,
+            &oa,
+            &mut io_status,
+            std::ptr::null(),
+            0,
+            FILE_SHARE_READ,
+            FILE_CREATE,
+            FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE,
+            std::ptr::null(),
+            0,
+        )
+    };
+    if status as u32 == STATUS_OBJECT_NAME_COLLISION {
+        return Err(ExtractionError::OutputAlreadyExists);
+    }
+    if status != STATUS_SUCCESS || handle.is_null() {
+        return Err(ExtractionError::Io(std::io::Error::from_raw_os_error(
+            win32_status_to_os_error(status),
+        )));
+    }
+    // SAFETY: `handle` is a live directory handle created by the call above.
+    let guard = unsafe { ChildDirGuard::from_raw(handle) };
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+    // SAFETY: `handle` is live; `info` is a valid out-param.
+    let ok = unsafe { GetFileInformationByHandle(handle, &mut info) };
+    let is_real_dir = ok != 0
+        && (info.dwFileAttributes & ATTR_DIRECTORY) != 0
+        && (info.dwFileAttributes & ATTR_REPARSE_POINT) == 0;
+    #[cfg(feature = "test-inject")]
+    let (is_real_dir, forced) =
+        forced_owned_dir_failure().map_or((is_real_dir, None), |m| (false, Some(m)));
+    match (is_real_dir, object_id_of_raw_handle(guard.handle().cast())) {
+        (true, Some(id)) => Ok((guard, id)),
+        (_, identity) => {
+            // The delete handle we hold IS the object we just created, so it is
+            // deleted BY HANDLE. The caller has not recorded this directory, so
+            // nothing downstream can roll it back: the removal must be PROVEN
+            // here, and anything unproven is reported as residue, never dropped.
+            #[cfg(feature = "test-inject")]
+            let status = match forced {
+                // STATUS_ACCESS_DENIED: the delete "failed" and the object stays.
+                Some(ForcedDirDelete::Fails) => 0xC000_0022_u32 as i32,
+                // "Success" that unlinked nothing: only the vacancy proof can tell.
+                Some(ForcedDirDelete::ClaimsSuccess) => STATUS_SUCCESS,
+                Some(ForcedDirDelete::Works) | None => request_delete_by_handle(guard.handle()),
+            };
+            #[cfg(not(feature = "test-inject"))]
+            let status = request_delete_by_handle(guard.handle());
+            // Close our handle so a marked deletion can complete; it withheld
+            // delete sharing, so nothing could rename the object meanwhile.
+            drop(guard);
+            let proven = status == STATUS_SUCCESS
+                && identity.is_some_and(|id| verify_unlinked_relative(parent, name, id).is_ok());
+            Err(if proven {
+                ExtractionError::InvalidPackAtExtraction(
+                    "created directory is not a provable real directory".into(),
+                )
+            } else {
+                ExtractionError::CleanupFailed(format!(
+                    "created directory {name} failed validation and its removal could not be \
+                     proven; it may remain"
+                ))
+            })
+        }
+    }
+}
+
+/// What the by-handle removal of a directory that failed its post-creation
+/// proof does, under test.
+#[cfg(all(windows, feature = "test-inject"))]
+#[derive(Debug, Clone, Copy)]
+pub enum ForcedDirDelete {
+    /// The real removal runs.
+    Works,
+    /// The removal fails; the object stays.
+    Fails,
+    /// The removal reports success but unlinks nothing.
+    ClaimsSuccess,
+}
+
+#[cfg(all(windows, feature = "test-inject"))]
+thread_local! {
+    /// `(creations to let succeed first, what the removal then does)`.
+    static FORCE_OWNED_DIR_FAILURE: std::cell::Cell<Option<(u32, ForcedDirDelete)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Take one step of the forced-failure schedule: `Some(mode)` when THIS
+/// creation must fail its post-creation proof.
+#[cfg(all(windows, feature = "test-inject"))]
+fn forced_owned_dir_failure() -> Option<ForcedDirDelete> {
+    FORCE_OWNED_DIR_FAILURE.with(|c| match c.get() {
+        Some((0, mode)) => Some(mode),
+        Some((n, mode)) => {
+            c.set(Some((n - 1, mode)));
+            None
+        }
+        None => None,
+    })
+}
+
+/// Test-only seam: make the `skip`-th following `create_owned_dir_relative`
+/// fail its post-creation proof, with its by-handle removal behaving as `mode`.
+/// `None` clears it.
+#[cfg(all(windows, feature = "test-inject"))]
+pub fn test_force_owned_dir_failure(schedule: Option<(u32, ForcedDirDelete)>) {
+    FORCE_OWNED_DIR_FAILURE.with(|c| c.set(schedule));
+}
+
 /// True when the metadata carries FILE_ATTRIBUTE_REPARSE_POINT on Windows
 /// (a file/dir can be a reparse point without a symlink tag). Always false
 /// on non-Windows.
@@ -3100,10 +3286,40 @@ fn request_delete_by_handle(handle: windows_sys::Win32::Foundation::HANDLE) -> i
 /// failure. A false negative is the correct trade; a false cleanup success is
 /// not.
 #[cfg(windows)]
-fn delete_leaf_checked(
+pub(crate) fn delete_leaf_checked(
     dir: &ChildDirGuard,
     leaf: &str,
     expected: FileObjectId,
+) -> ExtractionResult<()> {
+    delete_leaf_inner(dir, leaf, expected, false)
+}
+
+/// [`delete_leaf_checked`] for a file that must have exactly ONE name.
+///
+/// A hard link to the file, created while its lease is released, keeps the very
+/// object we were asked to remove alive under a name outside the tree; deleting
+/// our name and finding it vacant would then report a cleanup that left the
+/// object behind. So the link count is required to be 1 through the deletion
+/// handle before the delete request and 0 after it. Measured: a link can still
+/// be created while the deletion handle is open, so the post-check is what
+/// closes that window.
+#[cfg(windows)]
+pub(crate) fn delete_owned_leaf_checked(
+    dir: &ChildDirGuard,
+    leaf: &str,
+    expected: FileObjectId,
+) -> ExtractionResult<()> {
+    delete_leaf_inner(dir, leaf, expected, true)
+}
+
+/// The one implementation behind [`delete_leaf_checked`] and
+/// [`delete_owned_leaf_checked`]; `single_link` only ADDS the link-count proof.
+#[cfg(windows)]
+pub(crate) fn delete_leaf_inner(
+    dir: &ChildDirGuard,
+    leaf: &str,
+    expected: FileObjectId,
+    single_link: bool,
 ) -> ExtractionResult<()> {
     use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
     use windows_sys::Wdk::Storage::FileSystem::{
@@ -3205,6 +3421,25 @@ fn delete_leaf_checked(
         }
     }
 
+    // Number of names the bound object has, read through the handle itself.
+    let link_count = |h: windows_sys::Win32::Foundation::HANDLE| {
+        let mut info: windows_sys::Win32::Storage::FileSystem::BY_HANDLE_FILE_INFORMATION =
+            unsafe { std::mem::zeroed() };
+        // SAFETY: `h` is the live handle opened above; `info` is a valid out-param.
+        let ok = unsafe {
+            windows_sys::Win32::Storage::FileSystem::GetFileInformationByHandle(h, &mut info)
+        };
+        (ok != 0).then_some(info.nNumberOfLinks)
+    };
+    let links_before = link_count(handle);
+    if single_link && links_before != Some(1) {
+        close(handle);
+        return Err(ExtractionError::CleanupFailed(format!(
+            "staged leaf {leaf} has more than one hard link (or its link count is unreadable); \
+             refusing to report it deleted"
+        )));
+    }
+
     // The window between binding the exact leaf and deleting it. The deletion
     // handle withholds delete sharing, so a rename of the proven file — in
     // particular a CROSS-DIRECTORY rename that would vacate its name without
@@ -3214,10 +3449,20 @@ fn delete_leaf_checked(
     run_bound_leaf_delete_window_hook(Path::new(leaf));
 
     let status = request_delete_by_handle(handle);
+    // Read BEFORE closing. Measured on both the POSIX and the classic MARKED
+    // form: the request already removed OUR name from the count, so this is the
+    // number of names that REMAIN.
+    let links_after = link_count(handle);
     close(handle);
     if status != STATUS_SUCCESS {
         return Err(ExtractionError::CleanupFailed(format!(
             "delete staged leaf {leaf}: NTSTATUS {status:#010x}"
+        )));
+    }
+    if single_link && links_after != Some(0) {
+        return Err(ExtractionError::CleanupFailed(format!(
+            "a hard link to staged leaf {leaf} survives its deletion; the object we created \
+             remains under another name"
         )));
     }
     // A `STATUS_SUCCESS` from the classic disposition class means MARKED, not
@@ -3267,7 +3512,7 @@ fn delete_leaf_checked(
 /// and other ancestor handles stay permissive on purpose — restricting them is
 /// what made Cove's own concurrent materializations collide.
 #[cfg(windows)]
-fn delete_staging_child_checked(
+pub(crate) fn delete_staging_child_checked(
     parent: &ChildDirGuard,
     name: &str,
     expected: FileObjectId,
