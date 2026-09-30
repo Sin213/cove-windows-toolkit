@@ -21,7 +21,7 @@ use mod_drivers::sdio::local_pack::{
 use mod_drivers::sdio::matching::{CatalogCandidateMatch, DeviceIdKind, MatchEvidence};
 use mod_drivers::sdio::package_materialization::{
     MaterializedDriverSource, MaterializedPackageFileKind as Kind,
-    PackageMaterializationError as PME, materialize_driver_source,
+    PackageMaterializationError as PME, materialize_driver_source, test_corrupt_recorded_digest,
     test_materialize_with_attestation, test_write_through_retained_handle,
 };
 use mod_drivers::sdio::package_tree_seam::{
@@ -657,16 +657,29 @@ fn b20_public_order_is_inventory_order_not_archive_or_block_order() {
 // -- B21 / B25: continuity and rollback of a partial population ------------------------
 
 #[test]
-fn b21_reattest_detects_a_destination_mutation_that_keeps_identity() {
+fn b21_the_sealed_lease_is_content_immutable_but_reattestation_is_digest_aware() {
     let _g = serial();
     let f = fixture("b21", "", ONE, Some(CAT), &[&[("driver.sys", SYS)]]);
     let inv = inventory(&f).expect("inventory");
-    let m = materialize_driver_source(&inv, &f.pkg).expect("materialize");
+    let mut m = materialize_driver_source(&inv, &f.pkg).expect("materialize");
     m.reattest().expect("baseline holds");
-    assert!(test_write_through_retained_handle(&m, 2, 0, b'X'));
-    let e = m.reattest().expect_err("mutated payload");
+    // Tab 2a-11c: the permanent lease is read-only, so writing through it is
+    // refused categorically -- there is no live path left to mutate a sealed
+    // payload's bytes in place at all.
+    assert!(
+        !test_write_through_retained_handle(&m, 2, 0, b'X'),
+        "a sealed file's retained handle must not grant write access"
+    );
+    m.reattest().expect("nothing was mutated");
+    // Since the bytes themselves cannot be reached, prove the digest
+    // comparison is a LIVE check -- not just the identity one -- by
+    // corrupting the RECORDED baseline instead.
+    assert!(test_corrupt_recorded_digest(&mut m, 2));
+    let e = m
+        .reattest()
+        .expect_err("recorded baseline no longer matches");
     assert!(matches!(e, PME::PackageChanged { .. }), "{e:?}");
-    m.cleanup().expect("the same object is still removable");
+    m.cleanup().expect("cleanup of the untouched objects");
 }
 
 #[test]
@@ -814,4 +827,102 @@ fn b34_off_windows_secure_population_is_platform_unsupported() {
     let code = code_of("package_materialization.rs");
     assert!(code.contains("#[cfg(not(windows))]"));
     assert!(code.contains("PackageMaterializationError::PlatformUnsupported"));
+}
+
+// -- Tab 2a-11c: L2 / L10 / L13 -- SetupAPI package-consumer compatibility ---------
+
+/// L2 / L10 / L13: with a package containing an INF, a catalog and multiple
+/// payloads, every sealed destination must be using the permanent read-only
+/// lease (no write-capable second open, rename or delete succeeds on any of
+/// them), a real `SetupOpenInfFileW` must still be able to parse the INF
+/// while every lease is live, and that open/query/close must leave no
+/// observable side effect in Cove's own materialized package tree.
+///
+/// This is the formal package-consumer compatibility gate Tab 2a-11c exists
+/// for: the write-capable retained handle Tab 2a-11a/11b produced makes this
+/// SAME call fail with a sharing violation (measured; see
+/// `open_retained_read_lock`'s doc in `extraction.rs`), because Windows fixes
+/// a file object's granted access at open time and cannot reduce it after the
+/// fact -- only a transition to a genuinely read-only lease fixes it.
+#[test]
+fn l2_l10_l13_setupapi_opens_the_materialized_inf_with_every_file_leased_read_only() {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Devices::DeviceAndDriverInstallation::{
+        INF_STYLE_WIN4, SetupCloseInfFile, SetupOpenInfFileW,
+    };
+
+    let _g = serial();
+    let f = fixture(
+        "l2",
+        "",
+        THREE,
+        Some(CAT),
+        &[&[
+            ("bin/driver.sys", SYS),
+            ("co/helper.dll", DLL),
+            ("deep/a/b/file.dat", DAT),
+        ]],
+    );
+    let inv = inventory(&f).expect("inventory");
+    let m = materialize_driver_source(&inv, &f.pkg).expect("materialize");
+    let root = package_root(&f);
+
+    // L10: every planned file -- INF, CAT, every payload -- transitioned to
+    // the permanent lease: none accepts a second write-capable open, a
+    // rename or a delete while the tree lives.
+    for file in m.files() {
+        let p = root.join(file.relative_path());
+        assert!(
+            fs::OpenOptions::new().write(true).open(&p).is_err(),
+            "write {p:?}"
+        );
+        assert!(fs::remove_file(&p).is_err(), "delete {p:?}");
+        assert!(
+            fs::rename(&p, f.pkg.join("moved.tmp")).is_err(),
+            "rename {p:?}"
+        );
+    }
+
+    let before = children(&root);
+
+    // L2: a real SetupAPI open must still succeed with every lease live.
+    let inf_path = m.current_inf_path().expect("inf path from the live lease");
+    let wide: Vec<u16> = inf_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut error_line: u32 = 0;
+    // SAFETY: `wide` is a live NUL-terminated buffer for the call's duration;
+    // `error_line` is a valid out-param.
+    let handle = unsafe {
+        SetupOpenInfFileW(
+            wide.as_ptr(),
+            std::ptr::null(),
+            INF_STYLE_WIN4,
+            &mut error_line,
+        )
+    };
+    let invalid = (-1isize) as *mut core::ffi::c_void;
+    assert!(
+        !handle.is_null() && handle != invalid,
+        "SetupOpenInfFileW must parse the materialized INF while the package's \
+         read-only leases are held (GetLastError {:?}, error line {error_line})",
+        std::io::Error::last_os_error()
+    );
+    // SAFETY: `handle` came from the successful open above and is closed once.
+    unsafe {
+        SetupCloseInfFile(handle);
+    }
+
+    // L13: no package-folder side effect (.PNF, sidecar, content change) from
+    // that open/query/close, and the package still re-attests.
+    assert_eq!(
+        children(&root),
+        before,
+        "no new file must appear in Cove's materialized package tree"
+    );
+    m.reattest()
+        .expect("re-attestation still passes after the SetupAPI open");
+    m.cleanup().expect("cleanup");
 }

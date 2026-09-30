@@ -698,9 +698,16 @@ pub fn test_materialize_with_attestation<'v>(
     }
 }
 
-/// Mutate one retained file (by `files()` index) through its own creation
-/// handle, to prove re-attestation detects an in-place content change that
-/// preserves object identity. Returns whether the write happened.
+/// Attempt to mutate one sealed file (by `files()` index) through its own
+/// retained handle. Returns whether the write happened.
+///
+/// Tab 2a-11c: the permanent lease is read-only, so on Windows this must
+/// always return `false` for a materialized source — the call exists as a
+/// structural, running proof that no production path can turn the retained
+/// handle back into a writer, not as a way to mount content mutation. Content
+/// mutation of an already-sealed file has no live path left at all (the lease
+/// withholds every write-capable share); [`test_corrupt_recorded_digest`]
+/// exercises the re-attestation digest check that would have caught it.
 #[cfg(feature = "test-inject")]
 pub fn test_write_through_retained_handle(
     source: &MaterializedDriverSource<'_>,
@@ -715,6 +722,26 @@ pub fn test_write_through_retained_handle(
     #[cfg(not(windows))]
     {
         let _ = (source, file_index, offset, byte);
+        false
+    }
+}
+
+/// Flip a byte in the RECORDED content baseline for file `file_index`, so
+/// re-attestation's digest comparison is exercised even though no production
+/// path can reach the sealed bytes themselves. Returns whether the recorded
+/// slot existed and was sealed.
+#[cfg(feature = "test-inject")]
+pub fn test_corrupt_recorded_digest(
+    source: &mut MaterializedDriverSource<'_>,
+    file_index: usize,
+) -> bool {
+    #[cfg(windows)]
+    {
+        source.tree.corrupt_baseline_digest(file_index)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (source, file_index);
         false
     }
 }

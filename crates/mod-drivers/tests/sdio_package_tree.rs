@@ -178,7 +178,7 @@ mod native {
 
     use mod_drivers::sdio::extraction::{
         ForcedDirDelete, test_force_classic_disposition, test_force_owned_dir_failure,
-        test_set_bound_leaf_delete_window_hook,
+        test_set_bound_leaf_delete_window_hook, test_set_lease_window_hook,
     };
     use mod_drivers::sdio::package_tree_seam::{
         IdentityTarget, OwnedPackageTree, PackageHook, PackageTreeError as PTE, test_build_tree,
@@ -210,6 +210,7 @@ mod native {
         fn drop(&mut self) {
             test_set_package_hook(None);
             test_set_bound_leaf_delete_window_hook(None);
+            test_set_lease_window_hook(None);
             test_force_classic_disposition(false);
             test_force_owned_dir_failure(None);
         }
@@ -432,18 +433,233 @@ mod native {
     }
 
     #[test]
-    fn a14_in_place_content_mutation_is_detected_by_reattestation() {
+    fn a14_the_sealed_lease_is_content_immutable_but_reattestation_is_digest_aware() {
         let f = fixture("a14");
-        let t = build(&f);
-        assert!(t.write_through_retained_handle(2, 0, b'X'));
-        let e = t.reattest().expect_err("mutated file");
+        let mut t = build(&f);
+        // Tab 2a-11c: the permanent lease is read-only, so writing through it
+        // is refused categorically -- there is no live path left to mutate a
+        // sealed file's bytes in place at all.
+        assert!(
+            !t.write_through_retained_handle(2, 0, b'X'),
+            "a sealed file's retained handle must not grant write access"
+        );
+        t.reattest().expect("nothing was mutated");
+        // Since the bytes themselves cannot be reached, prove the digest
+        // comparison is a LIVE check -- not just the identity one -- by
+        // corrupting the RECORDED baseline instead.
+        assert!(t.corrupt_recorded_digest(2));
+        let e = t
+            .reattest()
+            .expect_err("recorded baseline no longer matches");
         assert!(matches!(e, PTE::PackageChanged { .. }), "{e:?}");
-        // Identity is unchanged, so cleanup may still remove the exact object.
-        t.cleanup().expect("cleanup of the same objects");
+        t.cleanup().expect("cleanup of the untouched objects");
         assert!(children(&f.pkg).is_empty());
     }
 
-    // -- A16: rollback -----------------------------------------------------------------
+    // -- Tab 2a-11c: the creation-to-lease transition gap ------------------------------
+    //
+    // `seal_file` closes the write-capable creation handle and reopens the
+    // permanent lease relative to the parent directory guard (see
+    // `OwnedTree::seal_file`). Windows cannot avoid a real gap between those
+    // two opens, so what is tested here is that the gap is provably closed by
+    // identity, by content and by share-mode refusal -- never by luck.
+
+    #[cfg(windows)]
+    fn leak_writable_view(path: &Path) -> *mut core::ffi::c_void {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Memory::{
+            CreateFileMappingW, FILE_MAP_WRITE, MapViewOfFile, PAGE_READWRITE,
+        };
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .expect("the gap is open, so a read/write open must succeed here");
+        // SAFETY: `file` is a live read/write file handle; a zero size maps
+        // the whole file. The view is intentionally leaked to the caller: the
+        // point under test is that it stays writable after every handle that
+        // produced it is gone.
+        let view = unsafe {
+            let mapping = CreateFileMappingW(
+                file.as_raw_handle(),
+                std::ptr::null(),
+                PAGE_READWRITE,
+                0,
+                0,
+                std::ptr::null(),
+            );
+            assert!(!mapping.is_null(), "CreateFileMapping must succeed");
+            let view = MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, 0);
+            assert!(!view.Value.is_null(), "MapViewOfFile must succeed");
+            CloseHandle(mapping);
+            view.Value
+        };
+        drop(file);
+        view
+    }
+
+    #[cfg(windows)]
+    fn unmap_view(view: *mut core::ffi::c_void) {
+        use windows_sys::Win32::System::Memory::{MEMORY_MAPPED_VIEW_ADDRESS, UnmapViewOfFile};
+        // SAFETY: `view` came from `leak_writable_view` and is unmapped once.
+        unsafe {
+            UnmapViewOfFile(MEMORY_MAPPED_VIEW_ADDRESS { Value: view });
+        }
+    }
+
+    #[test]
+    fn l5_a_same_named_replacement_planted_in_the_gap_fails_the_seal() {
+        let _r = HookReset;
+        let f = fixture("l5");
+        let aside = f.pkg.join("stolen_l5.bin");
+        let hook_aside = aside.clone();
+        test_set_lease_window_hook(Some(Box::new(move |p: &Path| {
+            fs::rename(p, &hook_aside).unwrap();
+            fs::write(p, b"replacement").unwrap();
+        })));
+        let r = test_build_tree(ROOTS, PATHS, &f.pkg, &contents, None);
+        test_set_lease_window_hook(None);
+        let e = fail(r);
+        assert!(
+            matches!(e, PTE::Rollback { .. } | PTE::Filesystem(_)),
+            "{e:?}"
+        );
+        assert!(aside.exists(), "the object cove created survives, reported");
+        assert_eq!(
+            fs::read(package_root(&f).join("root.bin")).unwrap(),
+            b"replacement",
+            "a replacement is never our object to delete"
+        );
+    }
+
+    #[test]
+    fn l6_an_in_place_overwrite_in_the_gap_fails_the_seal_on_content() {
+        let _r = HookReset;
+        let f = fixture("l6");
+        test_set_lease_window_hook(Some(Box::new(|p: &Path| {
+            // Same object, same name: a truncate-and-rewrite preserves the
+            // FileId, so only the content check can catch this.
+            fs::write(p, b"tampered").unwrap();
+        })));
+        let r = test_build_tree(ROOTS, PATHS, &f.pkg, &contents, None);
+        test_set_lease_window_hook(None);
+        let e = fail(r);
+        assert!(matches!(e, PTE::Filesystem(_)), "{e:?}");
+        assert!(
+            children(&f.pkg).is_empty(),
+            "identity was preserved, so rollback removes the tampered object cleanly"
+        );
+    }
+
+    #[test]
+    fn l7_a_writer_held_across_the_gap_denies_the_lease() {
+        let _r = HookReset;
+        let f = fixture("l7");
+        let held: Rc<RefCell<Option<fs::File>>> = Rc::default();
+        let held2 = held.clone();
+        test_set_lease_window_hook(Some(Box::new(move |p: &Path| {
+            let writer = fs::OpenOptions::new()
+                .write(true)
+                .open(p)
+                .expect("the gap is open, so a write-capable open must succeed here");
+            *held2.borrow_mut() = Some(writer);
+        })));
+        let r = test_build_tree(ROOTS, PATHS, &f.pkg, &contents, None);
+        test_set_lease_window_hook(None);
+        assert!(
+            held.borrow().is_some(),
+            "the fixture must actually have opened a writer, or this proves nothing"
+        );
+        let e = fail(r);
+        assert!(matches!(e, PTE::Filesystem(_)), "{e:?}");
+        drop(held.borrow_mut().take());
+    }
+
+    #[test]
+    fn l8_a_delete_capable_handle_held_across_the_gap_denies_the_lease() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const DELETE: u32 = 0x0001_0000;
+        let _r = HookReset;
+        let f = fixture("l8");
+        let held: Rc<RefCell<Option<fs::File>>> = Rc::default();
+        let held2 = held.clone();
+        test_set_lease_window_hook(Some(Box::new(move |p: &Path| {
+            let deleter = fs::OpenOptions::new()
+                .access_mode(DELETE)
+                .open(p)
+                .expect("the gap is open, so a delete-capable open must succeed here");
+            *held2.borrow_mut() = Some(deleter);
+        })));
+        let r = test_build_tree(ROOTS, PATHS, &f.pkg, &contents, None);
+        test_set_lease_window_hook(None);
+        assert!(
+            held.borrow().is_some(),
+            "the fixture must actually have opened a delete-capable handle"
+        );
+        let e = fail(r);
+        // The held handle's DELETE access denies the lease reopen (its
+        // restrictive FILE_SHARE_READ-only request does not grant back
+        // FILE_SHARE_DELETE, exactly as L7 shows for WRITE access). Rust's
+        // default share_mode grants FILE_SHARE_READ|WRITE|DELETE, so the held
+        // handle itself shares everything; the SAME DELETE access ALSO
+        // collides with rollback's own cleanup open, which -- like the lease
+        // -- deliberately does not request FILE_SHARE_DELETE (see
+        // `delete_leaf_inner`), so cleanup itself is blocked until the
+        // attacker's handle closes -- reported as residue, never a false
+        // cleanup success.
+        assert!(
+            matches!(e, PTE::Filesystem(_) | PTE::Rollback { .. }),
+            "{e:?}"
+        );
+        drop(held.borrow_mut().take());
+    }
+
+    /// L9 / mandatory design gate: a writable mapping created and left alive
+    /// in the gap must deny the lease. If it did not, digest equality at the
+    /// handoff would not be sufficient -- the attacker could rewrite bytes
+    /// after Cove's continuity check and concurrently with any reader. This
+    /// is the same primitive R62 already proves for the extraction path
+    /// (`transition_to_lease` is the one shared implementation), exercised
+    /// here through the package tree's own call site.
+    #[test]
+    fn l9_a_writable_mapping_surviving_the_gap_denies_the_lease() {
+        let _r = HookReset;
+        let f = fixture("l9");
+        let view_cell: Rc<RefCell<usize>> = Rc::default();
+        let cell = view_cell.clone();
+        test_set_lease_window_hook(Some(Box::new(move |p: &Path| {
+            let view = leak_writable_view(p);
+            *cell.borrow_mut() = view as usize;
+        })));
+        let r = test_build_tree(ROOTS, PATHS, &f.pkg, &contents, None);
+        test_set_lease_window_hook(None);
+        let view = *view_cell.borrow() as *mut core::ffi::c_void;
+        assert!(
+            !view.is_null(),
+            "the fixture must actually have mapped the staged file, or this proves nothing"
+        );
+        assert!(
+            r.is_err(),
+            "a live writable mapping must prevent the lease from being acquired, so no \
+             package can be handed to a reader while someone retains the ability to \
+             rewrite it"
+        );
+        assert!(
+            children(&f.pkg).is_empty(),
+            "the mapping did not change identity or content, so rollback is clean"
+        );
+        unmap_view(view);
+
+        // Control: identical build with no mapping succeeds, so the denial
+        // above is caused by the mapping, not by something incidental.
+        let t = test_build_tree(ROOTS, PATHS, &f.pkg, &contents, None)
+            .expect("build succeeds once the mapping is gone");
+        t.reattest().expect("fresh tree re-attests");
+        t.cleanup().expect("cleanup");
+    }
+
+    // -- A16: rollback --------------------------------
 
     #[test]
     fn a16_failure_after_root_dirs_and_files_removes_only_cove_objects() {

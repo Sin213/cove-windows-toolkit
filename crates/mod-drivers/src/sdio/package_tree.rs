@@ -243,6 +243,13 @@ pub mod seam {
         pub fn corrupt_recorded_identity(&mut self, target: IdentityTarget) -> bool {
             self.0.corrupt_identity(target)
         }
+        /// Flip a byte in the recorded content baseline for planned file
+        /// `slot`, so [`OwnedTree::reattest`](super::tree::OwnedTree) is
+        /// proven to compare bytes, not just identity, against a sealed
+        /// permanent lease that itself cannot be mutated in place.
+        pub fn corrupt_recorded_digest(&mut self, slot: usize) -> bool {
+            self.0.corrupt_baseline_digest(slot)
+        }
     }
 
     /// How many times a live handle's final path was queried (process-wide).

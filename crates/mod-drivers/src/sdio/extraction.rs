@@ -1916,7 +1916,7 @@ fn win32_status_to_os_error(status: i32) -> i32 {
 /// a share mode we can widen. Since Windows fixes a file object's granted
 /// access at open time and cannot reduce it, the writing handle can never be
 /// the lease. The transition between the two handles is what
-/// [`materialize_inf`] proves safe by identity and byte comparison.
+/// [`transition_to_lease`] proves safe by identity and byte comparison.
 ///
 /// On non-Windows there is no native verification surface; the caller never
 /// invokes this path.
@@ -2040,7 +2040,7 @@ fn open_retained_read_lock(
 /// describe the whole of the exposure and both must hold. Any failure is
 /// fail-closed: the caller rolls the staging child back.
 #[cfg(windows)]
-fn transition_to_lease(
+pub(crate) fn transition_to_lease(
     child_guard: &ChildDirGuard,
     leaf: &str,
     staged_path: &Path,

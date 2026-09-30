@@ -9,9 +9,12 @@
 //!   staging-root object if the caller's pathname later moves;
 //! - the package root and every nested directory are held with
 //!   `FILE_SHARE_READ` only, so none can be renamed, deleted or replaced;
-//! - every file keeps its CREATION handle (write+read access, `FILE_SHARE_READ`
-//!   only), so a path-based overwrite, rename or delete is refused for as long
-//!   as the tree lives.
+//! - every file is created with a write-capable CREATION handle, populated,
+//!   sealed against its own claimed length/digest, and then transitioned
+//!   (Tab 2a-11c) to a permanent lease reopened handle-relative to its parent
+//!   directory guard: `FILE_READ_DATA` only, `FILE_SHARE_READ` only, so a
+//!   path-based overwrite, rename or delete is refused for as long as the
+//!   tree lives, and a read-only consumer such as SetupAPI can still open it.
 //!
 //! Cleanup deletes only recorded objects, files first, then directories
 //! deepest-first, then the root, each bound to its recorded 128-bit identity.
@@ -31,9 +34,9 @@ use super::plan::{PlannedDir, PlannedFile};
 #[cfg(feature = "test-inject")]
 use crate::sdio::extraction::Sha256Stream;
 use crate::sdio::extraction::{
-    ChildDirGuard, ExtractionError, FileObjectId, create_owned_dir_relative,
+    ChildDirGuard, ExtractionError, FileObjectId, StagedContentDigest, create_owned_dir_relative,
     delete_owned_leaf_checked, delete_staging_child_checked, digest_of_raw_handle,
-    object_id_of_raw_handle, open_output_create_new, validate_staging_root,
+    object_id_of_raw_handle, open_output_create_new, transition_to_lease, validate_staging_root,
 };
 
 const PACKAGE_ROOT_PREFIX: &str = "cove-driver-package-";
@@ -74,6 +77,8 @@ struct OwnedFile {
     len: u64,
     sha256: [u8; 32],
     sealed: bool,
+    /// The creation handle while populating; the permanent READ-ONLY lease
+    /// once `sealed`.
     handle: Option<File>,
 }
 
@@ -206,33 +211,89 @@ impl OwnedTree {
         Ok(())
     }
 
-    /// Complete `slot`: re-read what the retained handle ACTUALLY holds and
+    /// Complete `slot`: re-read what the CREATION handle ACTUALLY holds and
     /// require it to be exactly `expected_len` bytes hashing to
-    /// `expected_sha256`. The producer's claim is never trusted; only after
-    /// this agrees does the destination get a baseline.
+    /// `expected_sha256` (the producer's claim is never trusted), then
+    /// transition the file to its permanent lease.
+    ///
+    /// Windows cannot reduce a handle's granted access after the open, so the
+    /// write-capable creation handle can never itself become the permanent
+    /// lease. This closes it and reopens the leaf, HANDLE-RELATIVE to its own
+    /// parent directory guard, through
+    /// [`transition_to_lease`](crate::sdio::extraction) — the same helper the
+    /// INF/catalog extraction path already uses for its own creation-to-lease
+    /// handover, generalized here to every package file. A file is not
+    /// sealed — `sealed` only becomes `true` below — until that reopened
+    /// lease has proven the exact same [`FileObjectId`] and the exact same
+    /// bytes; any failure leaves the slot with no handle at all, which is
+    /// what the caller's rollback then tears down.
     pub(crate) fn seal_file(
         &mut self,
         slot: usize,
         expected_len: u64,
         expected_sha256: [u8; 32],
     ) -> Result<(), Error> {
-        let file = self.unsealed(slot)?;
-        let changed = Error::PackageChanged {
-            relative_path: file.leaf.clone(),
+        let (leaf, parent, id, written) = {
+            let file = self.unsealed(slot)?;
+            (file.leaf.clone(), file.parent, file.id, file.written)
         };
-        let handle = file.handle.as_ref().ok_or(Error::PackageChanged {
-            relative_path: file.leaf.clone(),
-        })?;
-        if file.written != expected_len {
-            return Err(changed);
+        let changed = || Error::PackageChanged {
+            relative_path: leaf.clone(),
+        };
+        if written != expected_len {
+            return Err(changed());
         }
-        match digest_of_raw_handle(handle.as_raw_handle()) {
-            Ok(d) if d.len == expected_len && d.sha256 == expected_sha256 => {}
-            Ok(_) => return Err(changed),
-            Err(e) => return Err(ext(e)),
+        {
+            let handle = self.files[slot]
+                .as_ref()
+                .and_then(|f| f.handle.as_ref())
+                .ok_or_else(changed)?;
+            match digest_of_raw_handle(handle.as_raw_handle()) {
+                Ok(d) if d.len == expected_len && d.sha256 == expected_sha256 => {}
+                Ok(_) => return Err(changed()),
+                Err(e) => return Err(ext(e)),
+            }
         }
+
+        // The creation handle must close before the lease can be opened: the
+        // creation handle's own WRITE access would collide with the lease's
+        // restrictive FILE_SHARE_READ-only request -- an open that does not
+        // grant back FILE_SHARE_WRITE cannot coexist with an existing
+        // write-capable handle (Windows checks the existing handle's granted
+        // ACCESS against the new open's declared SHARE flags, not the other
+        // way round).
+        let creation_handle = self.files[slot]
+            .as_mut()
+            .and_then(|f| f.handle.take())
+            .ok_or_else(changed)?;
+
+        // The path is needed only to feed the transition-window test hook
+        // (`test_set_lease_window_hook`, shared with the extraction path);
+        // production never looks at it, so it is not worth a live handle
+        // query there.
+        #[cfg(feature = "test-inject")]
+        let staged_path = final_path_of_handle(creation_handle.as_raw_handle()).unwrap_or_default();
+        #[cfg(not(feature = "test-inject"))]
+        let staged_path = PathBuf::new();
+
+        let guard = self.dir_guard(parent)?;
+        let lease = transition_to_lease(
+            guard,
+            &leaf,
+            &staged_path,
+            creation_handle,
+            Some(id),
+            StagedContentDigest {
+                len: expected_len,
+                sha256: expected_sha256,
+            },
+        )
+        .map_err(ext)?;
+
+        let file = self.files[slot].as_mut().ok_or_else(changed)?;
         file.len = expected_len;
         file.sha256 = expected_sha256;
+        file.handle = Some(lease);
         file.sealed = true;
         Ok(())
     }
@@ -386,6 +447,22 @@ impl OwnedTree {
             .and_then(|f| f.as_ref())
             .and_then(|f| f.handle.as_ref())
             .is_some_and(|h| h.seek_write(&[byte], offset).is_ok())
+    }
+
+    /// Test seam: corrupt one RECORDED content baseline, so re-attestation's
+    /// digest comparison is exercised independently of its identity
+    /// comparison. Once a file is sealed, no production path can mutate its
+    /// bytes at all (the permanent lease withholds every write-capable
+    /// share), so corrupting the recorded baseline is how the digest check is
+    /// proven live rather than dead code.
+    #[cfg(feature = "test-inject")]
+    pub(crate) fn corrupt_baseline_digest(&mut self, slot: usize) -> bool {
+        self.files
+            .get_mut(slot)
+            .and_then(|f| f.as_mut())
+            .filter(|f| f.sealed)
+            .map(|f| f.sha256[0] ^= 0xFF)
+            .is_some()
     }
 
     /// Test seam: corrupt one RECORDED identity, so the retained handle no
