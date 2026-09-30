@@ -15,6 +15,7 @@ mod catalog;
 pub mod error;
 pub mod extraction;
 pub mod install_plan;
+pub mod install_preparation;
 pub mod local_pack;
 pub mod matching;
 pub mod package_materialization;
@@ -50,6 +51,19 @@ pub use extraction::{test_canonical_leaf_matches, test_pin_child_dir, test_valid
 pub use install_plan::{
     CatalogApplicabilityEvidenceRef, InstallPlan, InstallPlanBuilder, InstallPlanEntry,
     PlanBlockReason, TargetDeviceRef,
+};
+
+pub use install_preparation::{
+    BestSelection, DriverSelectionSummary, InstallPreparation, InstallPreparationError,
+    MAX_DRIVER_DETAIL_BYTES, MAX_DRIVER_NODES, NoActionReason, NodeComparison,
+    PreparedDriverInstall, compare_driver_nodes, encode_driver_path, normalize_local_setupapi_path,
+    prepare_driver_install, select_unique_best, setupapi_inf_paths_match,
+    validate_target_instance_id,
+};
+
+#[cfg(feature = "test-inject")]
+pub use install_preparation::{
+    test_collect_bounded, test_decide, test_validate_driver_detail_required_size,
 };
 
 pub use local_pack::{
