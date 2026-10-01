@@ -48,6 +48,13 @@ required-features = ["test-inject"]
 name = "sdio_install_preparation"
 required-features = ["test-inject"]
 
+# Tab 2a-12b1: the install-staging suite drives the authorization/staging
+# state machine entirely through the scripted StagingBackend seam; it never
+# calls the real Windows mutation backend.
+[[test]]
+name = "sdio_install_staging"
+required-features = ["test-inject"]
+
 [dependencies]
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true
@@ -92,6 +99,10 @@ windows-sys = { version = "0.59", features = [
     # code never maps a file; this binds CreateFileMapping/MapViewOfFile so the
     # test can prove the defence, not so the library can use it.
     "Win32_System_Memory",
+    # Tab 2a-12b1: elevation proof (OpenProcessToken/GetTokenInformation)
+    # before the first mutating SetupAPI call.
+    "Win32_Security",
+    "Win32_System_Threading",
 ] }
 # Tab 2a-7: the `windows_targets::link!` macro is the established pattern for
 # declaring setupapi.dll symbols that `windows-sys 0.59` does not yet bind

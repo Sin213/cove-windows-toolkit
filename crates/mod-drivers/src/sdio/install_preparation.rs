@@ -577,7 +577,7 @@ pub fn prepare_driver_install<'a, 'v>(
 pub use win::prepare_driver_install;
 
 #[cfg(windows)]
-mod win {
+pub(crate) mod win {
     //! The complete native surface: device-information-set construction,
     //! compatible driver list enumeration, and INF-open readability probing.
     //! No file queue, copy, commit, install, registry or class-installer API
@@ -586,7 +586,7 @@ mod win {
     use super::*;
     use std::iter::once;
 
-    fn wide_nul(s: &str) -> Vec<u16> {
+    pub(crate) fn wide_nul(s: &str) -> Vec<u16> {
         std::ffi::OsStr::new(s)
             .encode_wide()
             .chain(once(0))
@@ -597,12 +597,12 @@ mod win {
         p.as_os_str().encode_wide().chain(once(0)).collect()
     }
 
-    fn wide_to_string(buf: &[u16]) -> String {
+    pub(crate) fn wide_to_string(buf: &[u16]) -> String {
         let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
         String::from_utf16_lossy(&buf[..len])
     }
 
-    fn last_error() -> u32 {
+    pub(crate) fn last_error() -> u32 {
         // SAFETY: plain thread-local error read.
         unsafe { GetLastError() }
     }
@@ -616,7 +616,16 @@ mod win {
 
     /// A device-information-set handle, destroyed exactly once on every
     /// path (success, native error, early return) via Drop.
-    struct DeviceInfoSet(sa::HDEVINFO);
+    pub(crate) struct DeviceInfoSet(sa::HDEVINFO);
+
+    impl DeviceInfoSet {
+        /// The raw device-information-set handle. 2a-12b1 reuses this
+        /// guard so the exact-device-open + instance-round-trip proof
+        /// (`open_exact_device`) is never re-implemented.
+        pub(crate) fn handle(&self) -> sa::HDEVINFO {
+            self.0
+        }
+    }
 
     impl Drop for DeviceInfoSet {
         fn drop(&mut self) {
@@ -720,7 +729,9 @@ mod win {
     /// equality; no documented case-insensitive equivalence exists for this
     /// specific SetupDiOpenDeviceInfoW / SetupDiGetDeviceInstanceIdW pair, so
     /// none is invented here.
-    fn open_exact_device(instance_id: &str) -> Result<(DeviceInfoSet, sa::SP_DEVINFO_DATA), Error> {
+    pub(crate) fn open_exact_device(
+        instance_id: &str,
+    ) -> Result<(DeviceInfoSet, sa::SP_DEVINFO_DATA), Error> {
         // SAFETY: no class GUID restriction, no parent window.
         let hdevinfo =
             unsafe { sa::SetupDiCreateDeviceInfoList(std::ptr::null(), std::ptr::null_mut()) };
@@ -788,7 +799,7 @@ mod win {
     /// are silently omitted from the compatible list, which would let an
     /// existing better-or-equal driver disappear from `current_best` and
     /// defeat the strict no-force policy.
-    fn configure_current_store_search(
+    pub(crate) fn configure_current_store_search(
         hdevinfo: sa::HDEVINFO,
         devinfo: &sa::SP_DEVINFO_DATA,
     ) -> Result<(), Error> {
@@ -831,12 +842,16 @@ mod win {
     /// must NOT be set to the buffer size parameter, so those two are kept
     /// as distinct values here even though they happen to share the same
     /// expression.
-    fn check_candidate_inf_path(
+    /// Read one driver node's reported INF path, bounded to
+    /// MAX_DRIVER_DETAIL_BYTES. Returns the RAW string SetupAPI reported;
+    /// callers compare it via `setupapi_inf_paths_match`, which normalizes
+    /// the reported side itself. Shared by the single-INF candidate check
+    /// below and 2a-12b1's post-stage published-INF binding.
+    fn get_driver_inf_path(
         hdevinfo: sa::HDEVINFO,
         devinfo: &sa::SP_DEVINFO_DATA,
         drv: &sa::SP_DRVINFO_DATA_V2_W,
-        expected_normalized: &str,
-    ) -> Result<(), Error> {
+    ) -> Result<String, Error> {
         let mut detail: sa::SP_DRVINFO_DETAIL_DATA_W = unsafe { std::mem::zeroed() };
         detail.cbSize = std::mem::size_of::<sa::SP_DRVINFO_DETAIL_DATA_W>() as u32;
         let buffer_size = std::mem::size_of::<sa::SP_DRVINFO_DETAIL_DATA_W>() as u32;
@@ -862,7 +877,18 @@ mod win {
             }
             validate_driver_detail_required_size(required)?;
         }
-        let reported = wide_to_string(&detail.InfFileName);
+        Ok(wide_to_string(&detail.InfFileName))
+    }
+
+    /// Read one candidate node's INF path evidence and cross-check it
+    /// against the materialized INF, bounded to MAX_DRIVER_DETAIL_BYTES.
+    fn check_candidate_inf_path(
+        hdevinfo: sa::HDEVINFO,
+        devinfo: &sa::SP_DEVINFO_DATA,
+        drv: &sa::SP_DRVINFO_DATA_V2_W,
+        expected_normalized: &str,
+    ) -> Result<(), Error> {
+        let reported = get_driver_inf_path(hdevinfo, devinfo, drv)?;
         if !setupapi_inf_paths_match(expected_normalized, &reported).unwrap_or(false) {
             return Err(Error::CandidatePathMismatch);
         }
@@ -922,6 +948,66 @@ mod win {
                 params.Rank,
                 driver_date_native,
                 drv.DriverVersion,
+            )))
+        })
+    }
+
+    /// Tab 2a-12b1 counterpart of `enumerate_compat_driver_nodes`: the SAME
+    /// bounded enumeration and rank/date/version extraction, but returning
+    /// each node's raw reported INF path alongside its summary instead of
+    /// failing closed on a mismatch. The native driver list is built and
+    /// destroyed entirely within this call (never retained past return);
+    /// 12b1 never needs to keep a live native list across calls, since it
+    /// stops after the unique-best proof rather than calling
+    /// DiInstallDevice. Never called by 12a's own read-only gate.
+    pub(crate) fn enumerate_compat_driver_nodes_with_inf_paths(
+        hdevinfo: sa::HDEVINFO,
+        devinfo: &sa::SP_DEVINFO_DATA,
+    ) -> Result<Vec<(DriverSelectionSummary, String)>, Error> {
+        let _list = build_driver_info_list(hdevinfo, devinfo)?;
+        collect_bounded(|index| {
+            let mut drv: sa::SP_DRVINFO_DATA_V2_W = unsafe { std::mem::zeroed() };
+            drv.cbSize = std::mem::size_of::<sa::SP_DRVINFO_DATA_V2_W>() as u32;
+            // SAFETY: live handle/element; bounded index; struct sized.
+            let ok = unsafe {
+                sa::SetupDiEnumDriverInfoW(
+                    hdevinfo,
+                    devinfo,
+                    sa::SPDIT_COMPATDRIVER,
+                    index as u32,
+                    &mut drv,
+                )
+            };
+            if ok == 0 {
+                let code = last_error();
+                return if code == ERROR_NO_MORE_ITEMS {
+                    Ok(None)
+                } else {
+                    Err(Error::NativeCall {
+                        api: "SetupDiEnumDriverInfoW",
+                        code,
+                    })
+                };
+            }
+            let mut params: sa::SP_DRVINSTALL_PARAMS = unsafe { std::mem::zeroed() };
+            params.cbSize = std::mem::size_of::<sa::SP_DRVINSTALL_PARAMS>() as u32;
+            // SAFETY: drv came from the successful enum call above.
+            let ok =
+                unsafe { sa::SetupDiGetDriverInstallParamsW(hdevinfo, devinfo, &drv, &mut params) };
+            if ok == 0 {
+                return Err(native_error("SetupDiGetDriverInstallParamsW"));
+            }
+            let inf_path = get_driver_inf_path(hdevinfo, devinfo, &drv)?;
+            let date = drv.DriverDate;
+            let driver_date_native =
+                ((date.dwHighDateTime as u64) << 32) | date.dwLowDateTime as u64;
+            Ok(Some((
+                DriverSelectionSummary::from_native(
+                    params.Rank,
+                    driver_date_native,
+                    drv.DriverVersion,
+                ),
+                inf_path,
             )))
         })
     }

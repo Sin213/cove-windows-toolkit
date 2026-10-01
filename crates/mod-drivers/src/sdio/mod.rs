@@ -16,6 +16,7 @@ pub mod error;
 pub mod extraction;
 pub mod install_plan;
 pub mod install_preparation;
+pub mod install_staging;
 pub mod local_pack;
 pub mod matching;
 pub mod package_materialization;
@@ -66,6 +67,19 @@ pub use install_preparation::{
     test_collect_bounded, test_decide, test_validate_driver_detail_required_size,
 };
 
+pub use install_staging::{
+    AuthorizationResult, AuthorizedDriverInstall, InstallDecision, InstallPreparationErrorKind,
+    PostStageRefusal, PreMutationError, PublishedInf, RestorePointDisposition,
+    StagedDriverInstall, StagingOutcome, StagingResult, authorize_driver_install,
+    stage_driver_install,
+};
+
+#[cfg(feature = "test-inject")]
+pub use install_staging::{
+    FreshPrepareScript, ScriptedNode, ScriptedStage, ScriptedStagingBackend, StagingEvent,
+    test_stage_with_scripted_backend,
+};
+
 pub use local_pack::{
     ExpectedArchiveMember, LocalPackAvailability, LocalPackError, LocalPackRef,
     MAX_ARCHIVE_COMPONENT_LEN, MAX_ARCHIVE_MEMBER_COMPONENTS, MAX_ARCHIVE_MEMBER_LEN,
@@ -90,6 +104,9 @@ pub use package_materialization::{
     MaterializedDriverSource, MaterializedPackageFile, MaterializedPackageFileKind,
     PackageMaterializationError, materialize_driver_source,
 };
+
+#[cfg(feature = "test-inject")]
+pub use package_materialization::test_corrupt_recorded_digest;
 
 pub use payload_inventory::{
     MAX_PAYLOAD_FILE_BYTES, MAX_PAYLOAD_FILES, MAX_PAYLOAD_RETAINED_PATH_BYTES,
