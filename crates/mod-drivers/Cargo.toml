@@ -55,6 +55,13 @@ required-features = ["test-inject"]
 name = "sdio_install_staging"
 required-features = ["test-inject"]
 
+# Tab 2a-12b2: the install-device suite drives the exact-device install
+# state machine entirely through the scripted InstallBackend seam; it
+# never calls the real DiInstallDevice mutation backend.
+[[test]]
+name = "sdio_install_device"
+required-features = ["test-inject"]
+
 [dependencies]
 optimizer-core = { path = "../optimizer-core" }
 serde.workspace = true
@@ -83,6 +90,9 @@ windows-sys = { version = "0.59", features = [
     # gate requires.
     "Win32_Security_Cryptography",
     "Win32_Devices_DeviceAndDriverInstallation",
+    # Tab 2a-12b2: DEVPKEY_Device_DriverInfPath / SetupDiGetDevicePropertyW
+    # postcondition reconciliation after DiInstallDevice.
+    "Win32_Devices_Properties",
     # Tab 2a-7 repair: CreateFileW with a non-delete share-mode lock held
     # across the native trust call (TOCTOU hardening).
     "Win32_Storage_FileSystem",

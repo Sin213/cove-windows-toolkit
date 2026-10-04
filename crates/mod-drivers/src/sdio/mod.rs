@@ -14,6 +14,7 @@ pub mod applicability;
 mod catalog;
 pub mod error;
 pub mod extraction;
+pub mod install_device;
 pub mod install_plan;
 pub mod install_preparation;
 pub mod install_staging;
@@ -69,15 +70,26 @@ pub use install_preparation::{
 
 pub use install_staging::{
     AuthorizationResult, AuthorizedDriverInstall, InstallDecision, InstallPreparationErrorKind,
-    PostStageRefusal, PreMutationError, PublishedInf, RestorePointDisposition,
-    StagedDriverInstall, StagingOutcome, StagingResult, authorize_driver_install,
-    stage_driver_install,
+    PostStageRefusal, PreMutationError, PublishedInf, RestorePointDisposition, StagedDriverInstall,
+    StagingOutcome, StagingResult, authorize_driver_install, stage_driver_install,
 };
 
 #[cfg(feature = "test-inject")]
 pub use install_staging::{
     FreshPrepareScript, ScriptedNode, ScriptedStage, ScriptedStagingBackend, StagingEvent,
     test_stage_with_scripted_backend,
+};
+
+pub use install_device::{
+    InstallExecutionError, InstallExecutionOutcome, InstallExecutionResult,
+    MAX_INSTALLED_INF_PROPERTY_BYTES, PreInstallRefusal, install_staged_driver,
+};
+
+#[cfg(feature = "test-inject")]
+pub use install_device::{
+    InstallEvent, InstallScript, ReadInstalledInfScript, ScriptedInstallBackend, ScriptedSelected,
+    SelectScript, TEST_DEVPROP_TYPE_STRING_VALUE, test_install_with_scripted_backend,
+    test_parse_property_result,
 };
 
 pub use local_pack::{

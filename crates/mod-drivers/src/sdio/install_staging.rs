@@ -674,7 +674,7 @@ mod test_seam {
 // (lockout by design); it still compiles and links on every Windows build.
 #[cfg_attr(feature = "test-inject", allow(dead_code))]
 #[cfg(windows)]
-mod win {
+pub(crate) mod win {
     //! The real native surface: elevation query and Driver Store staging
     //! (`SetupCopyOEMInfW`) plus the fresh post-stage compatible-list
     //! rebuild used to re-prove unique-best. No device-install API lives
@@ -718,7 +718,9 @@ mod win {
 
     /// Fail-closed elevation proof: any native failure counts as "not
     /// elevated", never as "elevated". No relaunch, no manifest mutation.
-    fn is_elevated_native() -> bool {
+    /// `pub(crate)`: Tab 2a-12b2 reuses this exact check before device
+    /// install rather than re-implementing a second elevation proof.
+    pub(crate) fn is_elevated_native() -> bool {
         // SAFETY: GetCurrentProcess is a pseudo-handle; no cleanup needed.
         let process = unsafe { GetCurrentProcess() };
         let mut token: HANDLE = std::ptr::null_mut();

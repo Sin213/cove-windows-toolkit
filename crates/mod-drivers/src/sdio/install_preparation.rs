@@ -639,8 +639,9 @@ pub(crate) mod win {
 
     /// A built compatible-driver list, destroyed exactly once via Drop.
     /// Always built with SPDIT_COMPATDRIVER; there is no other driver-type
-    /// use in this module.
-    struct DriverInfoList {
+    /// use in this module. `pub(crate)`: Tab 2a-12b2 holds this guard alive
+    /// across its own DiInstallDevice call (see install_device.rs).
+    pub(crate) struct DriverInfoList {
         hdevinfo: sa::HDEVINFO,
         devinfo: sa::SP_DEVINFO_DATA,
     }
@@ -1010,6 +1011,72 @@ pub(crate) mod win {
                 inf_path,
             )))
         })
+    }
+
+    /// Tab 2a-12b2 counterpart of `enumerate_compat_driver_nodes_with_inf_paths`:
+    /// the SAME bounded enumeration, but the built `DriverInfoList` is
+    /// returned ALIVE (never dropped inside this call) together with each
+    /// node's raw `SP_DRVINFO_DATA_V2_W`. 2a-12b2 holds the returned list
+    /// alongside its device-information set for the duration of its own
+    /// `DiInstallDevice` call, so the exact raw node it passes to Windows
+    /// always comes from a still-live list and is never reconstructed or
+    /// re-enumerated by index after this single pass. Never called by 12a's
+    /// own read-only gate or by 12b1.
+    pub(crate) type LiveCompatDriverNodes =
+        Vec<(DriverSelectionSummary, String, sa::SP_DRVINFO_DATA_V2_W)>;
+
+    pub(crate) fn enumerate_compat_driver_nodes_live(
+        hdevinfo: sa::HDEVINFO,
+        devinfo: &sa::SP_DEVINFO_DATA,
+    ) -> Result<(DriverInfoList, LiveCompatDriverNodes), Error> {
+        let list = build_driver_info_list(hdevinfo, devinfo)?;
+        let nodes = collect_bounded(|index| {
+            let mut drv: sa::SP_DRVINFO_DATA_V2_W = unsafe { std::mem::zeroed() };
+            drv.cbSize = std::mem::size_of::<sa::SP_DRVINFO_DATA_V2_W>() as u32;
+            // SAFETY: live handle/element; bounded index; struct sized.
+            let ok = unsafe {
+                sa::SetupDiEnumDriverInfoW(
+                    hdevinfo,
+                    devinfo,
+                    sa::SPDIT_COMPATDRIVER,
+                    index as u32,
+                    &mut drv,
+                )
+            };
+            if ok == 0 {
+                let code = last_error();
+                return if code == ERROR_NO_MORE_ITEMS {
+                    Ok(None)
+                } else {
+                    Err(Error::NativeCall {
+                        api: "SetupDiEnumDriverInfoW",
+                        code,
+                    })
+                };
+            }
+            let mut params: sa::SP_DRVINSTALL_PARAMS = unsafe { std::mem::zeroed() };
+            params.cbSize = std::mem::size_of::<sa::SP_DRVINSTALL_PARAMS>() as u32;
+            // SAFETY: drv came from the successful enum call above.
+            let ok =
+                unsafe { sa::SetupDiGetDriverInstallParamsW(hdevinfo, devinfo, &drv, &mut params) };
+            if ok == 0 {
+                return Err(native_error("SetupDiGetDriverInstallParamsW"));
+            }
+            let inf_path = get_driver_inf_path(hdevinfo, devinfo, &drv)?;
+            let date = drv.DriverDate;
+            let driver_date_native =
+                ((date.dwHighDateTime as u64) << 32) | date.dwLowDateTime as u64;
+            Ok(Some((
+                DriverSelectionSummary::from_native(
+                    params.Rank,
+                    driver_date_native,
+                    drv.DriverVersion,
+                ),
+                inf_path,
+                drv,
+            )))
+        })?;
+        Ok((list, nodes))
     }
 
     /// The complete, read-only preparation gate. See the module
