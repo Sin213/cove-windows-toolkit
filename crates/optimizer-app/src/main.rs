@@ -1,8 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
-// Tab 2a-13a1 core; its production engine and Tauri commands land in 13a2.
-#[cfg_attr(not(test), allow(dead_code))]
 mod driver_updates;
 mod portable;
 mod scan;
@@ -126,6 +124,10 @@ fn main() {
             commands::generate_report,
             // Driver identity inventory
             commands::get_driver_identity_inventory,
+            // Local SDIO driver updates
+            driver_updates::check_local_driver_update,
+            driver_updates::install_local_driver_update,
+            driver_updates::cancel_local_driver_update,
             // Generic apply/undo
             commands::apply_tweak,
             commands::undo_tweak,

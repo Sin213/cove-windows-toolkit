@@ -17,14 +17,24 @@
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf, Prefix};
-use std::sync::{Mutex, MutexGuard, TryLockError};
+use std::sync::{Mutex, MutexGuard, OnceLock, TryLockError};
 use std::time::{Duration, Instant};
 
 use mod_drivers::identity::{DeviceIdentity, DriverIdentityReport};
+use mod_drivers::sdio::source_manifest::{
+    ResolvedSourceReferences, SourceManifest, derive_source_manifest,
+};
 use mod_drivers::sdio::{
-    AssessedCatalogCandidate, BestSelection, CatalogCandidateMatch, CatalogOsApplicability,
-    DriverSelectionSummary, MAX_CATALOGS_PER_MATCH, MaterializedPackageFileKind, PreMutationError,
-    RestorePointDisposition, SdioCatalog, select_unique_best,
+    AssessedCatalogCandidate, AssessedDeviceMatches, AuthorizationResult, BestSelection,
+    CatalogCandidateMatch, CatalogOsApplicability, DriverPackageVerifier, DriverSelectionSummary,
+    ExtractionError, InstallDecision, InstallExecutionOutcome, InstallExecutionResult,
+    InstallPlanBuilder, InstallPreparation, InstallPreparationError, LocalPackAvailability,
+    MAX_CATALOGS_PER_MATCH, MaterializedDriverSource, MaterializedPackageFileKind,
+    PackageMaterializationError, PreMutationError, PreparedDriverInstall, PublishedInf,
+    RestorePointDisposition, SdioCatalog, StagedDriverInstall, StagingOutcome, StagingResult,
+    assess_device_matches, authorize_driver_install, inspect_payload_inventory,
+    install_staged_driver, match_device_to_catalogs, materialize_driver_source, materialize_inf,
+    prepare_driver_install, resolve_assessed_pack, select_unique_best, stage_driver_install,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -899,6 +909,501 @@ fn revalidate_winner(session: &CandidateSnapshot, fresh: &Evaluation) -> Option<
     };
     let (index, winner) = &fresh.ready[i];
     snapshot_binds(session, winner).then_some(*index)
+}
+
+// ---------------------------------------------------------------------------
+// Production engine: the reviewed lower pipeline, composed (Tab 2a-13a2)
+// ---------------------------------------------------------------------------
+
+/// Cove's own application data name and the staging child under it; the user's
+/// SDIO tree is never a work root.
+const APP_DATA_NAME: &str = "cove-windows-optimizer";
+const STAGING_DIR_NAME: &str = "driver-staging";
+const PACKAGE_DIR_NAME: &str = "driver-package";
+
+/// Sibling Cove-owned roots. The verifier retains a pin on the extraction
+/// root for as long as the verified package lives, so the materialized
+/// package must be built under a different root.
+struct WorkRoots {
+    staging: PathBuf,
+    package: PathBuf,
+}
+
+fn work_roots_in(base: &Path) -> Result<WorkRoots, Refusal> {
+    let ensure = |name: &str| {
+        let dir = optimizer_core::storage::ensure_plain_directory(&base.join(name));
+        dir.map_err(|_| Refusal::Internal("work_root"))
+    };
+    Ok(WorkRoots {
+        staging: ensure(STAGING_DIR_NAME)?,
+        package: ensure(PACKAGE_DIR_NAME)?,
+    })
+}
+
+/// Whether a failed extraction left no Cove residue.
+fn extraction_failure_is_clean(e: &ExtractionError) -> bool {
+    !matches!(e, ExtractionError::CleanupFailed(_))
+}
+
+/// Whether a failed materialization left no Cove residue: a direct cleanup
+/// failure (an unproven new root) and an incomplete rollback both leave some.
+fn materialization_failure_is_clean(e: &PackageMaterializationError) -> bool {
+    !matches!(
+        e,
+        PackageMaterializationError::CleanupFailed(_)
+            | PackageMaterializationError::Rollback { .. }
+    )
+}
+
+/// Every materialized file in the lower layer's exact order, with its digest.
+fn file_snapshots(source: &MaterializedDriverSource<'_>) -> Vec<PackageFileSnapshot> {
+    source
+        .files()
+        .iter()
+        .map(|f| PackageFileSnapshot {
+            relative_path: f.relative_path().to_owned(),
+            kind: f.kind(),
+            size: f.size_bytes(),
+            sha256: *f.sha256(),
+        })
+        .collect()
+}
+
+/// Owned facts of a Ready preparation, captured while every capability is live.
+fn snapshot_of(
+    candidate: &AssessedCatalogCandidate,
+    prepared: &PreparedDriverInstall<'_, '_>,
+    source: &MaterializedDriverSource<'_>,
+) -> CandidateSnapshot {
+    CandidateSnapshot {
+        candidate: candidate.matched.clone(),
+        summary: prepared.candidate(),
+        current_best: prepared.current_best(),
+        files: file_snapshots(source),
+        signer: source.verified_package().signer().map(str::to_owned),
+    }
+}
+
+/// `Ok(Some)` Ready, `Ok(None)` the lower NoAction verdict, `Err` any failure.
+fn classify_prepared<'a, 'v, T>(
+    prepared: Result<InstallPreparation<'a, 'v>, InstallPreparationError>,
+    ready: impl FnOnce(PreparedDriverInstall<'a, 'v>) -> T,
+) -> Result<Option<T>, ()> {
+    match prepared {
+        Ok(InstallPreparation::Ready(p)) => Ok(Some(ready(p))),
+        Ok(InstallPreparation::NoAction(_)) => Ok(None),
+        Err(_) => Err(()),
+    }
+}
+
+fn snapshot_prepared(
+    candidate: &AssessedCatalogCandidate,
+    prepared: Result<InstallPreparation<'_, '_>, InstallPreparationError>,
+    source: &MaterializedDriverSource<'_>,
+) -> PreparedSnapshot {
+    classify_prepared(prepared, |p| snapshot_of(candidate, &p, source))
+}
+
+/// Only resolved references continue; INF/CAT-only and unsupported packages
+/// are outside this integration, and a derivation error is a failure.
+fn manifest_refs<'v, R>(
+    manifest: SourceManifest<'v>,
+) -> Result<ResolvedSourceReferences<'v>, CandidateEval<R>> {
+    match manifest {
+        SourceManifest::ResolvedReferences(refs) => Ok(refs),
+        SourceManifest::NoCopyFiles(_) | SourceManifest::Unsupported(_) => {
+            Err(CandidateEval::Unsupported)
+        }
+        SourceManifest::Error(_) => Err(CandidateEval::Failed),
+    }
+}
+
+/// Resolve, materialize, verify, plan, derive, inventory, materialize and
+/// prepare ONE candidate, run `body` while every capability is live, then
+/// explicitly clean the materialized source and the verified artifact. Both
+/// cleanups are always attempted. Lifetimes stay lexical: only `body`'s owned
+/// result escapes.
+fn with_live_candidate<R>(
+    drivers_root: &Path,
+    assessed: &AssessedDeviceMatches,
+    candidate: &AssessedCatalogCandidate,
+    roots: &WorkRoots,
+    body: impl for<'a, 'v> FnOnce(
+        Result<InstallPreparation<'a, 'v>, InstallPreparationError>,
+        &'a MaterializedDriverSource<'v>,
+    ) -> R,
+) -> LiveRun<R> {
+    let request = match resolve_assessed_pack(drivers_root, candidate) {
+        Ok(LocalPackAvailability::Present(request)) => request,
+        Ok(LocalPackAvailability::Missing { .. }) => return (CandidateEval::Missing, true),
+        Err(_) => return (CandidateEval::Failed, true),
+    };
+    let artifact = match materialize_inf(&request, &roots.staging) {
+        Ok(artifact) => artifact,
+        // The lower layer rolls itself back unless it reports residue.
+        Err(e) => return (CandidateEval::Failed, extraction_failure_is_clean(&e)),
+    };
+    let verified = match DriverPackageVerifier::new().verify(artifact) {
+        Ok(verified) => verified,
+        Err(rejected) => {
+            return (
+                CandidateEval::Rejected,
+                rejected.into_artifact().cleanup().is_ok(),
+            );
+        }
+    };
+    let run_verified = || {
+        let builder = InstallPlanBuilder::new(assessed, drivers_root);
+        let Ok(Some(plan)) = builder.build(candidate, Some(&verified)) else {
+            return (CandidateEval::Failed, true);
+        };
+        let section = &candidate.matched.candidate.install_section;
+        let manifest = derive_source_manifest(&verified, section);
+        let refs = match manifest_refs(manifest) {
+            Ok(refs) => refs,
+            Err(skipped) => return (skipped, true),
+        };
+        let Ok(inventory) = inspect_payload_inventory(&refs) else {
+            return (CandidateEval::Failed, true);
+        };
+        let source = match materialize_driver_source(&inventory, &roots.package) {
+            Ok(source) => source,
+            Err(e) => return (CandidateEval::Failed, materialization_failure_is_clean(&e)),
+        };
+        let value = body(prepare_driver_install(&plan, &source), &source);
+        (CandidateEval::Evaluated(value), source.cleanup().is_ok())
+    };
+    let (eval, source_ok) = run_verified();
+    let artifact_ok = verified.into_artifact().cleanup().is_ok();
+    (eval, source_ok && artifact_ok)
+}
+
+/// A transaction's report: a rebuild that is not Ready is stale; cleanup
+/// residue always travels as the bool.
+fn live_report((eval, cleanup_ok): LiveRun<Resp>) -> TransactionReport {
+    match eval {
+        CandidateEval::Evaluated(response) => (response, !cleanup_ok),
+        _ => (Resp::of(UpdateStatus::StalePreview), !cleanup_ok),
+    }
+}
+
+/// Fresh device from the fresh report, fresh applicability from its machine
+/// context, then every HostCompatible candidate through `live`.
+fn evaluate_device(
+    report: &DriverIdentityReport,
+    id: &str,
+    catalogs: &[SdioCatalog],
+    mut live: impl FnMut(&AssessedDeviceMatches, &AssessedCatalogCandidate) -> LiveRun<PreparedSnapshot>,
+) -> Result<(AssessedDeviceMatches, Evaluation), Refusal> {
+    let device = select_live_device(report, id)?;
+    let matches = match_device_to_catalogs(&device, catalogs)
+        .map_err(|_| Refusal::InvalidIndexCorpus("match_bounds"))?;
+    let assessed =
+        assess_device_matches(&matches, &report.machine).map_err(|_| Refusal::UnsupportedHost)?;
+    let mut evaluation = evaluate_loop(&assessed.candidates, |c| live(&assessed, c))?;
+    evaluation.diagnostics.catalogs = catalogs.len();
+    Ok((assessed, evaluation))
+}
+
+/// Install-time freshness: the whole selection runs again and its unique
+/// winner must bind exactly to the session before any transaction.
+fn execute_flow<A>(
+    session: &SessionSnapshot,
+    fresh: impl FnOnce() -> Result<(A, Evaluation), Refusal>,
+    transact: impl FnOnce(&A, usize) -> TransactionReport,
+) -> TransactionReport {
+    let (assessed, evaluation) = match fresh() {
+        Ok(found) => found,
+        Err(refusal) => return (refusal.response(), false),
+    };
+    match revalidate_winner(&session.winner, &evaluation) {
+        Some(index) => transact(&assessed, index),
+        None => (Resp::of(UpdateStatus::StalePreview), false),
+    }
+}
+
+/// The final live rebuild proceeds to authorization only when it still equals
+/// the session; otherwise the live capability is dropped unused.
+fn bound_or_stale<P>(
+    session: &CandidateSnapshot,
+    fresh: &CandidateSnapshot,
+    prepared: P,
+    proceed: impl FnOnce(P) -> Resp,
+) -> Resp {
+    if snapshot_binds(session, fresh) {
+        proceed(prepared)
+    } else {
+        Resp::of(UpdateStatus::StalePreview)
+    }
+}
+
+/// Install body: the LIVE rebuild must still be Ready and bind to the session
+/// before anything is authorized.
+fn transact_live(
+    session: &CandidateSnapshot,
+    candidate: &AssessedCatalogCandidate,
+    prepared: Result<InstallPreparation<'_, '_>, InstallPreparationError>,
+    source: &MaterializedDriverSource<'_>,
+    disposition: RestorePointDisposition,
+) -> Resp {
+    match prepared {
+        Ok(InstallPreparation::Ready(p)) => {
+            let fresh = snapshot_of(candidate, &p, source);
+            bound_or_stale(session, &fresh, p, |p| lower_transaction(p, disposition))
+        }
+        _ => Resp::of(UpdateStatus::StalePreview),
+    }
+}
+
+/// The lower chain: authorize, then stage; install only for a Staged outcome.
+fn lower_transaction(
+    prepared: PreparedDriverInstall<'_, '_>,
+    disposition: RestorePointDisposition,
+) -> Resp {
+    match authorize_driver_install(prepared, InstallDecision::Confirmed, disposition) {
+        AuthorizationResult::Authorized(authorized) => {
+            from_staging(stage_driver_install(authorized), install_staged_driver)
+        }
+        AuthorizationResult::Cancelled => Refusal::Internal("authorization").response(),
+    }
+}
+
+/// Lossless staging-outcome mapping (exhaustive). Device installation is
+/// reachable only through the `Staged` arm.
+fn from_staging<'a, 'v>(
+    result: StagingResult<'a, 'v>,
+    install: impl FnOnce(StagedDriverInstall<'a, 'v>) -> InstallExecutionResult,
+) -> Resp {
+    use UpdateStatus as S;
+    match result {
+        Err(error) => pre_mutation(error),
+        Ok(StagingOutcome::Staged(staged)) => {
+            let leaf = staged.published_inf().leaf().to_owned();
+            from_install(&leaf, install(staged))
+        }
+        Ok(StagingOutcome::StageFailedMutationStateUnknown { native_error }) => {
+            Resp::of(S::StageFailedUnknown).code(native_error)
+        }
+        Ok(StagingOutcome::DriverStoreStagedButSourceInvalidated { published_inf }) => {
+            Resp::of(S::DriverStoreStagedSourceInvalidated).inf(published_inf.leaf())
+        }
+        Ok(StagingOutcome::DriverStoreStagedButInstallRefused {
+            published_inf,
+            reason,
+        }) => Resp::of(S::DriverStoreStagedInstallRefused)
+            .inf(published_inf.leaf())
+            .detail(snake(&reason)),
+    }
+}
+
+/// Lossless device-install mapping (exhaustive). The Driver Store is already
+/// staged, so even an attempt that never ran reports the staged leaf.
+fn from_install(staged_leaf: &str, result: InstallExecutionResult) -> Resp {
+    use InstallExecutionOutcome as O;
+    use UpdateStatus as S;
+    let staged = |status, p: &PublishedInf| Resp::of(status).inf(p.leaf());
+    match result {
+        Err(error) => Resp::of(S::DriverStoreStagedInstallRefused)
+            .inf(staged_leaf)
+            .detail(snake(&error)),
+        Ok(O::DriverStoreStagedButInstallRefused {
+            published_inf: p,
+            reason,
+        }) => staged(S::DriverStoreStagedInstallRefused, &p).detail(snake(&reason)),
+        Ok(O::DriverStoreStagedButDeviceInstallFailed {
+            published_inf: p,
+            native_error,
+        }) => staged(S::DriverStoreStagedDeviceInstallFailed, &p).code(native_error),
+        Ok(O::Installed {
+            published_inf: p,
+            reboot_required,
+        }) => staged(S::Installed, &p).reboot(reboot_required),
+        Ok(O::InstalledPendingReboot { published_inf: p }) => {
+            staged(S::InstalledPendingReboot, &p).reboot(true)
+        }
+        Ok(O::InstalledButPostconditionMismatch { published_inf: p }) => {
+            staged(S::InstalledPostconditionMismatch, &p).reboot(false)
+        }
+        Ok(O::InstalledButReconciliationFailed {
+            published_inf: p,
+            reboot_required,
+            native_error,
+        }) => staged(S::InstalledReconciliationFailed, &p)
+            .reboot(reboot_required)
+            .code(native_error),
+        Ok(O::InstalledButSourceInvalidated {
+            published_inf: p,
+            reboot_required,
+            postcondition_observed,
+        }) => {
+            let mut r = staged(S::InstalledSourceInvalidated, &p).reboot(reboot_required);
+            r.postcondition_observed = postcondition_observed;
+            r
+        }
+    }
+}
+
+/// The test build never reaches a mutating lower call.
+fn test_build_lockout() -> Option<Resp> {
+    cfg!(test).then(|| Resp::of(UpdateStatus::MutationDisabledInTestBuild))
+}
+
+struct ProductionDriverUpdateEngine;
+
+impl ProductionDriverUpdateEngine {
+    /// Cove-owned work roots. Never caller-supplied and never recursively
+    /// cleared: the lower objects remove only the exact children they create.
+    fn work_roots() -> Result<WorkRoots, Refusal> {
+        let base = crate::portable::data_dir(APP_DATA_NAME);
+        if !base.is_absolute() {
+            return Err(Refusal::Internal("work_root"));
+        }
+        work_roots_in(&base)
+    }
+
+    /// Full corpus, fresh inventory, every HostCompatible candidate. No live
+    /// capability survives this call.
+    fn evaluate(
+        root: &SdioRoot,
+        id: &str,
+        roots: &WorkRoots,
+    ) -> Result<(AssessedDeviceMatches, Evaluation), Refusal> {
+        let catalogs = load_index_corpus(root)?;
+        let report = mod_drivers::scan_device_identity();
+        evaluate_device(&report, id, &catalogs, |assessed, c| {
+            with_live_candidate(&root.drivers, assessed, c, roots, |p, s| {
+                snapshot_prepared(c, p, s)
+            })
+        })
+    }
+}
+
+impl DriverUpdateEngine for ProductionDriverUpdateEngine {
+    fn preview(&self, request: &PreviewRequest) -> Result<PreviewFound, Refusal> {
+        let id = &request.device_instance_id;
+        mod_drivers::sdio::validate_target_instance_id(id).map_err(|_| Refusal::InvalidRequest)?;
+        let root = validate_sdio_root(&request.sdio_root)?;
+        let roots = Self::work_roots()?;
+        let (_, evaluation) = Self::evaluate(&root, id, &roots)?;
+        let d = evaluation.diagnostics;
+        Ok(match select_winner(&evaluation.ready) {
+            Winner::None => PreviewFound::NoUpdate(d),
+            Winner::Ambiguous => PreviewFound::Ambiguous(d),
+            Winner::Unique(i) => {
+                let snapshot = SessionSnapshot {
+                    canonical_sdio_root: root.root,
+                    device_instance_id: id.clone(),
+                    winner: evaluation.ready[i].1.clone(),
+                };
+                PreviewFound::Ready(Box::new(snapshot), d)
+            }
+        })
+    }
+
+    fn execute(
+        &self,
+        s: &SessionSnapshot,
+        disposition: RestorePointDisposition,
+    ) -> TransactionReport {
+        if let Some(locked) = test_build_lockout() {
+            return (locked, false);
+        }
+        let root = match s.canonical_sdio_root.to_str().map(validate_sdio_root) {
+            Some(Ok(root)) if root.root == s.canonical_sdio_root => root,
+            Some(Err(refusal)) => return (refusal.response(), false),
+            _ => return (Resp::of(UpdateStatus::StalePreview), false),
+        };
+        let roots = match Self::work_roots() {
+            Ok(roots) => roots,
+            Err(refusal) => return (refusal.response(), false),
+        };
+        execute_flow(
+            s,
+            || Self::evaluate(&root, &s.device_instance_id, &roots),
+            |assessed, index| {
+                let candidate = &assessed.candidates[index];
+                let live =
+                    with_live_candidate(&root.drivers, assessed, candidate, &roots, |p, src| {
+                        transact_live(&s.winner, candidate, p, src, disposition)
+                    });
+                live_report(live)
+            },
+        )
+    }
+}
+
+/// Success only when the lower call succeeded; its message is dropped.
+fn restore_result(created: Result<String, String>) -> Result<(), ()> {
+    created.map(drop).map_err(drop)
+}
+
+/// The real System Restore adapter. It only creates; enabling protection and
+/// any restore are the user's own explicit actions elsewhere.
+struct SystemRestore;
+
+impl RestorePointCreator for SystemRestore {
+    fn create(&self, description: &str) -> Result<(), ()> {
+        // Unit tests never create a real restore point.
+        if cfg!(test) {
+            return Err(());
+        }
+        restore_result(mod_restore::create_restore_point(description))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+/// One process-local service for the lifetime of the process: check, install
+/// and cancel share its session cache and operation lock.
+fn service() -> &'static DriverUpdateService {
+    static SERVICE: OnceLock<DriverUpdateService> = OnceLock::new();
+    SERVICE.get_or_init(DriverUpdateService::new)
+}
+
+/// Run synchronous service work off the async runtime. A join failure carries
+/// no panic text, session, root or device data.
+async fn blocking(task: impl FnOnce() -> Resp + Send + 'static) -> Resp {
+    let joined = tokio::task::spawn_blocking(task).await;
+    joined.unwrap_or_else(|_| Resp::of(UpdateStatus::InternalError).detail("task_failed"))
+}
+
+#[tauri::command]
+pub async fn check_local_driver_update(device_instance_id: String, sdio_root: String) -> Resp {
+    let request = PreviewRequest {
+        device_instance_id,
+        sdio_root,
+    };
+    blocking(move || service().check(&ProductionDriverUpdateEngine, request, Instant::now())).await
+}
+
+#[tauri::command]
+pub async fn install_local_driver_update(
+    session_id: String,
+    decision: UpdateDecision,
+    restore_action: RestoreAction,
+) -> Resp {
+    if let Some(locked) = test_build_lockout() {
+        return locked;
+    }
+    blocking(move || {
+        let (engine, restore) = (&ProductionDriverUpdateEngine, &SystemRestore);
+        service().install(
+            engine,
+            restore,
+            &session_id,
+            decision,
+            restore_action,
+            Instant::now(),
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn cancel_local_driver_update(session_id: String) -> Resp {
+    service().cancel(&session_id)
 }
 
 #[cfg(test)]
@@ -1980,17 +2485,777 @@ mod tests {
         }
     }
 
-    #[test]
-    fn split_structural_13a1_holds_no_lower_mutation_entry_point() {
-        // Tab 2a-13a1: authorize/stage/install wiring is deferred to 13a2.
+    // -- Tab 2a-13a2: production engine, mapper, restore adapter, IPC --------
+
+    use mod_drivers::sdio::source_manifest::{SourceManifestError, UnsupportedReason};
+    use mod_drivers::sdio::{
+        InstallExecutionError, NoActionReason, PostStageRefusal, PreInstallRefusal,
+    };
+    use std::cell::Cell;
+
+    /// Whitespace-free body of the (top-level or indented) item whose
+    /// signature starts at `sig`, so structural pins survive reformatting.
+    fn fn_body(sig: &str) -> String {
+        fn_in("", sig)
+    }
+
+    /// Like `fn_body`, searching only after `anchor` (e.g. one `impl` block).
+    fn fn_in(anchor: &str, sig: &str) -> String {
         let src = production_source();
-        for call in [
-            "authorize_driver_install",
-            "stage_driver_install",
-            "install_staged_driver",
-        ] {
-            assert!(!src.contains(call), "{call}");
+        let base = if anchor.is_empty() {
+            0
+        } else {
+            src.find(anchor)
+                .unwrap_or_else(|| panic!("missing `{anchor}`"))
+        };
+        let at = base
+            + src[base..]
+                .find(sig)
+                .unwrap_or_else(|| panic!("missing `{sig}`"));
+        let line = src[..at].rfind('\n').map_or(0, |i| i + 1);
+        let lead = &src[line..at];
+        let indent = " ".repeat(lead.len() - lead.trim_start().len());
+        let rest = &src[at..];
+        let end = rest
+            .find(&format!("\n{indent}}}\n"))
+            .unwrap_or_else(|| panic!("unterminated `{sig}`"));
+        rest[..end].split_whitespace().collect()
+    }
+
+    fn at(body: &str, needle: &str) -> usize {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing `{needle}`"))
+    }
+
+    fn status_of(r: &Resp) -> (UpdateStatus, bool, Option<&str>) {
+        (r.status, r.partial, r.published_inf.as_deref())
+    }
+
+    // ENG-R11 / M16: install is reachable only through a Staged outcome.
+    #[test]
+    fn eng_r11_m16_install_runs_only_for_a_staged_outcome() {
+        use PreMutationError as P;
+        use mod_drivers::sdio::StagingOutcome as O;
+        let calls = Cell::new(0);
+        let install = |_: StagedDriverInstall<'_, '_>| -> InstallExecutionResult {
+            calls.set(calls.get() + 1);
+            Err(InstallExecutionError::PlatformUnsupported)
+        };
+        let r = from_staging(Err(P::ElevationRequired), install);
+        assert_eq!(status_of(&r), (S::ElevationRequired, false, None));
+        let r = from_staging(Err(P::MutationDisabledInTestBuild), install);
+        assert_eq!(r.status, S::MutationDisabledInTestBuild);
+        let unknown = O::StageFailedMutationStateUnknown { native_error: 1223 };
+        let r = from_staging(Ok(unknown), install);
+        assert_eq!(status_of(&r), (S::StageFailedUnknown, true, None));
+        assert_eq!(r.native_error, Some(1223));
+        assert_eq!(calls.get(), 0, "no install call without a Staged outcome");
+
+        // Source shape: exactly one install call, inside the Staged arm,
+        // after the published leaf is captured.
+        let body = fn_body("fn from_staging");
+        assert_eq!(body.matches("install(staged)").count(), 1);
+        let staged = at(&body, "StagingOutcome::Staged(staged))=>");
+        assert!(staged < at(&body, "install(staged)"));
+        let other = at(&body, "StagingOutcome::StageFailedMutationStateUnknown");
+        assert!(at(&body, "install(staged)") < other);
+        let production = production_source();
+        // The import and the single argument handed to `from_staging`.
+        assert_eq!(production.matches("install_staged_driver").count(), 2);
+        assert_eq!(production.matches("stage_driver_install(").count(), 1);
+        assert!(fn_body("fn lower_transaction").contains("from_staging(stage_driver_install("));
+    }
+
+    #[test]
+    fn map_install_errors_labels_and_leaf_are_bounded() {
+        let refused = |e| from_install("oem9.inf", Err(e));
+        let r = refused(InstallExecutionError::MutationDisabledInTestBuild);
+        assert_eq!(
+            status_of(&r),
+            (S::DriverStoreStagedInstallRefused, true, Some("oem9.inf"))
+        );
+        assert_eq!(r.detail.as_deref(), Some("mutation_disabled_in_test_build"));
+        let r = refused(InstallExecutionError::PlatformUnsupported);
+        assert_eq!(r.detail.as_deref(), Some("platform_unsupported"));
+        use PostStageRefusal as Post;
+        let post = [
+            (Post::PublishedNodeMissing, "published_node_missing"),
+            (Post::Tie, "tie"),
+            (Post::PublishedInfMismatch, "published_inf_mismatch"),
+            (Post::RankingChanged, "ranking_changed"),
+            (Post::EnumerationFailed, "enumeration_failed"),
+        ];
+        use PreInstallRefusal as Pre;
+        let pre = [
+            (Pre::ElevationRequired, "elevation_required"),
+            (Pre::SourceInvalidated, "source_invalidated"),
+            (Pre::ExactDeviceUnavailable, "exact_device_unavailable"),
+            (Pre::EnumerationFailed, "enumeration_failed"),
+            (Pre::PublishedNodeMissing, "published_node_missing"),
+            (Pre::BestNodeTie, "best_node_tie"),
+            (Pre::PublishedInfMismatch, "published_inf_mismatch"),
+            (Pre::RankingChanged, "ranking_changed"),
+        ];
+        for (reason, label) in post {
+            assert_eq!(snake(&reason), label);
         }
-        assert!(!src.contains("tauri::command") && !src.contains("create_restore_point"));
+        for (reason, label) in pre {
+            assert_eq!(snake(&reason), label);
+        }
+    }
+
+    #[test]
+    fn map_structural_exhaustive_and_published_inf_is_leaf_only() {
+        let staging = fn_body("fn from_staging");
+        for variant in [
+            "StagingOutcome::Staged(",
+            "StagingOutcome::StageFailedMutationStateUnknown{native_error}",
+            "StagingOutcome::DriverStoreStagedButSourceInvalidated{",
+            "StagingOutcome::DriverStoreStagedButInstallRefused{",
+            "S::StageFailedUnknown",
+            "S::DriverStoreStagedSourceInvalidated",
+            "S::DriverStoreStagedInstallRefused",
+            ".code(native_error)",
+        ] {
+            assert!(staging.contains(variant), "{variant}");
+        }
+        let device = fn_body("fn from_install");
+        for variant in [
+            "O::DriverStoreStagedButInstallRefused{",
+            "O::DriverStoreStagedButDeviceInstallFailed{",
+            "O::Installed{",
+            "O::InstalledPendingReboot{",
+            "O::InstalledButPostconditionMismatch{",
+            "O::InstalledButReconciliationFailed{",
+            "O::InstalledButSourceInvalidated{",
+            "S::DriverStoreStagedInstallRefused",
+            "S::DriverStoreStagedDeviceInstallFailed",
+            "S::Installed",
+            "S::InstalledPendingReboot",
+            "S::InstalledPostconditionMismatch",
+            "S::InstalledReconciliationFailed",
+            "S::InstalledSourceInvalidated",
+            ".reboot(true)",
+            ".reboot(reboot_required)",
+            "postcondition_observed",
+            ".code(native_error)",
+        ] {
+            assert!(device.contains(variant), "{variant}");
+        }
+        for body in [&staging, &device] {
+            assert!(
+                !body.contains("_=>"),
+                "a lower enum addition must break the build"
+            );
+            assert!(!body.contains("{:?}") && !body.contains("full_path"));
+        }
+        let all = production_source();
+        assert!(!all.contains("normalized_full_path") && !all.contains("full_path"));
+        assert!(all.contains(".leaf()"));
+    }
+
+    // ENG-R9: the final live rebuild must still equal the session exactly.
+    #[test]
+    fn eng_r9_final_live_mismatch_is_stale_before_authorization() {
+        let session = winner();
+        let proceeded = Cell::new(0);
+        let run = |fresh: &CandidateSnapshot| {
+            bound_or_stale(&session, fresh, (), |()| {
+                proceeded.set(proceeded.get() + 1);
+                installed()
+            })
+        };
+        let edit = |f: &dyn Fn(&mut CandidateSnapshot)| {
+            let mut s = winner();
+            f(&mut s);
+            s
+        };
+        assert_eq!(run(&winner()), installed());
+        assert_eq!(proceeded.get(), 1, "an identical rebuild proceeds once");
+        let drifts = [
+            edit(&|s| s.files[1].sha256[0] ^= 1),
+            edit(&|s| s.files[2].size += 1),
+            edit(&|s| drop(s.files.pop())),
+            edit(&|s| s.files.swap(0, 1)),
+            edit(&|s| s.summary = sum(RANK, 51, 50)),
+            edit(&|s| s.candidate.pack_name = "DP_OTHER".into()),
+        ];
+        for fresh in &drifts {
+            assert_eq!(status_of(&run(fresh)).0, S::StalePreview);
+        }
+        assert_eq!(proceeded.get(), 1, "a drifted rebuild never proceeds");
+        let moved = edit(&|s| (s.current_best, s.signer) = (None, None));
+        assert_eq!(run(&moved), installed(), "the baseline may move");
+    }
+
+    // ENG-R8: a different or vanished fresh winner stops everything.
+    #[test]
+    fn eng_r8_fresh_winner_mismatch_is_stale_before_any_lower_work() {
+        let session = session_snapshot();
+        let ev = |ready| Evaluation {
+            ready,
+            diagnostics: Diagnostics::default(),
+        };
+        let transacted = Cell::new(None);
+        let run = |fresh: Result<((), Evaluation), Refusal>| {
+            transacted.set(None);
+            execute_flow(
+                &session,
+                || fresh,
+                |_, index| {
+                    transacted.set(Some(index));
+                    (installed(), false)
+                },
+            )
+        };
+        let (r, cleanup_failed) = run(Ok(((), ev(vec![(3, winner())]))));
+        assert_eq!((r, cleanup_failed), (installed(), false));
+        assert_eq!(transacted.get(), Some(3), "the exact winner transacts");
+
+        let better = snap("DP_LAN_Better", sum(RANK - 1, 1, 1));
+        let both = vec![(0, winner()), (1, better)];
+        let mut drifted = winner();
+        drifted.files[0].sha256[0] ^= 1;
+        let stale_cases = [both, vec![], vec![(0, drifted)]];
+        for ready in stale_cases {
+            let (r, cleanup_failed) = run(Ok(((), ev(ready))));
+            assert_eq!((r.status, cleanup_failed), (S::StalePreview, false));
+            assert_eq!(transacted.get(), None, "zero stage and install calls");
+        }
+        let (r, _) = run(Err(Refusal::DeviceNotFound));
+        assert_eq!(r.status, S::DeviceNotFound);
+        assert_eq!(transacted.get(), None);
+        let (r, _) = run(Err(Refusal::TemporaryCleanupFailed));
+        assert_eq!(r.status, S::TemporaryCleanupFailed);
+    }
+
+    // ENG-R1: the live device and machine come from the fresh report only.
+    #[test]
+    fn eng_r1_evaluation_uses_the_fresh_report_only() {
+        let never = |_: &AssessedDeviceMatches,
+                     _: &AssessedCatalogCandidate|
+         -> LiveRun<PreparedSnapshot> { panic!("no candidate exists") };
+        let missing = report(&[("PCI\\OTHER", "A")]);
+        let r = evaluate_device(&missing, DEVICE_SECRET, &[], never);
+        assert_eq!(r.err(), Some(Refusal::DeviceNotFound));
+        let mut stale = report(&[(DEVICE_SECRET, "A")]);
+        stale.machine.arch = "not-an-arch".into();
+        let r = evaluate_device(&stale, DEVICE_SECRET, &[], never);
+        assert_eq!(r.err(), Some(Refusal::UnsupportedHost));
+        let mut degraded = report(&[(DEVICE_SECRET, "A")]);
+        degraded.degraded = true;
+        let r = evaluate_device(&degraded, DEVICE_SECRET, &[], never);
+        assert_eq!(r.err(), Some(Refusal::DegradedInventory));
+        let fresh = report(&[(DEVICE_SECRET, "FRESH")]);
+        let (assessed, ev) = evaluate_device(&fresh, DEVICE_SECRET, &[], never).unwrap();
+        assert_eq!(assessed.instance_id, DEVICE_SECRET);
+        assert_eq!(ev.diagnostics, Diagnostics::default());
+
+        let evaluate = fn_body("fn evaluate(");
+        assert_eq!(evaluate.matches("scan_device_identity()").count(), 1);
+        assert!(at(&evaluate, "load_index_corpus(") < at(&evaluate, "scan_device_identity()"));
+        let production = production_source();
+        assert_eq!(production.matches("scan_device_identity()").count(), 1);
+        // The request carries two strings and never an identity.
+        let request = fn_body("struct PreviewRequest");
+        assert!(
+            request.contains("device_instance_id:String") && !request.contains("DeviceIdentity")
+        );
+    }
+
+    // ENG-R2: a missing pack is only counted: no download, no substitution.
+    #[test]
+    fn eng_r2_missing_pack_is_missing_and_creates_nothing() {
+        let (drivers, work) = (TempRoot::new(true), TempRoot::new(false));
+        let roots = work_roots_in(&work.0).unwrap();
+        let assessed_device = AssessedDeviceMatches {
+            instance_id: DEVICE_SECRET.into(),
+            candidates: vec![assessed("DP_Missing_Pack", Fit)],
+        };
+        let (eval, cleanup_ok) = with_live_candidate(
+            &drivers.0.join("drivers"),
+            &assessed_device,
+            &assessed_device.candidates[0],
+            &roots,
+            |_, _| panic!("a missing pack never reaches the body"),
+        );
+        assert!(matches!(eval, CandidateEval::<()>::Missing) && cleanup_ok);
+        for root in [&roots.staging, &roots.package] {
+            assert_eq!(std::fs::read_dir(root).unwrap().count(), 0);
+        }
+        assert_eq!(
+            std::fs::read_dir(drivers.0.join("drivers"))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
+    // ENG-R3 / ENG-R4: only resolved references continue.
+    #[test]
+    fn eng_r3_r4_manifest_policy_unsupported_never_continues() {
+        let unsupported =
+            manifest_refs::<()>(SourceManifest::Unsupported(UnsupportedReason::CopyInf));
+        assert!(matches!(unsupported, Err(CandidateEval::Unsupported)));
+        let failed = SourceManifestError::InvalidInstallSectionName;
+        let r = manifest_refs::<()>(SourceManifest::Error(failed));
+        assert!(matches!(r, Err(CandidateEval::Failed)));
+        let body = fn_body("fn manifest_refs");
+        let arm = at(
+            &body,
+            "SourceManifest::NoCopyFiles(_)|SourceManifest::Unsupported(_)=>",
+        );
+        let error_arm = at(&body, "SourceManifest::Error(_)=>");
+        let skipped = &body[arm..error_arm];
+        assert!(
+            skipped.contains("Err(CandidateEval::Unsupported)"),
+            "NoCopyFiles is outside this slice"
+        );
+        assert!(!skipped.contains("Ok("));
+        assert!(body.contains("SourceManifest::ResolvedReferences(refs)=>Ok(refs)"));
+    }
+
+    // ENG-R6: NoAction is never a Ready snapshot; failures stay failures.
+    #[test]
+    fn eng_r6_no_action_and_errors_never_become_ready() {
+        let ready = |_: PreparedDriverInstall<'_, '_>| -> u8 { panic!("not Ready") };
+        let none = classify_prepared(
+            Ok(InstallPreparation::NoAction(
+                NoActionReason::NotBetterThanCurrent,
+            )),
+            ready,
+        );
+        assert_eq!(none, Ok(None));
+        let err = classify_prepared(Err(InstallPreparationError::PlatformUnsupported), ready);
+        assert_eq!(err, Err(()));
+        let body = fn_body("fn classify_prepared");
+        assert!(body.contains("InstallPreparation::Ready(p))=>Ok(Some(ready(p)))"));
+        assert!(body.contains("InstallPreparation::NoAction(_))=>Ok(None)"));
+    }
+
+    // ENG-R7: every file, in order, with its digest.
+    #[test]
+    fn eng_r7_package_snapshot_copies_every_file_with_digest_in_order() {
+        let body = fn_body("fn file_snapshots");
+        for field in [
+            "source.files().iter().map(",
+            "relative_path:f.relative_path().to_owned()",
+            "kind:f.kind()",
+            "size:f.size_bytes()",
+            "sha256:*f.sha256()",
+            ".collect()",
+        ] {
+            assert!(body.contains(field), "{field}");
+        }
+        for reorder in [
+            "sort", "dedup", "filter", "skip", "take", "HashSet", "BTree",
+        ] {
+            assert!(!body.contains(reorder), "{reorder}");
+        }
+    }
+
+    // CLEAN-R1..R3: exact cleanup, materialized source first, then artifact.
+    #[test]
+    fn clean_r1_r2_r3_every_live_object_is_explicitly_cleaned_in_order() {
+        let body = fn_body("fn with_live_candidate");
+        let rejected = at(&body, "Err(rejected)=>");
+        let rejected_clean = at(&body, "rejected.into_artifact().cleanup()");
+        assert!(rejected < rejected_clean, "CLEAN-R3 recovered artifact");
+        let source = at(&body, "source.cleanup()");
+        let artifact = at(&body, "verified.into_artifact().cleanup()");
+        assert!(source < artifact, "CLEAN-R1 before CLEAN-R2");
+        assert!(
+            body.contains("source_ok&&artifact_ok"),
+            "both are attempted"
+        );
+        let materialize = at(&body, "materialize_inf(");
+        let verify = at(&body, "DriverPackageVerifier::new().verify(");
+        assert!(materialize < verify && verify < source);
+        assert!(!body.contains("with_check_fn"));
+        assert!(!production_source().contains("remove_dir_all"), "CLEAN-R5");
+    }
+
+    // CLEAN-R4: a post-transaction cleanup failure travels as the bool.
+    #[test]
+    fn clean_r4_transaction_cleanup_failure_reports_via_the_bool() {
+        let (r, failed) = live_report((CandidateEval::Evaluated(installed()), false));
+        assert_eq!((r.clone(), failed), (installed(), true));
+        let kept = finish((r, failed));
+        assert_eq!((kept.status, kept.cleanup_warning), (S::Installed, true));
+        let (r, failed) = live_report((CandidateEval::<Resp>::Missing, true));
+        assert_eq!((r.status, failed), (S::StalePreview, false));
+        let (r, failed) = live_report((CandidateEval::<Resp>::Rejected, false));
+        let hard = finish((r, failed));
+        assert_eq!(hard.status, S::TemporaryCleanupFailed);
+        assert!(!hard.cleanup_warning);
+    }
+
+    // ENG-R10 / ENG-R11 / A2-M10: only the lower authorize -> stage -> install chain.
+    #[test]
+    fn eng_r10_lower_chain_is_authorize_then_stage_then_install() {
+        let body = fn_body("fn lower_transaction");
+        let authorize = at(
+            &body,
+            "authorize_driver_install(prepared,InstallDecision::Confirmed,",
+        );
+        let stage = at(&body, "stage_driver_install(");
+        assert!(authorize < stage);
+        assert!(body.contains("AuthorizationResult::Authorized(authorized)=>"));
+        assert!(body.contains("install_staged_driver)"));
+        let production = production_source();
+        assert_eq!(production.matches("authorize_driver_install(").count(), 1);
+        for forge in [
+            "AuthorizedDriverInstall {",
+            "AuthorizedDriverInstall::",
+            "StagedDriverInstall {",
+        ] {
+            assert!(!production.contains(forge), "{forge}");
+        }
+        let transact = fn_body("fn transact_live");
+        let bound = at(&transact, "bound_or_stale(");
+        assert!(bound < at(&transact, "lower_transaction("));
+        assert!(transact.contains("InstallPreparation::Ready(p))=>"));
+    }
+
+    // -- composition: preview and install both run the fresh pipeline --------
+
+    #[test]
+    fn eng_preview_and_execute_compose_the_same_fresh_pipeline() {
+        let engine = "impl DriverUpdateEngine for ProductionDriverUpdateEngine";
+        let preview = fn_in(engine, "fn preview(");
+        let order = [
+            "validate_target_instance_id(",
+            "validate_sdio_root(&request.sdio_root)",
+            "work_roots()",
+            "evaluate(",
+            "select_winner(",
+        ];
+        let positions: Vec<_> = order.iter().map(|n| at(&preview, n)).collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
+        for outcome in [
+            "PreviewFound::NoUpdate",
+            "PreviewFound::Ambiguous",
+            "PreviewFound::Ready",
+        ] {
+            assert!(preview.contains(outcome), "{outcome}");
+        }
+        assert!(
+            preview.contains("canonical_sdio_root:root.root"),
+            "canonical root retained"
+        );
+        let execute = fn_in(engine, "fn execute(");
+        let order = [
+            "lockout()",
+            "validate_sdio_root",
+            "work_roots()",
+            "execute_flow(",
+            "evaluate(",
+            "with_live_candidate(",
+        ];
+        let positions: Vec<_> = order.iter().map(|n| at(&execute, n)).collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
+        assert!(
+            execute.contains("revalidate_winner(")
+                || fn_body("fn execute_flow").contains("revalidate_winner(")
+        );
+        let evaluate = fn_body("fn evaluate(");
+        assert!(evaluate.contains("evaluate_device("));
+        // Only the Cove work root hosts temporary objects, never the SDIO tree.
+        assert!(evaluate.contains("with_live_candidate(&root.drivers,assessed,c,roots,"));
+        let live = "with_live_candidate(&root.drivers,assessed,candidate,&roots,";
+        assert!(execute.contains(live));
+        assert!(fn_body("fn evaluate_device").contains("evaluate_loop("));
+        assert!(fn_body("fn evaluate_device").contains("match_device_to_catalogs("));
+        assert!(fn_body("fn evaluate_device").contains("assess_device_matches("));
+    }
+
+    #[test]
+    fn eng_live_candidate_pipeline_runs_every_lower_stage_in_order() {
+        let body = fn_body("fn with_live_candidate");
+        let stages = [
+            "resolve_assessed_pack(",
+            "materialize_inf(",
+            "DriverPackageVerifier::new().verify(",
+            "InstallPlanBuilder::new(assessed,drivers_root)",
+            "derive_source_manifest(",
+            "manifest_refs(",
+            "inspect_payload_inventory(",
+            "materialize_driver_source(",
+            "prepare_driver_install(",
+        ];
+        let positions: Vec<_> = stages.iter().map(|n| at(&body, n)).collect();
+        assert!(positions.windows(2).all(|w| w[0] < w[1]), "{positions:?}");
+        // The ORIGINAL assessed candidate, never a clone, feeds the builder.
+        assert!(body.contains(".build(candidate,Some(&verified))"));
+        assert!(!body.contains("candidate.clone()") && !body.contains("assessed.clone()"));
+        assert!(
+            body.contains(
+                "LocalPackAvailability::Missing{..})=>return(CandidateEval::Missing,true)"
+            )
+        );
+        // No live capability may escape the lexical scope.
+        let production = production_source();
+        for escape in [
+            "static VERIFIED",
+            "static MATERIALIZED",
+            "static PREPARED",
+            "'static MaterializedDriverSource",
+        ] {
+            assert!(!production.contains(escape), "{escape}");
+        }
+    }
+
+    #[test]
+    fn eng_work_roots_are_cove_owned_siblings_and_never_recursively_cleared() {
+        assert_eq!(STAGING_DIR_NAME, "driver-staging");
+        assert_eq!(PACKAGE_DIR_NAME, "driver-package");
+        let body = fn_body("fn work_roots()");
+        assert!(body.contains("crate::portable::data_dir(APP_DATA_NAME)"));
+        for body in [body, fn_body("fn work_roots_in")] {
+            for forbidden in ["sdio", "drivers", "current_dir", "request", "remove_dir"] {
+                assert!(!body.to_lowercase().contains(forbidden), "{forbidden}");
+            }
+        }
+        let creation = fn_body("fn work_roots_in");
+        let ensure = "optimizer_core::storage::ensure_plain_directory(";
+        assert_eq!(creation.matches(ensure).count(), 1);
+        assert!(creation.contains("staging:ensure(STAGING_DIR_NAME)?"));
+        assert!(creation.contains("package:ensure(PACKAGE_DIR_NAME)?"));
+        let base = TempRoot::new(false);
+        let roots = work_roots_in(&base.0).unwrap();
+        assert_ne!(
+            roots.staging, roots.package,
+            "the verifier pins its own root"
+        );
+        assert_eq!(roots.staging, base.0.join(STAGING_DIR_NAME));
+        assert_eq!(roots.package, base.0.join(PACKAGE_DIR_NAME));
+        assert!(roots.staging.is_dir() && roots.package.is_dir());
+        assert!(!roots.package.starts_with(&roots.staging));
+        assert!(!roots.staging.starts_with(&roots.package));
+        // The pinned extraction root and the package root never coincide.
+        let live = fn_body("fn with_live_candidate");
+        assert!(live.contains("materialize_inf(&request,&roots.staging)"));
+        assert!(live.contains("materialize_driver_source(&inventory,&roots.package)"));
+    }
+
+    // Finding: a direct CleanupFailed is residue, exactly like Rollback.
+    #[test]
+    fn clean_r6_direct_cleanup_failures_are_residue_for_both_lower_layers() {
+        use PackageMaterializationError as M;
+        let residue = M::CleanupFailed("root never recorded".into());
+        assert!(!materialization_failure_is_clean(&residue));
+        let rollback = M::Rollback {
+            cause: Box::new(M::TooManyFiles),
+            residue: "x".into(),
+        };
+        assert!(!materialization_failure_is_clean(&rollback));
+        for clean in [
+            M::TooManyFiles,
+            M::PackChangedSinceInventory,
+            M::PlatformUnsupported,
+        ] {
+            assert!(materialization_failure_is_clean(&clean));
+        }
+        assert!(!extraction_failure_is_clean(
+            &ExtractionError::CleanupFailed("x".into())
+        ));
+        assert!(extraction_failure_is_clean(
+            &ExtractionError::PackChangedSinceResolution
+        ));
+        let live = fn_body("fn with_live_candidate");
+        assert!(live.contains("extraction_failure_is_clean(&e)"));
+        assert!(live.contains("materialization_failure_is_clean(&e)"));
+    }
+
+    // -- restore adapter ------------------------------------------------------
+
+    #[test]
+    fn rest_r1_r2_r3_adapter_maps_success_and_never_widens() {
+        assert_eq!(restore_result(Ok("created".into())), Ok(()));
+        assert_eq!(
+            restore_result(Err("System Protection is disabled".into())),
+            Err(())
+        );
+        // The test build never creates a real restore point.
+        assert_eq!(SystemRestore.create(RESTORE_POINT_DESCRIPTION), Err(()));
+        assert_eq!(RESTORE_POINT_DESCRIPTION, "Cove driver update");
+        let body = fn_in("impl RestorePointCreator for SystemRestore", "fn create(");
+        assert!(body.contains("restore_result(mod_restore::create_restore_point(description))"));
+        let production = production_source();
+        assert_eq!(production.matches("create_restore_point(").count(), 1);
+        assert_eq!(production.matches("restore.create(").count(), 1);
+        assert!(production.contains("restore.create(RESTORE_POINT_DESCRIPTION)"));
+        for never in [
+            "enable_system_protection",
+            "launch_system_restore",
+            "Restore-Computer",
+            "rstrui",
+            "restore_computer",
+        ] {
+            assert!(!production.contains(never), "{never}");
+        }
+    }
+
+    // -- test-build mutation lockout (M23) ------------------------------------
+
+    #[test]
+    fn m23_production_engine_refuses_execute_in_the_test_build_before_any_work() {
+        let bogus = SessionSnapshot {
+            canonical_sdio_root: PathBuf::from("not a root"),
+            ..session_snapshot()
+        };
+        let (r, cleanup_failed) = ProductionDriverUpdateEngine.execute(&bogus, SkippedByUser);
+        assert_eq!(
+            (r.status, cleanup_failed),
+            (S::MutationDisabledInTestBuild, false)
+        );
+        assert_eq!(
+            test_build_lockout().map(|r| r.status),
+            Some(S::MutationDisabledInTestBuild)
+        );
+    }
+
+    #[test]
+    fn ipc_r4_m23_install_command_is_locked_in_the_test_build_and_consumes_nothing() {
+        let id = service()
+            .insert(
+                session_snapshot(),
+                Instant::now() + SESSION_TTL,
+                false,
+                Instant::now(),
+            )
+            .unwrap();
+        let r =
+            tauri::async_runtime::block_on(install_local_driver_update(id.to_string(), Yes, Skip));
+        assert_eq!(r.status, S::MutationDisabledInTestBuild);
+        assert!(!r.success && r.session_id.is_none());
+        let kept = service().sessions.lock().unwrap().remove(&id).is_some();
+        assert!(kept, "the lockout must not touch the session cache");
+        let command = fn_body("pub async fn install_local_driver_update");
+        assert!(at(&command, "test_build_lockout()") < at(&command, "blocking("));
+    }
+
+    // -- Tauri commands ---------------------------------------------------------
+
+    #[test]
+    fn ipc_r1_r3_commands_reach_the_process_service_and_stay_private() {
+        let checked = tauri::async_runtime::block_on(check_local_driver_update(
+            DEVICE_SECRET.into(),
+            "relative-root".into(),
+        ));
+        assert_eq!(checked.status, S::InvalidSdioRoot);
+        let json = serde_json::to_string(&checked).unwrap();
+        assert!(!json.contains("SECRETINSTANCE") && !json.contains("relative-root"));
+
+        assert!(
+            std::ptr::eq(service(), service()),
+            "one process-global service"
+        );
+        let id = service()
+            .insert(
+                session_snapshot(),
+                Instant::now() + SESSION_TTL,
+                false,
+                Instant::now(),
+            )
+            .unwrap();
+        let cancel =
+            |token: String| tauri::async_runtime::block_on(cancel_local_driver_update(token));
+        assert_eq!(cancel("not-a-token".into()).status, S::Cancelled);
+        let r = cancel(id.to_string());
+        assert_eq!((r.status, r.success), (S::Cancelled, true));
+        assert!(service().sessions.lock().unwrap().get(&id).is_none());
+        assert_eq!(cancel(id.to_string()).status, S::Cancelled, "idempotent");
+    }
+
+    #[test]
+    fn ipc_r5_join_failure_is_a_bounded_internal_error() {
+        let r =
+            tauri::async_runtime::block_on(blocking(|| panic!("{DEVICE_SECRET} {ROOT_SECRET}")));
+        assert_eq!(
+            (r.status, r.detail.as_deref()),
+            (S::InternalError, Some("task_failed"))
+        );
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(!json.contains("SECRETINSTANCE") && !json.contains("PRIVATE"));
+        let body = fn_body("async fn blocking");
+        assert!(body.contains("tokio::task::spawn_blocking(task).await"));
+        assert!(!body.contains("unwrap()") && !body.contains("expect("));
+    }
+
+    #[test]
+    fn ipc_structural_commands_never_run_native_work_on_the_async_thread() {
+        for (sig, call) in [
+            ("pub async fn check_local_driver_update", "service().check("),
+            (
+                "pub async fn install_local_driver_update",
+                "service().install(",
+            ),
+        ] {
+            let body = fn_body(sig);
+            assert!(at(&body, "blocking(") < at(&body, call), "{sig}");
+            assert!(body.contains("blocking(move||"), "{sig}");
+        }
+        let cancel = fn_body("pub async fn cancel_local_driver_update");
+        assert!(cancel.contains("service().cancel("));
+        let install = fn_body("pub async fn install_local_driver_update");
+        assert!(install.contains("&ProductionDriverUpdateEngine,&SystemRestore"));
+        assert!(
+            fn_body("pub async fn check_local_driver_update")
+                .contains("&ProductionDriverUpdateEngine")
+        );
+        let main = include_str!("main.rs");
+        for command in [
+            "check_local_driver_update",
+            "install_local_driver_update",
+            "cancel_local_driver_update",
+        ] {
+            let registered = format!("driver_updates::{command},");
+            assert_eq!(main.matches(&registered).count(), 1, "{command}");
+        }
+        let module = main.find("mod driver_updates;").expect("module declared");
+        let before = &main[..module];
+        let attribute = before.lines().next_back().unwrap_or_default();
+        assert!(
+            !attribute.contains("allow(dead_code)"),
+            "a normal, used module"
+        );
+    }
+
+    // -- structural security gates (13a2) ----------------------------------------
+
+    #[test]
+    fn security_structural_13a2_no_native_mutation_network_or_rollback_in_the_app() {
+        let production = production_source();
+        for word in [
+            "SetupCopyOEMInf",
+            "DiInstallDevice",
+            "DiInstallDriver",
+            "UpdateDriverForPlugAndPlay",
+            "SetupUninstallOEMInf",
+            "DiRollbackDriver",
+            "pnputil",
+            "add-driver",
+            "remove_dir_all",
+            "reqwest",
+            "http:",
+            "https:",
+            "download",
+            "torrent",
+            "Box::leak",
+            "transmute",
+            "with_check_fn",
+            "test-inject",
+            "Command::new",
+            "windows_sys",
+        ] {
+            assert!(!production.contains(word), "{word}");
+        }
+        assert_eq!(
+            production
+                .matches("mod_drivers::scan_device_identity()")
+                .count(),
+            1
+        );
     }
 }
