@@ -1293,6 +1293,14 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
   }
   // Simulate a brief network delay
   await new Promise((r) => setTimeout(r, 120 + Math.random() * 200));
+  // Lazy: browser-only mock code must stay out of the Tauri entry chunk.
+  const { driverUpdateMock } = await import("./driverUpdateMock.ts");
+  const driverUpdate = driverUpdateMock(
+    cmd,
+    args,
+    new URLSearchParams(window.location.search).get("driver_update_mock"),
+  );
+  if (driverUpdate !== undefined) return driverUpdate as T;
   if (cmd === "run_cleanup") {
     const ids = Array.isArray(args?.ids) ? args.ids.filter((id): id is string => typeof id === "string") : [];
     return {

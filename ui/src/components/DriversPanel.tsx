@@ -1,5 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { invoke } from "../lib/tauri";
+import {
+  canStartCheck,
+  createDriverUpdateFlow,
+  isOperationActive,
+  isRootEditable,
+} from "../lib/driverUpdateFlow";
+import DriverUpdateSection from "./DriverUpdateSection";
 import "./DriversPanel.css";
 
 interface MatchingDriver {
@@ -147,19 +160,36 @@ export default function DriversPanel() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<ProblemFilter>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Held in React state only: never persisted, logged or put in the URL.
+  const [sdioRoot, setSdioRoot] = useState("");
+  const sdioRootId = useId();
+  const [flow] = useState(() => createDriverUpdateFlow({ invoke }));
+  const updateState = useSyncExternalStore(flow.subscribe, flow.getState);
 
-  const fetchReport = () => {
+  const [refreshFailed, setRefreshFailed] = useState(false);
+
+  // `silent` keeps the current report and any visible update result when the
+  // post-outcome read-only refresh fails or returns an unexpected shape; the
+  // failure is surfaced separately instead of reclassifying the transaction.
+  const fetchReport = (silent = false) => {
     invoke("get_driver_identity_inventory")
       .then((value) => {
         if (isDriverIdentityReport(value)) {
           if (value.error) {
             // Successful IPC carrying a domain-level scan failure.
+            if (silent) {
+              setRefreshFailed(true);
+              return;
+            }
             setError(value.error);
             setReport(null);
           } else {
             setReport(value);
             setError(null);
+            setRefreshFailed(false);
           }
+        } else if (silent) {
+          setRefreshFailed(true);
         } else {
           const safeMessage =
             value !== null &&
@@ -171,7 +201,10 @@ export default function DriversPanel() {
           setReport(null);
         }
       })
-      .catch((e) => setError(String(e)))
+      .catch((e) => {
+        if (silent) setRefreshFailed(true);
+        else setError(String(e));
+      })
       .finally(() => setLoading(false));
   };
 
@@ -179,7 +212,14 @@ export default function DriversPanel() {
     fetchReport();
   }, []);
 
+  // Read-only refresh only: it never starts another update command.
+  useEffect(() => flow.onSystemOutcome(() => fetchReport(true)));
+
+  // Release a held preview session when the panel goes away.
+  useEffect(() => () => flow.abandon(), [flow]);
+
   const rescan = () => {
+    flow.abandon();
     setLoading(true);
     setError(null);
     fetchReport();
@@ -232,6 +272,15 @@ export default function DriversPanel() {
       ? "Degraded (older host)"
       : "Failed";
 
+  const inventoryUsable = report.complete && !report.degraded;
+  const rootEntered = sdioRoot.trim().length > 0;
+  const canCheck = inventoryUsable && rootEntered && canStartCheck(updateState);
+  const checkBlockedReason = !inventoryUsable
+    ? "Needs a complete, non-degraded inventory."
+    : !rootEntered
+      ? "Enter the local SDIO folder above first."
+      : "Another update step is in progress.";
+
   return (
     <div className="drivers-panel">
       <div className="drivers-toolbar">
@@ -247,10 +296,56 @@ export default function DriversPanel() {
             {report.machine.arch} · build {report.machine.os_build}
           </span>
         </div>
-        <button type="button" className="drivers-rescan-btn" onClick={rescan}>
+        <button
+          type="button"
+          className="drivers-rescan-btn"
+          onClick={rescan}
+          disabled={isOperationActive(updateState)}
+        >
           Rescan
         </button>
       </div>
+
+      <div className="drivers-sdio">
+        <label className="drivers-sdio-label" htmlFor={sdioRootId}>
+          Local SDIO folder
+        </label>
+        <input
+          id={sdioRootId}
+          type="text"
+          className="drivers-sdio-input mono"
+          value={sdioRoot}
+          placeholder="D:\SDIO"
+          maxLength={1024}
+          spellCheck={false}
+          autoComplete="off"
+          disabled={!isRootEditable(updateState)}
+          onChange={(e) => setSdioRoot(e.target.value)}
+        />
+        <p className="drivers-sdio-hint">
+          Cove expects <span className="mono">&lt;root&gt;\indexes\SDI</span>{" "}
+          and <span className="mono">&lt;root&gt;\drivers</span>. The folder is
+          kept in memory only and is checked by Cove when you run a check. To
+          change it while a preview is open, cancel the preview first.
+        </p>
+      </div>
+
+      {refreshFailed && (
+        <p className="drivers-update-meta" role="status">
+          Inventory refresh failed after the update. Rescan to retry.
+        </p>
+      )}
+
+      <DriverUpdateSection
+        state={updateState}
+        flow={flow}
+        deviceName={
+          ("deviceId" in updateState
+            ? report.devices.find((d) => d.instance_id === updateState.deviceId)
+                ?.description
+            : null) ?? "this device"
+        }
+      />
 
       <div className="drivers-summary">
         <button
@@ -405,6 +500,21 @@ export default function DriversPanel() {
                       </>
                     )}
 
+                    <dt>Local update</dt>
+                    <dd>
+                      <button
+                        type="button"
+                        className="drivers-update-btn"
+                        disabled={!canCheck}
+                        onClick={() => flow.check(device.instance_id, sdioRoot)}
+                      >
+                        Check Local Update
+                      </button>
+                      {!canCheck && (
+                        <span className="dim"> {checkBlockedReason}</span>
+                      )}
+                    </dd>
+
                     {status === "problem" && (
                       <>
                         <dt>Status</dt>
@@ -431,10 +541,11 @@ export default function DriversPanel() {
       )}
 
       <p className="drivers-footnote">
-        Read-only identity inventory via{" "}
-        <span className="mono">pnputil /enum-devices</span>. IDs are shown in
-        Windows' most-specific-first order; lower rank means a better driver
-        match. This panel does not install or modify anything.
+        Device inventory and update checks are read-only (inventory via{" "}
+        <span className="mono">pnputil /enum-devices</span>). A driver is
+        changed only after you review a local SDIO candidate and explicitly
+        confirm installation. IDs are shown in Windows' most-specific-first
+        order; lower rank means a better driver match.
       </p>
     </div>
   );

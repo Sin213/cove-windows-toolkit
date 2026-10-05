@@ -29,6 +29,7 @@ const PANEL_NAMES = [
   "RuntimesPanel",
   "DiskHealthPanel",
   "ToolsPanel",
+  "DriversPanel",
 ];
 
 async function builtAssets() {
@@ -72,4 +73,25 @@ test("startup panel is emitted as a route chunk with its implementation", async 
 
   const source = await readFile(join(DIST_ASSETS, startupChunk), "utf8");
   assert.match(source, /get_startup_items/);
+});
+
+test("drivers panel carries the driver-update workflow and keeps it out of the entry chunk", async () => {
+  const assets = await builtAssets();
+  const driversChunk = assets.find(
+    (name) => name.startsWith("DriversPanel-") && name.endsWith(".js"),
+  );
+  assert.ok(driversChunk, "vite did not emit the drivers route chunk");
+
+  const source = await readFile(join(DIST_ASSETS, driversChunk), "utf8");
+  for (const command of [
+    "check_local_driver_update",
+    "install_local_driver_update",
+    "cancel_local_driver_update",
+  ]) {
+    assert.match(source, new RegExp(command), `${command} missing from the drivers chunk`);
+  }
+
+  const entryName = assets.find((name) => /^index-[^/]+\.js$/.test(name));
+  const entry = await readFile(join(DIST_ASSETS, entryName), "utf8");
+  assert.doesNotMatch(entry, /_local_driver_update/, "driver update workflow leaked into the entry chunk");
 });

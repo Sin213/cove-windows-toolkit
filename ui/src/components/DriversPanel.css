@@ -257,3 +257,134 @@
   color: var(--text-dim);
   line-height: 1.5;
 }
+
+/* Local SDIO folder ------------------------------------------------------ */
+
+.drivers-sdio {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.drivers-sdio-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.drivers-sdio-input {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset, transparent);
+  color: inherit;
+  font-size: 12px;
+}
+.drivers-sdio-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.drivers-sdio-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.drivers-sdio-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+/* Driver update workflow ------------------------------------------------- */
+
+.drivers-update-btn {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+.drivers-update-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.drivers-update-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.drivers-update-btn:disabled,
+.drivers-rescan-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.drivers-update-btn.primary {
+  border-color: var(--accent);
+}
+.drivers-update-btn.caution {
+  border-color: var(--yellow);
+}
+
+.drivers-update-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  font-size: 13px;
+}
+.drivers-update-card.tone-success {
+  border-left-color: var(--green);
+}
+.drivers-update-card.tone-info {
+  border-left-color: var(--accent);
+}
+.drivers-update-card.tone-warning {
+  border-left-color: var(--yellow);
+}
+.drivers-update-card.tone-error {
+  border-left-color: var(--red);
+}
+
+.drivers-update-title {
+  margin: 0;
+  font-weight: 600;
+}
+.drivers-update-body,
+.drivers-update-meta,
+.drivers-update-reboot {
+  margin: 0;
+  line-height: 1.5;
+}
+.drivers-update-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.drivers-update-reboot {
+  color: var(--yellow);
+  font-weight: 600;
+}
+
+.drivers-update-facts {
+  display: grid;
+  grid-template-columns: minmax(110px, max-content) 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 12px;
+}
+.drivers-update-facts dt {
+  color: var(--text-dim);
+}
+.drivers-update-facts dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.drivers-update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

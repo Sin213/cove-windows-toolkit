@@ -13,6 +13,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "test:driver-update-contract": "node --test scripts/driver-update-contract.test.mjs",
+    "test:driver-update-ui": "node --test scripts/driver-update-ui.test.mjs",
     "test:startup-loading": "pnpm build && node --test scripts/startup-loading.test.mjs",
     "preview": "vite preview"
   },

@@ -80,6 +80,9 @@ export function createDriverUpdateFlow({ invoke }: FlowDeps) {
   let token: string | null = null;
   let expiresInSeconds: number | null = null;
   let generation = 0;
+  // Abandoned while an install was in flight: it cannot be cancelled, but any
+  // session the response hands back must be released, not stranded.
+  let abandonedWhileInstalling = false;
   const listeners = new Set<() => void>();
   const outcomeListeners = new Set<() => void>();
 
@@ -149,6 +152,16 @@ export function createDriverUpdateFlow({ invoke }: FlowDeps) {
       finish(deviceId, { kind: "transport", during: "install" }, true);
       return;
     }
+    if (abandonedWhileInstalling && (raw.status === "busy" || raw.status === "restore_point_failed")) {
+      // Nobody is left to continue: release whichever session is still live.
+      const live = raw.status === "busy" ? token : raw.retry_session_id;
+      if (nonEmpty(live)) cancelBestEffort(live);
+      token = null;
+      abandonedWhileInstalling = false;
+      set({ phase: "idle" });
+      return;
+    }
+    abandonedWhileInstalling = false;
     if (raw.status === "busy") {
       // Operation locking precedes session consumption: keep the session and
       // return to the step the user was on (the retry token only fits the
@@ -184,6 +197,7 @@ export function createDriverUpdateFlow({ invoke }: FlowDeps) {
       return;
     }
     const { deviceId, preview } = state;
+    abandonedWhileInstalling = false;
     set({ phase: "installing", deviceId, preview });
     call(INSTALL, { sessionId: token, decision: "confirmed", restoreAction: action }).then(
       (raw) => onInstallResponse(raw, deviceId, preview, action),
@@ -288,6 +302,9 @@ export function createDriverUpdateFlow({ invoke }: FlowDeps) {
           if (token !== null) cancelBestEffort(token);
           token = null;
           set({ phase: "idle" });
+          return;
+        case "installing":
+          abandonedWhileInstalling = true;
           return;
         default:
           return;
