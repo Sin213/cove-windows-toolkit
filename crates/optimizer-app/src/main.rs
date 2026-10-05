@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+// Tab 2a-13a1 core; its production engine and Tauri commands land in 13a2.
+#[cfg_attr(not(test), allow(dead_code))]
+mod driver_updates;
 mod portable;
 mod scan;
 mod security_scan;
