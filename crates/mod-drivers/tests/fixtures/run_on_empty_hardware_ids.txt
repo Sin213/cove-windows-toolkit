@@ -1,0 +1,154 @@
+Microsoft PnP Utility
+
+Instance ID:                USB\VID_8087&PID_0AAA\5&1f2e3d4c&0&14
+Device Description:         Intel(R) Wireless Bluetooth(R)
+Class Name:                 Bluetooth
+Class GUID:                 {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
+Manufacturer Name:          Intel Corporation
+Status:                     Started
+Driver Name:                oem45.inf
+Hardware IDs:               USB\VID_8087&PID_0AAA&REV_0002
+                            USB\VID_8087&PID_0AAA
+Compatible IDs:             USB\Class_E0&SubClass_01&Prot_01
+                            USB\Class_E0&SubClass_01
+                            USB\Class_E0
+Matching Drivers:
+    Driver Name:            oem45.inf
+    Original Name:          ibtusb.inf
+    Provider Name:          Intel Corporation
+    Class Name:             Bluetooth
+    Class GUID:             {e0cbf06c-cd8b-4647-bb8a-263b43f0f974}
+    Driver Version:         04/29/2025 23.140.0.5
+    Signer Name:            Microsoft Windows Hardware Compatibility Publisher
+    Matching Device ID:     USB\VID_8087&PID_0AAA&REV_0002
+    Driver Rank:            00FF0000
+    Driver Status:          Best Ranked / Installed
+Properties:
+    DEVPKEY_Device_DeviceDesc [String]:
+        Intel(R) Wireless Bluetooth(R)
+    DEVPKEY_Device_HardwareIds [String List]:
+        USB\VID_8087&PID_0AAA&REV_0002
+        USB\VID_8087&PID_0AAA
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x00000000 (0)
+
+Instance ID:                {7e4b2c10-5a3d-4f8e-9b21-6c0d8a1e3f55}\IntelTileDevice\6&1a2b3c4d&0
+Device Description:         Intel Tile Device
+Class Name:                 Unknown
+Class GUID:                 Unknown
+Manufacturer Name:          Intel Corporation
+Status:                     Started
+Hardware IDs:               Properties:
+    DEVPKEY_Device_DeviceDesc [String]:
+        Intel Tile Device
+    DEVPKEY_Device_HardwareIds [String List]:
+    DEVPKEY_Device_CompatibleIds [String List]:
+    DEVPKEY_Device_ConfigFlags [UINT32]:
+        0x00000000 (0)
+    DEVPKEY_Device_Manufacturer [String]:
+        Intel Corporation
+    DEVPKEY_Device_LocationInfo [String]:
+        Intel Tile Device
+    DEVPKEY_Device_PDOName [String]:
+        \Device\0000008c
+    DEVPKEY_Device_Capabilities [UINT32]:
+        0x00000060 (96)
+    DEVPKEY_Device_UINumber [UINT32]:
+        0x00000000 (0)
+    DEVPKEY_Device_EnumeratorName [String]:
+        {7e4b2c10-5a3d-4f8e-9b21-6c0d8a1e3f55}
+    DEVPKEY_Device_Address [UINT32]:
+        0x00000000 (0)
+    DEVPKEY_Device_PowerData [Binary]:
+        38 00 00 00 01 00 00 00 4D 00 00 00 00 00 00 00
+        00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00
+        03 00 00 00 03 00 00 00 03 00 00 00 03 00 00 00
+        04 00 00 00 05 00 00 00
+    DEVPKEY_Device_RemovalPolicy [UINT32]:
+        0x00000001 (1)
+    DEVPKEY_Device_RemovalPolicyDefault [UINT32]:
+        0x00000001 (1)
+    DEVPKEY_Device_InstallState [UINT32]:
+        0x00000000 (0)
+    DEVPKEY_Device_BaseContainerId [GUID]:
+        {2c9d4e61-0b7a-4c35-8f12-9e6a5d3b1c07}
+    DEVPKEY_NAME [String]:
+        Intel Tile Device
+    DEVPKEY_Device_InstanceId [String]:
+        {7e4b2c10-5a3d-4f8e-9b21-6c0d8a1e3f55}\IntelTileDevice\6&1a2b3c4d&0
+    DEVPKEY_Device_DevNodeStatus [UINT32]:
+        0x4180200A (1098915850)
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x00000000 (0)
+    DEVPKEY_Device_Parent [String]:
+        USB\VID_8087&PID_0AAA\5&1f2e3d4c&0&14
+    DEVPKEY_Device_Siblings [String List]:
+        BTH\MS_RFCOMM\6&1a2b3c4d&0&0
+        BTH\MS_BTHBRB\6&1a2b3c4d&0&1
+        BTH\MS_BTHPAN\6&1a2b3c4d&0&2
+        BTH\MS_BTHLE\6&1a2b3c4d&0&3
+    DEVPKEY_Device_SafeRemovalRequired [Boolean]:
+        FALSE
+    DEVPKEY_Device_ContainerId [GUID]:
+        {2c9d4e61-0b7a-4c35-8f12-9e6a5d3b1c07}
+    DEVPKEY_Device_IsPresent [Boolean]:
+        TRUE
+    DEVPKEY_Device_HasProblem [Boolean]:
+        FALSE
+    {83da6326-97a6-4088-9453-a1923f573b29}[15] [Boolean]:
+        TRUE
+    DEVPKEY_Device_IsRebootRequired [Boolean]:
+        FALSE
+    DEVPKEY_Device_ReportedDeviceIdsHash [UINT32]:
+        0x00000000 (0)
+    DEVPKEY_Device_InLocalMachineContainer [Boolean]:
+        TRUE
+    DEVPKEY_Device_Stack [String List]:
+        \Driver\ibtusb
+    {83da6326-97a6-4088-9453-a1923f573b29}[26] [Boolean]:
+        FALSE
+    DEVPKEY_Device_BusReportedDeviceDesc [String]:
+        Intel Tile Device
+    DEVPKEY_Device_ConfigurationId [String]:
+    {80d81ea6-7473-4b0c-8216-efc11a2c4c8b}[6] [UINT32]:
+        0x00000000 (0)
+    DEVPKEY_Device_ModelId [GUID]:
+        {5f8e2a17-c3b4-4d69-a0e1-7b2c9d4f6a38}
+    {83da6326-97a6-4088-9453-a1923f573b29}[10] [String]:
+        USB\VID_8087&PID_0AAA\5&1f2e3d4c&0&14
+    DEVPKEY_Device_InstallDate [FILETIME]:
+        1/15/2026 10:00:00
+    DEVPKEY_Device_FirstInstallDate [FILETIME]:
+        1/15/2026 10:00:00
+    DEVPKEY_Device_LastArrivalDate [FILETIME]:
+        2/1/2026 8:30:00
+    DEVPKEY_Device_DriverDate [FILETIME]:
+        4/29/2025 0:00:00
+    DEVPKEY_Device_DriverVersion [String]:
+        23.140.0.5
+    DEVPKEY_Device_DriverProvider [String]:
+        Intel Corporation
+
+Instance ID:                SWD\MIDISRV\MIDIU_APP_TRANSPORT
+Device Description:         MIDI 2.0 Virtual Devices
+Class Name:                 SoftwareDevice
+Class GUID:                 {62f9c741-b25a-46ce-b54c-9bccce08b6f2}
+Manufacturer Name:          Microsoft
+Status:                     Started
+Driver Name:                c_swdevice.inf
+Hardware IDs:               SWD\MIDISRV\MIDIU_APP_TRANSPORT
+Matching Drivers:
+    Driver Name:            c_swdevice.inf
+    Provider Name:          Microsoft
+    Class Name:             SoftwareDevice
+    Class GUID:             {62f9c741-b25a-46ce-b54c-9bccce08b6f2}
+    Driver Version:         06/21/2006 10.0.26100.1
+    Signer Name:            Microsoft Windows
+    Matching Device ID:     SWD\GenericRaw
+    Driver Rank:            00FF2000
+    Driver Status:          Best Ranked / Installed
+Properties:
+    DEVPKEY_Device_DeviceDesc [String]:
+        MIDI 2.0 Virtual Devices
+    DEVPKEY_Device_ProblemCode [UINT32]:
+        0x00000000 (0)

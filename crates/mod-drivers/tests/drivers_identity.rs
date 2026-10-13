@@ -312,6 +312,64 @@ fn r7_ids_per_device_cap_exceeded() {
     ));
 }
 
+/// One device whose hardware and compatible ID lists hold `hardware` and
+/// `compatible` unique IDs, each list also carrying one case-variant duplicate.
+fn device_with_id_counts(hardware: usize, compatible: usize) -> String {
+    let mut input = String::from(
+        "Microsoft PnP Utility\n\nInstance ID:                TEST\\DEVICE\\0\nHardware IDs:               TEST\\HW0\n",
+    );
+    for i in 1..hardware {
+        input.push_str(&format!("                            TEST\\HW{i}\n"));
+    }
+    input.push_str("                            test\\hw0\n");
+    input.push_str("Compatible IDs:             TEST\\CID0\n");
+    for i in 1..compatible {
+        input.push_str(&format!("                            TEST\\CID{i}\n"));
+    }
+    input.push_str("                            test\\cid0\n");
+    input
+}
+
+#[test]
+fn r7_ids_per_device_caps_are_inclusive_and_count_unique_ids() {
+    let hw_cap = mod_drivers::identity::MAX_HARDWARE_IDS_PER_DEVICE;
+    let cid_cap = mod_drivers::identity::MAX_COMPATIBLE_IDS_PER_DEVICE;
+
+    // Exactly at both caps (plus case-variant duplicates) is accepted whole,
+    // in source order, never truncated.
+    let report = parse_enum_devices(
+        &device_with_id_counts(hw_cap, cid_cap),
+        EnumMode::IdentityOnly,
+    )
+    .expect("IDs exactly at the caps should parse");
+    let device = &report.devices[0];
+    assert_eq!(device.hardware_ids.len(), hw_cap);
+    assert_eq!(device.compatible_ids.len(), cid_cap);
+    assert_eq!(
+        device.hardware_ids.first().map(String::as_str),
+        Some("TEST\\HW0")
+    );
+    assert_eq!(
+        device.hardware_ids.last().map(String::as_str),
+        Some(format!("TEST\\HW{}", hw_cap - 1).as_str())
+    );
+    assert_eq!(
+        device.compatible_ids.last().map(String::as_str),
+        Some(format!("TEST\\CID{}", cid_cap - 1).as_str())
+    );
+
+    // One unique ID past either cap fails closed.
+    for (hardware, compatible) in [(hw_cap + 1, cid_cap), (hw_cap, cid_cap + 1)] {
+        assert!(matches!(
+            parse_enum_devices(
+                &device_with_id_counts(hardware, compatible),
+                EnumMode::IdentityOnly
+            ),
+            Err(PnputilParseError::IdsPerDeviceExceeded)
+        ));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // R8 — Older/limited Windows degradation
 // ---------------------------------------------------------------------------
@@ -452,4 +510,138 @@ fn identity_types_are_serializable() {
     assert!(value.get("machine").is_some());
     assert!(value.get("devices").is_some());
     assert_eq!(value.get("complete").and_then(|v| v.as_bool()), Some(true));
+}
+
+// ---------------------------------------------------------------------------
+// R10 - Empty ID list run-on label (Tab 2a-14)
+// ---------------------------------------------------------------------------
+//
+// PnPUtil prints an empty ID list as its bare label with no line break, so the
+// next top-level label lands on the same line (`Hardware IDs:  Properties:`,
+// observed on a Windows 11 host for a software-enumerated device). The run-on
+// label must be honoured instead of absorbing the next section into the list.
+
+#[test]
+fn r10_run_on_empty_hardware_ids_before_properties() {
+    let report = parse_enum_devices(&fixture("run_on_empty_hardware_ids.txt"), EnumMode::Full)
+        .expect("run-on fixture should parse");
+    assert!(report.complete);
+    assert!(!report.degraded);
+    assert_eq!(report.devices.len(), 3);
+
+    let tile = &report.devices[1];
+    assert_eq!(
+        tile.instance_id,
+        "{7e4b2c10-5a3d-4f8e-9b21-6c0d8a1e3f55}\\IntelTileDevice\\6&1a2b3c4d&0"
+    );
+    assert!(tile.hardware_ids.is_empty());
+    assert!(tile.compatible_ids.is_empty());
+    assert!(tile.matching.is_empty());
+    assert_eq!(tile.installed, None);
+    assert_eq!(tile.description.as_deref(), Some("Intel Tile Device"));
+    // Only the properties section carries this device's problem code, so it
+    // proves the run-on `Properties:` label opened that section.
+    assert_eq!(tile.problem_code, Some(0));
+
+    // Neighbouring devices keep their exact, ordered identity.
+    assert_eq!(
+        report.devices[0].hardware_ids,
+        vec!["USB\\VID_8087&PID_0AAA&REV_0002", "USB\\VID_8087&PID_0AAA"]
+    );
+    assert_eq!(
+        report.devices[0].compatible_ids,
+        vec![
+            "USB\\Class_E0&SubClass_01&Prot_01",
+            "USB\\Class_E0&SubClass_01",
+            "USB\\Class_E0",
+        ]
+    );
+    assert_eq!(
+        report.devices[2].instance_id,
+        "SWD\\MIDISRV\\MIDIU_APP_TRANSPORT"
+    );
+    assert_eq!(
+        report.devices[2].hardware_ids,
+        vec!["SWD\\MIDISRV\\MIDIU_APP_TRANSPORT"]
+    );
+}
+
+#[test]
+fn r10_run_on_labels_open_their_own_sections() {
+    const HEAD: &str = "Microsoft PnP Utility\n\nInstance ID:                TEST\\DEVICE\\0\n";
+    const PROPS: &str =
+        "Properties:\n    DEVPKEY_Device_ProblemCode [UINT32]:\n        0x00000000 (0)\n";
+
+    // Empty compatible list running into Properties keeps the hardware IDs.
+    let input = format!(
+        "{HEAD}Hardware IDs:               TEST\\HW0\n                            TEST\\HW1\nCompatible IDs:             {PROPS}"
+    );
+    let report = parse_enum_devices(&input, EnumMode::Full).expect("compatible run-on parses");
+    assert!(report.complete);
+    assert_eq!(
+        report.devices[0].hardware_ids,
+        vec!["TEST\\HW0", "TEST\\HW1"]
+    );
+    assert!(report.devices[0].compatible_ids.is_empty());
+
+    // A run-on label keeps its own inline value and continuation lines.
+    let input = format!(
+        "{HEAD}Hardware IDs:               Compatible IDs:             TEST\\CID0\n                            TEST\\CID1\n"
+    );
+    let report = parse_enum_devices(&input, EnumMode::IdentityOnly).expect("run-on value parses");
+    assert!(report.devices[0].hardware_ids.is_empty());
+    assert_eq!(
+        report.devices[0].compatible_ids,
+        vec!["TEST\\CID0", "TEST\\CID1"]
+    );
+
+    // Both lists empty: the run-on chain resolves to the properties section.
+    let input = format!("{HEAD}Hardware IDs:               Compatible IDs:             {PROPS}");
+    let report = parse_enum_devices(&input, EnumMode::Full).expect("run-on chain parses");
+    assert!(report.complete);
+    assert!(report.devices[0].hardware_ids.is_empty());
+    assert!(report.devices[0].compatible_ids.is_empty());
+    assert_eq!(report.devices[0].problem_code, Some(0));
+
+    // Empty list running into the next device's instance ID ends this device.
+    let input = format!(
+        "{HEAD}Device Description:         First\nHardware IDs:               Instance ID:                TEST\\DEVICE\\1\nHardware IDs:               TEST\\HW1\n"
+    );
+    let report =
+        parse_enum_devices(&input, EnumMode::IdentityOnly).expect("instance run-on parses");
+    assert_eq!(report.devices.len(), 2);
+    assert!(report.devices[0].hardware_ids.is_empty());
+    assert_eq!(report.devices[1].instance_id, "TEST\\DEVICE\\1");
+    assert_eq!(report.devices[1].hardware_ids, vec!["TEST\\HW1"]);
+}
+
+#[test]
+fn r10_run_on_split_is_limited_to_known_labels_and_stays_bounded() {
+    const HEAD: &str = "Microsoft PnP Utility\n\nInstance ID:                TEST\\DEVICE\\0\n";
+
+    // Real HID usage-page IDs contain colons; they stay IDs, not sections.
+    let input = format!(
+        "{HEAD}Hardware IDs:               HID_DEVICE_UP:000D_U:0005\nCompatible IDs:             HID_DEVICE_SYSTEM_MOUSE\n"
+    );
+    let report = parse_enum_devices(&input, EnumMode::IdentityOnly).expect("colon ID parses");
+    assert_eq!(
+        report.devices[0].hardware_ids,
+        vec!["HID_DEVICE_UP:000D_U:0005"]
+    );
+    assert_eq!(
+        report.devices[0].compatible_ids,
+        vec!["HID_DEVICE_SYSTEM_MOUSE"]
+    );
+
+    // IDs reached through a run-on label still obey the per-device cap.
+    let cap = mod_drivers::identity::MAX_COMPATIBLE_IDS_PER_DEVICE;
+    let mut input =
+        format!("{HEAD}Hardware IDs:               Compatible IDs:             TEST\\CID0\n");
+    for i in 1..=cap {
+        input.push_str(&format!("                            TEST\\CID{i}\n"));
+    }
+    assert!(matches!(
+        parse_enum_devices(&input, EnumMode::IdentityOnly),
+        Err(PnputilParseError::IdsPerDeviceExceeded)
+    ));
 }

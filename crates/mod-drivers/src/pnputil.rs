@@ -314,7 +314,7 @@ pub fn parse_enum_devices(
     let mut saw_properties_any = false;
     let mut saw_instance_label = false;
 
-    for line in trimmed.lines() {
+    for line in trimmed.lines().flat_map(split_run_on_labels) {
         if line.trim().is_empty() {
             continue;
         }
@@ -544,6 +544,57 @@ pub fn parse_enum_devices(
         degraded: !complete,
         devices,
     })
+}
+
+/// Column-0 labels PnPUtil prints inside a device block.
+const DEVICE_LABELS: &[&str] = &[
+    "Instance ID",
+    "Device Description",
+    "Class Name",
+    "Class GUID",
+    "Manufacturer Name",
+    "Driver Name",
+    "Extension Driver Names",
+    "Status",
+    "Problem Status",
+    "Problem Code",
+    "Hardware IDs",
+    "Compatible IDs",
+    "Matching Drivers",
+    "Properties",
+];
+
+/// PnPUtil prints an empty ID list as its bare label with no line break, so the
+/// next column-0 label lands on the same line (`Hardware IDs:  Properties:`).
+/// Yield such a line as the empty list label followed by the run-on label so
+/// each is parsed as its own line; every other line passes through unchanged.
+fn split_run_on_labels(line: &str) -> impl Iterator<Item = &str> {
+    let mut rest = Some(line);
+    std::iter::from_fn(move || {
+        let current = rest.take()?;
+        match split_empty_id_list(current) {
+            Some((list_label, run_on)) => {
+                rest = Some(run_on);
+                Some(list_label)
+            }
+            None => Some(current),
+        }
+    })
+}
+
+fn split_empty_id_list(line: &str) -> Option<(&str, &str)> {
+    if line.starts_with(' ') || line.starts_with('\t') {
+        return None;
+    }
+    let (label, value) = line.split_once(':')?;
+    if !matches!(label.trim(), "Hardware IDs" | "Compatible IDs") {
+        return None;
+    }
+    let run_on = value.trim_start();
+    let (next_label, _) = run_on.split_once(':')?;
+    DEVICE_LABELS
+        .contains(&next_label.trim())
+        .then(|| (&line[..=label.len()], run_on))
 }
 
 fn split_label(line: &str) -> (&str, &str) {
